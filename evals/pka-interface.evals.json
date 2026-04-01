@@ -1,0 +1,22 @@
+[
+  {
+    "prompt": "Build me a dashboard.",
+    "expect": "detects storage mode; reads Repo Map; generates dashboard.html with sections per Active/Reference folders; meeting-home tagged folders get timeline view; Activity and Search sections; browser compatibility note"
+  },
+  {
+    "prompt": "Update the dashboard — I added a clients folder.",
+    "expect": "reads existing dashboard.html; reads updated Repo Map; adds clients section with inferred view type; surgical edit only"
+  },
+  {
+    "prompt": "Add a Kanban for my projects.",
+    "expect": "adds project workspace section with Kanban (active/archiving/archived columns); reads status from projects_index or Repo Map"
+  },
+  {
+    "prompt": "Make the dashboard dark mode by default.",
+    "expect": "modifies theme initialization only; all other content preserved"
+  },
+  {
+    "prompt": "Search isn't finding things I know are in my knowledge base.",
+    "expect": "diagnoses: checks search_fts population (may need librarian content pass); explains File System Access API browser requirement; suggests specific remediation"
+  }
+]

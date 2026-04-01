@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code (local session data — not the plugin config)
+.claude/
+
+# Packaged skills (build artifacts)
+*.skill
+
+# Eval workspaces
+*-workspace/
+
+# Temporary files
+*.tmp
+*.bak
