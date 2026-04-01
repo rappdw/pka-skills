@@ -1,0 +1,30 @@
+[
+  {
+    "prompt": "I'm about to start a 1-1 with Aarav. Take notes.",
+    "expect": "asks meeting title and attendees; invokes take-notes; on completion proposes routing to knowledge/personnel/aarav/ per Repo Map; extracts action items; links attendee; updates SQLite and session-log"
+  },
+  {
+    "prompt": "I just dropped a Zoom transcript into team-inbox. Reconcile against my SLT meeting notes.",
+    "expect": "detects transcript; finds today's SLT notes; invokes resolve-against-transcript; routes to leadership meeting-home folder; asks about transcript disposition; indexes and logs"
+  },
+  {
+    "prompt": "File these meeting notes.",
+    "expect": "infers meeting type from notes title/attendees; proposes routing destination using Repo Map; links attendees; extracts action items; saves with date-slug filename; indexes and logs"
+  },
+  {
+    "prompt": "I have a transcript but no notes. Generate notes from it.",
+    "expect": "reads transcript from team-inbox/ or specified path; generates structured notes directly; runs full post-processing pipeline"
+  },
+  {
+    "prompt": "What action items came out of my meetings this week?",
+    "expect": "searches session-log.md for this week's pka-meetings open thread entries; queries search_fts for '- [ ]' in recently-filed meeting notes; surfaces consolidated list with source links"
+  },
+  {
+    "prompt": "take-notes isn't installed. File my meeting notes anyway.",
+    "expect": "detects missing take-notes; reports capture unavailable; proceeds with route-only mode; completes full post-processing pipeline"
+  },
+  {
+    "prompt": "I was in a Satori project meeting. Route the notes there.",
+    "expect": "detects 'Satori' matches active project in Repo Map; asks: project workspace or knowledge base? Does not auto-route to project workspace"
+  }
+]

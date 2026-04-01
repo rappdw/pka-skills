@@ -1,0 +1,26 @@
+[
+  {
+    "prompt": "Set up my PKA. My name is Sarah. I have an existing folder structure.",
+    "expect": "pre-flight scan before any questions; infers Repo Map including meeting-home tags and archive destination; 3-question interview; CLAUDE.md with Repo Map, Archive Destination, transcript handling note; .pka/ with roles, session-log; .pkaignore; SQLite mode from knowledge-domain file count only"
+  },
+  {
+    "prompt": "Bootstrap PKA in an empty folder.",
+    "expect": "fresh setup; .pka/, owner-inbox/, team-inbox/ created; CLAUDE.md template; 3-question interview; session-log; no content folders created; prompts for archive destination"
+  },
+  {
+    "prompt": "I'm inside a project subfolder with its own CLAUDE.md. Set up PKA.",
+    "expect": "walks up directory tree; finds parent .pka/ if present — refuses and gives PKA root path; if no parent .pka/, treats as fresh setup — shows diff before overwriting CLAUDE.md"
+  },
+  {
+    "prompt": "Transition my client-acme project to knowledge.",
+    "expect": "reads archive destination from CLAUDE.md; generates summary draft in owner-inbox/; mandatory pause for approval; artifact cleanup list with confirmation; moves directory; librarian content pass; Repo Map updated; session-log entry"
+  },
+  {
+    "prompt": "What projects haven't had activity recently?",
+    "expect": "checks all CLAUDE.md-containing folders against 60-day threshold; surfaces names with last-activity dates; no automatic action"
+  },
+  {
+    "prompt": "Add a data analyst to my team.",
+    "expect": "@researcher generates brief to owner-inbox/; .pka/roles/data-analyst.md written; roster.md updated; definition shown for confirmation; session-log updated"
+  }
+]

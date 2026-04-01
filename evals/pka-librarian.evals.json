@@ -1,0 +1,22 @@
+[
+  {
+    "prompt": "Process my team-inbox. I've dropped in PDFs and a transcript.",
+    "expect": "detects transcript file; holds it and asks about pka-meetings processing; routes non-transcript PDFs normally after OCR check; writes report"
+  },
+  {
+    "prompt": "Process the inbox. Mix of scanned documents, German and English.",
+    "expect": "OCR tool check; language detection; sidecar .txt files; language noted in file_index; report with language breakdown"
+  },
+  {
+    "prompt": "I dropped a file called satori-alignment-v2.md into team-inbox.",
+    "expect": "detects 'satori' project slug; asks: project workspace or knowledge base? Does not auto-route to project"
+  },
+  {
+    "prompt": "Just tell me what's in the inbox. Don't move anything.",
+    "expect": "inventory and routing inference only; no moves; presents file list with proposals for each file type including transcript handling note"
+  },
+  {
+    "prompt": "Re-index my knowledge base.",
+    "expect": "diffs against file_index by path + modified_at; updates changed entries; reports N added/updated/removed; no full rebuild"
+  }
+]
