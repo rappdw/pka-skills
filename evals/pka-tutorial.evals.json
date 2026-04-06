@@ -1,0 +1,30 @@
+[
+  {
+    "prompt": "I just installed PKA. How do I use this?",
+    "expect": "detects bootstrapped state; offers full tour or module-specific jump; does not start executing — teaches by describing prompts user can try"
+  },
+  {
+    "prompt": "Give me a tour of PKA.",
+    "expect": "runs through 7 modules with user's actual Repo Map folder names substituted; each module ends with concrete 'try this' prompts; checks in between modules"
+  },
+  {
+    "prompt": "How do I capture meeting notes?",
+    "expect": "jumps to Module 4 (meeting capture); explains three modes; checks if thinkkit is installed and adapts guidance; hands off to pka-meetings for actual capture"
+  },
+  {
+    "prompt": "How do I find things in my knowledge base?",
+    "expect": "Module 2 only; explains 4 query types; uses user's actual folder names in examples; ends with try-this prompts"
+  },
+  {
+    "prompt": "What can PKA do?",
+    "expect": "menu of capabilities with short descriptions; asks which to dive into; does not launch full tour unprompted"
+  },
+  {
+    "prompt": "Walk me through PKA — I'm new.",
+    "expect": "pre-flight check of state first; if not bootstrapped, hands off to pka-bootstrap; if bootstrapped, offers full tour"
+  },
+  {
+    "prompt": "How do I drop files into the system?",
+    "expect": "Module 3 (inbox pattern); explains team-inbox/owner-inbox distinction, transcript special-casing, batch processing"
+  }
+]

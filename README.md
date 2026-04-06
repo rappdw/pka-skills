@@ -2,16 +2,18 @@
 
 A set of Claude Code skills that turn any folder — or set of folders — into a Personal Knowledge Assistance system. The system infers the meaning of your existing structure rather than imposing one. It stores everything as plain files you can read without any tooling. It uses SQLite as an optional accelerant when your knowledge base grows large enough to need it.
 
-You can install one skill or all four. They compose but are independently useful.
+You can install one skill or all six. They compose but are independently useful.
 
-## The Four Skills
+## The Six Skills
 
 | Skill | Purpose | Standalone? | Optional Dependency |
 |-------|---------|-------------|---------------------|
 | `pka-bootstrap` | First-run setup, Repo Map, SQLite, roles, lifecycle | Yes — foundation | — |
-| `pka-librarian` | Document ingestion, OCR, routing, indexing | Yes | — |
+| `pka-librarian` | Document ingestion, OCR, routing, indexing, lint | Yes | — |
 | `pka-interface` | Browser dashboard | Best with bootstrap | — |
 | `pka-meetings` | Meeting capture, reconciliation, routing, indexing | Yes (route-only without thinkkit) | [thinkkit](https://github.com/rappdw/thinkkit) (`take-notes`, `resolve-against-transcript`) |
+| `pka-wiki` | Topic wiki synthesis, ingest, query enhancement | Best with bootstrap + librarian | — |
+| `pka-tutorial` | Conversational onboarding and capability walkthrough | Best with bootstrap | — |
 
 ## Design Principles
 
@@ -88,20 +90,50 @@ pka-skills/
 │   ├── pka-interface/
 │   │   ├── SKILL.md
 │   │   └── references/
-│   └── pka-meetings/
+│   ├── pka-meetings/
+│   │   ├── SKILL.md
+│   │   └── references/
+│   ├── pka-wiki/
+│   │   ├── SKILL.md
+│   │   └── references/
+│   └── pka-tutorial/
 │       ├── SKILL.md
 │       └── references/
 ├── evals/
 │   ├── pka-bootstrap.evals.json
 │   ├── pka-librarian.evals.json
 │   ├── pka-interface.evals.json
-│   └── pka-meetings.evals.json
+│   ├── pka-meetings.evals.json
+│   ├── pka-wiki.evals.json
+│   └── pka-tutorial.evals.json
 ├── docs/
 │   └── TUTORIAL.md
 ├── README.md
 ├── CHANGELOG.md
 └── LICENSE
 ```
+
+## Two Content Layers
+
+PKA distinguishes two kinds of content:
+
+- **Authored moments** — your meeting notes, 1-1s, drafts, journal. Your voice, immutable records of specific moments.
+- **Synthesis pages** — topic wikis (via `pka-wiki`) that cite authored moments and evolve over time. Optional layer inspired by [Karpathy's LLM wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f), adapted to PKA's files-are-source-of-truth model.
+
+Wikis cite moments. Moments never cite wikis. The synthesis layer is additive — delete any wiki without losing underlying content.
+
+## Personal Context as a Portable Asset
+
+PKA treats your knowledge base as an **agent-maintained personal context portfolio**. The owner profile, decision log, session history, and Repo Map together form a structured representation of who you are, how you work, and what you know — maintained by the AI agents as they work with you, not by you filling out forms.
+
+This context is:
+- **Portable** — plain markdown files, no vendor lock-in. Works with Claude Code, Gemini CLI, local LLMs, or any tool that reads files.
+- **Living** — roles update the owner profile and decision log organically as they learn more about you through normal interaction.
+- **Composable** — share your `.pka/owner-profile.md` with any AI tool for instant context. The Repo Map gives any agent a map of your knowledge topology.
+
+## Future Scope
+
+- **`pka-mcp`** — An MCP (Model Context Protocol) server that exposes the PKA knowledge base as a tool surface. Would allow any MCP-compatible client to query your knowledge base, search across documents, and retrieve context without direct file access. This is a natural evolution once MCP tooling matures.
 
 ## License
 

@@ -11,7 +11,11 @@ description: >
   "process my inbox", "what's in the inbox", "route these docs", "re-index",
   "OCR these", "set up my scanner", or drops files and asks what to do with
   them. Handles transcript detection (holds .vtt/.srt files for meeting
-  processing instead of routing them). Works standalone or with pka-bootstrap.
+  processing instead of routing them). Also runs lint / health checks on the
+  knowledge base (orphan files, broken links, stale wiki sources, contradiction
+  candidates) — triggered by "run a health check", "lint my knowledge base",
+  "what needs attention", or "check for broken links". Works standalone or with
+  pka-bootstrap.
 user-invocable: true
 argument-hint: "[file or command]"
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
@@ -75,6 +79,26 @@ Run on "index my knowledge base" or after a project transition. Reads `.md` cont
 ## Re-index Command
 
 Diff `file_index` by path + modified_at; update changed entries only; report N added/updated/removed.
+
+## Lint / Health Check
+
+**Trigger:** "run a health check", "lint my knowledge base", "what needs attention", "check for broken links".
+
+Runs a non-destructive scan producing `owner-inbox/librarian-lint-<YYYY-MM-DD>.md` with findings across 7 rule categories:
+
+1. Orphan files (team-inbox/unsorted/ older than 14 days)
+2. Broken links (markdown links + `[[wikilinks]]` to missing paths)
+3. Stale wiki sources (wiki Sources entries pointing at missing files)
+4. Empty Repo Map folders
+5. Missing back-references (low priority)
+6. Contradiction candidates (wikis with many newer uningested mentions)
+7. Uncited wiki claims
+
+Lint reports only — never auto-fixes. User acts on the report. See `references/lint-rules.md` for full rule definitions and `references/cross-reference-maintenance.md` for the back-reference model.
+
+**Variants:**
+- "quick lint" → rules 1-4 only (fast)
+- "lint" / "full lint" → all 7 rules (default)
 
 ## Key Constraints
 
