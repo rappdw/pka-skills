@@ -19,6 +19,7 @@ For each top-level folder, collect:
    - `project-summary.md` → transitioned (completed) project
    - `Cargo.toml`, `package.json`, `go.mod`, `pyproject.toml` → code-primary project
    - Date-slug filenames (e.g., `2026-03-15-1-1-aarav.md`) → meeting notes home
+   - Subfolders containing `wiki.md` → topic wiki home
 
 ---
 
@@ -34,6 +35,7 @@ The flat vs. subfolder distinction is critical for inference quality.
 | Flat folder of mixed file types | Unstructured collection | Inbox-like, needs routing |
 | Subfolders with `CLAUDE.md` each | Project workspaces | Active work |
 | Subfolders with `project-summary.md` | Archived projects | Reference material |
+| Subfolders each containing `wiki.md` | Topic wikis (LLM-maintained synthesis) | Synthesis pages citing authored notes |
 
 ---
 
@@ -92,6 +94,17 @@ The flat vs. subfolder distinction is critical for inference quality.
 **Status:** archived
 **Confidence:** High (project-summary.md is definitive)
 
+### Topic Wiki Home
+**Signals:** Folder (typically named `topics`, `wikis`, or `kb`) containing subfolders each with a `wiki.md` file. Each subfolder represents one topic.
+
+**Inferred:** "Topic wikis — LLM-maintained synthesis pages, one subfolder per topic"
+**Organization:** By topic
+**Priority:** Reference
+**Tags:** `wiki-home`
+**Confidence:** High if ≥50% of subfolders contain `wiki.md`; Medium if only folder name matches
+
+Used by `pka-wiki` for topic synthesis, ingest, and query preference. Multiple folders can be tagged `wiki-home`.
+
 ### Archive Destination
 **Signals:** Folder named `archived`, `archive`, `completed`, `historical`, or a folder that contains multiple project-summary.md subfolders. Also: a folder named `projects` inside a knowledge-domain parent.
 
@@ -122,6 +135,20 @@ Multiple folders can be tagged `meeting-home`. Common combinations:
 - A dedicated `meetings/` folder
 
 The `meeting-home` tag is used by `pka-meetings` for routing. It does not affect bootstrap behavior otherwise.
+
+---
+
+## Wiki-Home Detection
+
+A folder qualifies for the `wiki-home` tag when:
+
+1. It contains ≥2 immediate subfolders
+2. ≥50% of those subfolders contain a file named `wiki.md`
+3. The folder is Active or Reference priority
+
+Default naming convention: `knowledge/topics/` (used by `pka-wiki` when creating the first wiki). Detection is name-agnostic — the structural signal (subfolders with `wiki.md`) is what matters.
+
+The `wiki-home` tag is used by `pka-wiki` for create/ingest/query routing. It does not affect bootstrap behavior otherwise.
 
 ---
 

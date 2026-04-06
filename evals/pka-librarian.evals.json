@@ -18,5 +18,13 @@
   {
     "prompt": "Re-index my knowledge base.",
     "expect": "diffs against file_index by path + modified_at; updates changed entries; reports N added/updated/removed; no full rebuild"
+  },
+  {
+    "prompt": "Run a health check on my knowledge base.",
+    "expect": "non-destructive scan across 7 rule categories (orphans, broken links, stale wiki sources, empty folders, missing back-refs, contradiction candidates, uncited claims); writes report to owner-inbox/librarian-lint-<date>.md; no auto-fixes"
+  },
+  {
+    "prompt": "Check for broken links in my notes.",
+    "expect": "scans markdown links and [[wikilinks]] for missing targets; lists source file + line number + missing target; does not fix automatically"
   }
 ]

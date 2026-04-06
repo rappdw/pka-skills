@@ -21,6 +21,10 @@ Repo Map as this folder structure evolves.
 ## Autonomy Level
 {{autonomy_level_description}}
 
+## Communication Style
+{{communication_style}}
+When writing for {{name}}: {{communication_guidance}}
+
 ## Roles
 Definitions in `.pka/roles/`. I delegate using @role syntax.
 Current roles: @orchestrator (me), @researcher, @librarian.
@@ -60,7 +64,7 @@ Append one entry to `.pka/session-log.md`:
 <!-- Last updated: {{date}} -->
 <!-- Priority: Active | Reference | Archive -->
 <!-- Status: active | archiving | archived -->
-<!-- Tags: meeting-home (used by pka-meetings for routing) -->
+<!-- Tags: meeting-home (used by pka-meetings for routing), wiki-home (used by pka-wiki for topic synthesis) -->
 <!-- Archive destination: {{archive_destination}} -->
 
 | Folder | Contents | Organization | Priority | Status | Confidence | Tags |
@@ -77,6 +81,8 @@ Append one entry to `.pka/session-log.md`:
 | Placeholder | Source |
 |-------------|--------|
 | `{{name}}` | Q1 answer |
+| `{{communication_style}}` | Owner profile — inferred or stated style preference |
+| `{{communication_guidance}}` | One-sentence instruction for role output formatting |
 | `{{autonomy_level_description}}` | Q2 answer, verbatim description |
 | `{{storage_mode}}` | One of: `Markdown-only`, `Index mode`, `Record-store` |
 | `{{storage_mode_description}}` | One sentence: what this means practically |

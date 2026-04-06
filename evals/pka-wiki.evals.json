@@ -1,0 +1,26 @@
+[
+  {
+    "prompt": "Create a topic wiki on Model Context Protocol.",
+    "expect": "derives slug (asks if ambiguous: mcp vs model-context-protocol); creates knowledge/topics/<slug>/ with wiki.md scaffold; adds wiki-home tag to Repo Map if needed; logs to session-log and decision-log; prompts for first ingest"
+  },
+  {
+    "prompt": "Ingest the paper at team-inbox/mcp-spec.pdf into my mcp wiki.",
+    "expect": "reads source and current wiki; @researcher categorizes content (new/confirm/contradict/refine); presents section-level diff; mandatory pause for approval regardless of autonomy level; applies diff; updates Sources, source-count, last-updated, changelog; routes source to sources/ folder; scans cross-wiki mentions"
+  },
+  {
+    "prompt": "What do I know about MCP?",
+    "expect": "detects knowledge/topics/mcp/wiki.md exists; returns wiki summary (What it is, Key concepts, Current thinking, Open questions) FIRST; runs FTS for mentions not yet in Sources; offers follow-up actions; if no wiki exists, falls back to standard FTS behavior"
+  },
+  {
+    "prompt": "Show me my topic wikis.",
+    "expect": "reads all wiki-home folders; presents table with topic, last-updated, source-count, status; excludes retired wikis or marks them clearly"
+  },
+  {
+    "prompt": "This new source contradicts what my wiki says about MCP transport. How do I reconcile?",
+    "expect": "surfaces contradiction explicitly with both claims and source paths; offers 3 options (keep wiki, update wiki, keep both qualified); does not auto-decide; logs resolution to decision-log once user chooses"
+  },
+  {
+    "prompt": "Retire my llm-tooling wiki.",
+    "expect": "sets frontmatter status: retired; appends changelog entry; wiki excluded from future query responses; file preserved; logs to decision-log with reasoning"
+  }
+]

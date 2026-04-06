@@ -94,6 +94,7 @@ Walk the directory applying `.pkaignore`. For each top-level folder, collect:
 - Presence of `project-summary.md` → transitioned project signal
 - Presence of `Cargo.toml`, `package.json`, `go.mod`, `pyproject.toml` at root → code-primary project; index top-level markdown only
 - Presence of date-slug named files (e.g., `2026-03-15-1-1-aarav.md`) → **meeting notes home signal** (used by `pka-meetings` for routing)
+- Presence of subfolders each containing `wiki.md` → **topic wiki home signal** (used by `pka-wiki` for synthesis)
 
 The flat vs. subfolder-organized distinction is critical for inference quality — a folder of 30 subfolders named after people is personnel notes; a flat folder of 30 date-named `.md` files is a journal or meeting log.
 
@@ -104,6 +105,7 @@ For each folder, infer using `references/inference-guide.md`:
 - **How it's organized** — by person, date, topic, flat, etc.
 - **Priority** — Active / Reference / Archive
 - **Meeting tag** — `meeting-home` if the folder contains date-slug meeting files; multiple folders can be tagged
+- **Wiki tag** — `wiki-home` if the folder contains subfolders each with `wiki.md`; multiple folders can be tagged
 - **Archive destination** — flag one folder as where completed projects land
 - **Confidence** — High / Medium / Low
 
@@ -128,7 +130,7 @@ Present as a recommendation already made, one-sentence rationale. Override with 
 
 Three questions only.
 
-**Q1 — Name:** "What's your first name?"
+**Q1 — Name and profile:** "What's your first name?" Then gather a lightweight owner profile — role/title, domain expertise, communication style preference. Keep it conversational, not a form. See `references/owner-profile.md` for the full protocol. Never ask more than 5 questions total across the entire interview.
 
 **Q2 — Autonomy level:**
 - *Ask before everything* — confirm every file write, move, delete
@@ -156,7 +158,9 @@ Written in Phase 1 if absent. See `references/pkaignore-defaults.md`.
 │   ├── orchestrator.md
 │   ├── researcher.md
 │   └── librarian.md
+├── owner-profile.md
 ├── session-log.md
+├── decision-log.md
 └── knowledge.db          (index mode only)
 ```
 
@@ -170,23 +174,31 @@ If an existing `CLAUDE.md` lacks the `<!-- PKA` header comment: show diff and co
 
 Generate using `references/claude-md-template.md`.
 
-### 3e — Role definition files
+### 3e — Owner profile
+
+Generate `.pka/owner-profile.md` from Q1 interview responses. See `references/owner-profile.md` for schema and generation rules.
+
+### 3f — Role definition files
 
 Seed roles in `.pka/roles/`: orchestrator, researcher, librarian. See `references/role-definitions.md` for the standard schema and seed definitions.
 
-### 3f — `session-log.md`
+### 3g — `session-log.md`
 
 ```
 ## <date> | bootstrap | PKA initialized | Repo map inferred — verify low-confidence entries | Start using team-inbox
 ```
 
-### 3g — SQLite initialization (index mode)
+### 3h — `decision-log.md`
+
+Seed with bootstrap decisions (storage mode, autonomy level, archive destination). See `references/decision-log.md` for entry format and when-to-log rules.
+
+### 3i — SQLite initialization (index mode)
 
 Schema generated from Repo Map. Documented in `.pka/schema.md` (runtime-generated, not a skill asset). Bootstrap population is metadata-only — full content indexing is the librarian's job. Target: under 30 seconds for any repo size.
 
 See `references/sqlite-modes.md` for schema details.
 
-### 3h — Confirm and orient
+### 3j — Confirm and orient
 
 Print: Repo Map summary, meeting-home folders, archive destination, storage mode, roles, two suggested first actions.
 
