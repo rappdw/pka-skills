@@ -68,10 +68,21 @@ If building from scratch, skills should be implemented in this order:
 3. **pka-interface** — visualization, meeting timeline views
 4. **pka-meetings** — meeting pipeline (depends on Repo Map, SQLite, thinkkit)
 
+## Coexistence: Obsidian & Hybrid Monorepo
+
+Two additive capabilities sit on top of the base PKA setup. Both are user-triggered (never auto-detected) and idempotent:
+
+- **Obsidian coexistence** — when `knowledge/.obsidian/` exists, roles enhance files they touch with frontmatter, MOC entries, and `[[wikilinks]]`. Run `bootstrap obsidian` for a one-time mechanical retrofit (MOC stubs, person indexes, filename-pattern frontmatter — never reads file bodies, never overwrites).
+- **Hybrid monorepo bootstrap** — `bootstrap git` sets up a root `.git` coordinating independent child repos at `knowledge/` and each `projects/<name>/` via a `.meta` manifest, with LFS-configured templates. Roles then auto-commit per semantic unit in **child** repos (with `Co-Authored-By: Claude` trailer) while the root repo remains a human-review gate. Sessions end with a consolidated push.
+
+A user with no Obsidian vault and no hybrid monorepo sees identical behavior to before. See [`docs/specification-addendum.md`](docs/specification-addendum.md) (spec) and the seed references in `skills/pka-bootstrap/references/` (`obsidian-conventions.md`, `git-protocol.md`, `obsidian-bootstrap.md`, `git-bootstrap.md`).
+
 ## Documentation
 
 - [Tutorial](docs/TUTORIAL.md) — A practical walkthrough of the system after setup
 - Individual skill documentation in `skills/<name>/SKILL.md`
+- Addendum spec: [`specification-addendum.md`](docs/specification-addendum.md) — Obsidian coexistence, hybrid monorepo bootstrap, commit/push protocol
+- Test harness: [`tests/README.md`](tests/README.md) — shell tests for mechanical bootstrap operations; JSON evals for role-level behavior
 
 ## Repository Structure
 
@@ -83,7 +94,7 @@ pka-skills/
 ├── skills/
 │   ├── pka-bootstrap/
 │   │   ├── SKILL.md
-│   │   └── references/
+│   │   └── references/        # role seeds, bootstrap algorithms, shared-reference seeds
 │   ├── pka-librarian/
 │   │   ├── SKILL.md
 │   │   └── references/
@@ -99,6 +110,17 @@ pka-skills/
 │   └── pka-tutorial/
 │       ├── SKILL.md
 │       └── references/
+├── bootstrap-assets/           # vendored templates + helper scripts installed by `bootstrap git`
+│   ├── gitattributes-template
+│   ├── gitignore-template
+│   └── scripts/                # graduate.sh, init_project_repos.sh, push-all.sh, build-repo-list.sh, reinit-project-with-lfs.sh
+├── tests/                      # shell-based mechanical tests for bootstrap operations
+│   ├── run-all.sh
+│   ├── lib.sh
+│   ├── test_git_bootstrap.sh
+│   ├── test_obsidian_bootstrap.sh
+│   ├── test_commit_protocol.sh
+│   └── bootstrap_obsidian.py   # reference implementation companion for Obsidian-bootstrap tests
 ├── evals/
 │   ├── pka-bootstrap.evals.json
 │   ├── pka-librarian.evals.json

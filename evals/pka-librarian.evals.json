@@ -26,5 +26,45 @@
   {
     "prompt": "Check for broken links in my notes.",
     "expect": "scans markdown links and [[wikilinks]] for missing targets; lists source file + line number + missing target; does not fix automatically"
+  },
+  {
+    "scenario": "S1 — No vault: Obsidian-aware behavior must be inert",
+    "prompt": "Process this meeting note (file 2026-04-22-slt-meeting.md). The workspace has no knowledge/.obsidian/ directory.",
+    "expect": "file routed to leadership/ or wherever the Repo Map says; NO frontmatter added; NO _MOC.md created or updated; NO person backlinks; output identical to pre-addendum behavior"
+  },
+  {
+    "scenario": "S2 — Vault present, no bootstrap: per-route enhancements still apply",
+    "prompt": "Process this meeting note (2026-04-22-slt-meeting.md). knowledge/.obsidian/ exists. I have NOT run bootstrap obsidian.",
+    "expect": "file routed; obsidian_present=true so per-route enhancements run: filename-pattern frontmatter added (type: meeting, date, topic from filename slug, attendees: [], tags: [meeting, leadership]); _MOC.md updated (created as a stub if absent); no bulk retrofit of OTHER files happens — only the file being routed is touched"
+  },
+  {
+    "scenario": "S7 — Vault present, existing MOC: append without disturbing",
+    "prompt": "Route 2026-04-22-slt-meeting.md to leadership/. leadership/_MOC.md already exists with thematic sections the user authored.",
+    "expect": "new bullet appended (under appropriate section, or 'Files'/'Unsorted' if no clear fit); existing entries not reordered or removed; user-authored section structure preserved"
+  },
+  {
+    "scenario": "S8 — Mixed vault + non-vault references",
+    "prompt": "Generate a routing report that references both knowledge/AI/foo.md and projects/widget/baz.md.",
+    "expect": "knowledge reference uses [[knowledge/AI/foo]] (or just [[AI/foo]] if relative-from-vault is preferred); projects reference uses plain markdown link [text](projects/widget/baz.md); when obsidian_present is false, both use plain markdown"
+  },
+  {
+    "scenario": "S9 — Person-match backlink (high confidence only)",
+    "prompt": "Route a 1-on-1 note 2026-04-21-1-1-alec.md to personnel/alec/. personnel/alec/index.md exists.",
+    "expect": "backlink appended to personnel/alec/index.md under '## Mentioned in' (section created if absent); bullet is [[personnel/alec/2026-04-21-1-1-alec]] with date; if personnel/alec/index.md did NOT exist, NO backlink attempted; if the note's filename did NOT clearly identify the person (e.g., generic title), NO backlink attempted"
+  },
+  {
+    "scenario": "S10 — Frontmatter on existing file: merge, don't overwrite",
+    "prompt": "Route a meeting note that already has its own frontmatter with topic and tags fields the user authored.",
+    "expect": "existing topic, tags, and any other user fields preserved verbatim; only missing schema fields (e.g., type, date if absent) are added; routing report shows which fields were added vs. preserved"
+  },
+  {
+    "scenario": "S17 — Child-repo auto-commit per unit",
+    "prompt": "Route 2026-04-22-slt-meeting.md to leadership/. The workspace is a hybrid monorepo (root .git + .meta + child repos).",
+    "expect": "exactly one commit created in knowledge/ child repo; commit message starts with 'Librarian: Route 2026-04-22-slt-meeting.md to leadership/'; commit has 'Co-Authored-By: Claude <noreply@anthropic.com>' trailer; NO commit in root repo even if root tracking changed (e.g., session-log update is staged in root for user review only)"
+  },
+  {
+    "scenario": "S18 — Root-repo no auto-commit",
+    "prompt": "After graduation, the root .meta has been updated. Routing this next file may also touch CLAUDE.md's Repo Map.",
+    "expect": ".meta change is STAGED in root (git add .meta), NOT committed; CLAUDE.md change (if any) staged, not committed; routing report's 'Root-tracked side effects' section lists both files for user review; no git commit invocation in root by any role"
   }
 ]
