@@ -48,9 +48,14 @@ CREATE TABLE file_index (
     status TEXT
 );
 
--- Full-text search across all content
+-- Full-text search across all content.
+-- The `is_pointer` column is UNINDEXED — it carries the pointer-layer flag
+-- (1 if this row was extracted from a `## Pointers` table inside an _MOC.md;
+-- 0 otherwise) without participating in FTS tokenization. See "Pointer-row
+-- ranking" below.
 CREATE VIRTUAL TABLE search_fts USING fts5(
     path, filename, folder, content,
+    is_pointer UNINDEXED,
     tokenize = 'porter unicode61'
 );
 
@@ -113,6 +118,50 @@ This is what makes full-text search work.
 ### Re-index (Incremental)
 
 Diff `file_index` by `path + modified_at`. Update only changed entries. Report: N added, N updated, N removed.
+
+---
+
+## Pointer-row ranking (added in v1.6.1)
+
+When a librarian indexes an `_MOC.md` file, rows inside the `## Pointers` table are inserted into `search_fts` as **separate rows** (one FTS row per pointer-table row), distinct from the row carrying the file's body content.
+
+Pointer-table FTS rows:
+- `path` is the MOC file path (e.g., `knowledge/AI/_MOC.md`).
+- `content` is the concatenation of the row's `Topic`, `Entities`, and `Files` columns (denormalized for keyword density).
+- `is_pointer = 1`.
+
+The MOC file's body content is also indexed normally (one additional row with `is_pointer = 0`, `content` = the MOC's narrative paragraphs and headings).
+
+### Retrieval — 3× rank boost
+
+On retrieval, queries against `search_fts` apply a multiplicative rank boost to `is_pointer = 1` rows. SQLite FTS5 uses `rank` such that **lower (more negative) values mean better matches** (BM25 sign convention; values lie in `(-Infinity, 0]`). To rank pointer rows higher, multiply their rank by `3.0` (making the value more negative); body rows stay at `1.0`.
+
+Example query:
+```sql
+SELECT
+  path,
+  filename,
+  snippet(search_fts, 3, '<b>', '</b>', '...', 32) AS excerpt,
+  is_pointer,
+  rank * (CASE is_pointer WHEN 1 THEN 3.0 ELSE 1.0 END) AS adjusted_rank
+FROM search_fts
+WHERE search_fts MATCH ?
+ORDER BY adjusted_rank
+LIMIT 20;
+```
+
+### Why FTS5 not embeddings
+
+The pointer rows are designed for keyword density — they are dense markdown table rows with topic slugs, entity names, and wikilinks side-by-side. FTS5's BM25 scoring naturally ranks them above sparse body matches without any embedding layer. No vector store, no embeddings, no separate database.
+
+### Maintenance contract
+
+The librarian re-indexes pointer rows on:
+
+1. **MOC file change** — re-extract all rows in the `## Pointers` table; replace the old FTS rows for that MOC.
+2. **File rename / graduation** — the librarian rewrites Pointers wikilinks in MOCs (see `pka-skills/skills/pka-librarian/references/pointer-layer.md`); a re-index of those MOCs follows.
+
+Pointer-row indexing is part of the same incremental re-index pass as body-content indexing — no separate command.
 
 ---
 

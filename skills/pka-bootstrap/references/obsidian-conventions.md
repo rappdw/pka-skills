@@ -156,6 +156,93 @@ Thematic grouping (e.g., "Strategy docs" vs "Research briefs" vs "Vendor notes")
 - Never remove or reorder existing entries.
 - MOCs are navigation aids, not authoritative indexes — if the MOC diverges from the actual folder contents, the folder contents win.
 
+## Pointer Layer (added in v1.6.1)
+
+A small set of curated, dense, machine-readable rows inside each `_MOC.md` — one row per concept cluster — that the librarian maintains as files are routed. The pointer layer is **not Obsidian-specific** (it works in plain markdown too), but it lives in the same files as the rest of the MOC convention so it's documented here.
+
+### Why
+
+At ~1,500+ files, body-level FTS retrieval signal-to-noise drops. Pointer rows give roles a fast pre-FTS targeting layer: hit a pointer row first (high keyword density makes it rank above body matches), then expand to the small list of files the row points at. Converts "1,500-file haystack" queries into "30-cluster summary, then 3–5 targeted file reads". No vector store, no embeddings, no separate database — just markdown table rows that FTS naturally ranks highly.
+
+### File location
+
+A new section appended below the existing `## Subdomains` and `## Files` sections in each `_MOC.md`:
+
+```markdown
+# AI
+
+## Subdomains
+- [[AI/azure/_MOC|Azure]]
+
+## Files
+- [[AI/some-brief]]
+
+## Pointers
+
+Compact retrieval rows maintained by the librarian. Format: one row per concept cluster. FTS-indexed for fast lookup before expanding to file bodies.
+
+| Topic | Entities | Files |
+|---|---|---|
+| anthropic-partnership-2026 | sam-werboff, jordan-josloff, tom-turvey | [[anthropic/2026-04-23-gcn-partnership-meeting]], [[anthropic/anthropic_partnership_proposal]] |
+| ai-adoption-research | satya-nadella, sundar-pichai | [[AI/ai-adoption-tier-productivity-gap-research]], [[AI/companies/darktrace-email-security-research]] |
+```
+
+### Row schema
+
+Three columns. All values are plain text; no nested structures; no YAML.
+
+- **Topic** — hyphenated lowercase slug. Stable identifier for the concept cluster. Date-suffixed when event-bound (`anthropic-partnership-2026`); undated for ongoing initiatives (`ai-adoption-research`).
+- **Entities** — comma-separated lowercase hyphenated slugs (people, products, organizations, dates). No `[[wikilinks]]` here — entities are denormalized for FTS keyword density.
+- **Files** — comma-separated `[[wikilinks]]` to constituent files. Use full relative paths from the vault root (`[[anthropic/2026-04-23-gcn-partnership-meeting]]`) to match the wikilink convention above.
+
+**Granularity rule:** one row per concept cluster, not one row per file. A file may appear in multiple rows; that is correct. Row count per MOC should grow logarithmically with file count, not linearly — if a domain MOC has more pointer rows than files, the granularity is wrong.
+
+### Librarian behavior (gated only on routing into a domain — NOT on `obsidian_present`)
+
+When the librarian routes a file into a domain, after the file is moved and other Obsidian-mode side-effects are applied, it runs the pointer-maintenance step:
+
+1. **Identify the cluster.** Use the file's frontmatter (`type`, `topic`, `tags`, `attendees`/`person`/`related`) plus any routing-context directive. Pick an existing topic slug from the destination MOC's Pointers table by Jaccard similarity ≥ 0.5 against the candidate token set; if no row matches, coin a new slug from the file's primary topic / first tag / type.
+2. **Update the row.** If a cluster matches, append the new file's wikilink to the Files column and merge any new entities from the file's frontmatter into the Entities column (deduped, sorted alphabetically). If no cluster matches, append a new row below existing rows.
+3. **Cross-MOC duplication.** If the file's tags include multiple top-level domain tags (e.g., `[ai, leadership]`), duplicate the pointer row to each corresponding MOC. The same row may appear in multiple `_MOC.md` files — that is correct and intentional (doubles the FTS hit rate; append-only invariant keeps drift bounded).
+4. **Append-only.** Existing rows are extended, never deleted, reordered, or merged. User edits to row content are preserved verbatim across librarian routes.
+5. **Soft size cap.** If a row's Files column reaches 8 entries, the librarian flags the row in the routing summary for human review rather than auto-splitting.
+6. **Ambiguous cluster?** Default to the conservative read: append to the most-specific existing topic OR create a new row. Do not silently merge clusters that look similar but might not be.
+
+The full algorithm lives in `pka-skills/skills/pka-librarian/references/pointer-layer.md`.
+
+### Retrieval behavior
+
+When a role needs to answer a question that requires reading existing knowledge:
+
+1. **Query the FTS index** as today, but boost rows from `_MOC.md` Pointers tables ~3× over body-level matches (rows tagged `is_pointer = 1` in the index — see `skills/pka-bootstrap/references/sqlite-modes.md`).
+2. **For each high-ranked pointer row hit**, parse the Files column → list of file paths.
+3. **Expand to file bodies** by reading those files (typically 2–5 per cluster) instead of grepping all 1,500.
+4. **Fall back to body-level FTS** if no pointer row matches above the confidence threshold. Pointer rows are a fast path, not the only path.
+
+### Behavior without Obsidian
+
+The pointer layer works regardless of `obsidian_present`:
+
+- Without Obsidian: pointer-row wikilinks render as literal `[[path]]` text in plain-markdown viewers. The FTS index still parses them, the librarian still maintains them, retrieval still benefits — just less navigable for the human reader.
+- With Obsidian: the wikilinks become clickable navigation; the Pointers section becomes a usable at-a-glance map of the domain.
+
+Roles do **not** skip pointer-layer maintenance based on `obsidian_present` — the retrieval value is independent of the rendering layer.
+
+### Invariants
+
+1. **Rows are append-only at the row level.** Existing rows are extended (new files / new entities) but never deleted, reordered, or merged by the librarian.
+2. **Files column entries are wikilinks to actual files** — broken links inside Pointers tables are bugs, surfaced by the lint health check (rule 2: broken links).
+3. **A renamed/moved file triggers pointer-row updates** in every MOC where the file is referenced.
+4. **A graduated project's files do not lose their pointer-row entries** — `graduate.sh` rewrites the wikilinks to the new `knowledge/` paths.
+5. **Pointer rows are never read by an LLM at full-document scale** — they are FTS-targeted retrieval primitives. If a row is being rendered to a user verbatim, the data has been pulled into the wrong layer.
+
+### What this is NOT
+
+- Not a vector store. No embeddings.
+- Not a replacement for full-text search. It is a faster path that sits in front of FTS.
+- Not a separate file. It is a section inside existing `_MOC.md` files, never a `_pointers.md` or similar.
+- Not Obsidian-dependent. Plain-markdown workspaces benefit from FTS-side gains; Obsidian only improves the rendering.
+
 ## Tag conventions
 
 Tags are lowercase, hyphenated: `ai-strategy`, not `AIStrategy` or `AI_Strategy`.
