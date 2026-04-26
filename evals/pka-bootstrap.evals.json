@@ -22,5 +22,75 @@
   {
     "prompt": "Add a data analyst to my team.",
     "expect": "@researcher generates brief to owner-inbox/; .pka/roles/data-analyst.md written; roster.md updated; definition shown for confirmation; session-log updated"
+  },
+  {
+    "scenario": "S3 — Obsidian bootstrap, cold vault",
+    "prompt": "I have an Obsidian vault at knowledge/ with about 50 notes scattered across AI/, personnel/, leadership/, and lab-notebook/. No MOCs, no person indexes, no frontmatter anywhere. Run the obsidian bootstrap.",
+    "expect": "verifies knowledge/.obsidian/ exists; seeds .pka/roles/_obsidian.md if absent; walks vault using filename+folder only (no body reading); creates _MOC.md in each top-level domain that lacks one; creates personnel/<name>/index.md for each personnel subfolder; adds filename-pattern frontmatter (1on1, meeting, daily) where absent; merges domain tags; reports counts; if hybrid_monorepo_present, makes one commit in knowledge/ with message 'Bootstrap (obsidian): N MOCs, M person indexes, K frontmatter additions' and Co-Authored-By: Claude trailer"
+  },
+  {
+    "scenario": "S4 — Obsidian bootstrap, idempotent",
+    "prompt": "Run the obsidian bootstrap. (Then immediately again.)",
+    "expect": "first run: applies retrofits; second run: zero file changes, summary shows 0 created / N already present for every category; no new commit because the diff is empty"
+  },
+  {
+    "scenario": "S5 — Obsidian bootstrap, partial pre-existing",
+    "prompt": "Run bootstrap obsidian. The vault already has _MOC.md in AI/ and personnel/alec/index.md authored by me.",
+    "expect": "existing _MOC.md and existing index.md are NOT modified; summary reports them as 'already present'; missing MOCs/indexes are still created; user-authored content untouched"
+  },
+  {
+    "scenario": "S6 — Obsidian bootstrap, malformed frontmatter",
+    "prompt": "Run bootstrap obsidian. One file has broken YAML frontmatter (a stray unquoted colon).",
+    "expect": "file with malformed frontmatter is SKIPPED — listed by path under 'Files SKIPPED (malformed frontmatter)' in summary; bootstrap does NOT attempt to repair; bootstrap continues processing other files; primary task not blocked"
+  },
+  {
+    "scenario": "S12 — Git bootstrap, cold workspace",
+    "prompt": "Bootstrap git. I have knowledge/ and projects/foo/, projects/bar/ — none of them have .git, and the workspace itself has no .git.",
+    "expect": ".pka/ templates and helper scripts installed; root .gitignore created/augmented (merged); root .git initialized with NO commit (scaffolding staged for review); knowledge/.git initialized with LFS + initial commit 'Bootstrap (git): Initial hybrid monorepo setup' with Claude trailer; each projects/*/.git same; .meta generated with three entries with empty origin URLs; summary lists root staged changes; no network calls attempted; no origin remotes set"
+  },
+  {
+    "scenario": "S13 — Git bootstrap, idempotent",
+    "prompt": "Run bootstrap git twice in sequence.",
+    "expect": "first run: full bootstrap as in S12. Second run: no child repo reinitialized; .meta unchanged on identical state; no template/script overwrite; summary reports 'already present' for every step; no new commits"
+  },
+  {
+    "scenario": "S14 — Git bootstrap, partial pre-existing",
+    "prompt": "Bootstrap git. Root .git already exists, knowledge/.git exists with LFS, but projects/newbie/ has no .git.",
+    "expect": "root and knowledge/ left alone; projects/newbie/ initialized with LFS; .meta updated to include projects/newbie; summary distinguishes 'already present' from 'newly initialized'"
+  },
+  {
+    "scenario": "S15 — Git bootstrap, LFS-missing project flagged",
+    "prompt": "Bootstrap git. projects/legacy/ has .git but its .gitattributes contains no filter=lfs.",
+    "expect": "projects/legacy/ NOT modified (no reinit); summary lists projects/legacy under 'reinit candidates' with pointer to reinit-project-with-lfs.sh and warning that the script is destructive; .meta still includes the project with current origin (or empty)"
+  },
+  {
+    "scenario": "S16 — Git bootstrap does not create remotes or push",
+    "prompt": "Run bootstrap git in a workspace with no network connectivity.",
+    "expect": "completes successfully; no git remote add origin commands run; no curl or other HTTP; no git push attempts; .meta entries for new child repos have empty-string origin URLs; summary makes no mention of remote push"
+  },
+  {
+    "scenario": "S22 — Graduation commit sequence",
+    "prompt": "Graduate projects/widget/ to knowledge/reference/.",
+    "expect": "graduate.sh moves projects/widget/ content (excluding .git, which is backed up to .pka/graduate-backups/) into knowledge/reference/widget/; commit in knowledge/ with message 'Graduate: widget → knowledge/reference/' and Claude trailer; .meta in root updated to remove projects/widget; root changes are STAGED but NOT committed; graduation script prints remote-archival instructions referencing the previous origin (Gitea/GitHub examples); session summary flags root staged changes for review"
+  },
+  {
+    "scenario": "S11 — Researcher brief emission with frontmatter",
+    "prompt": "Research the AI adoption tier productivity gap and save a brief into knowledge/AI/. obsidian_present is true.",
+    "expect": "brief saved with type: brief frontmatter, date filled, related: populated only when high-confidence prior briefs found in vault (else []), tags includes 'research' plus 'ai' (domain tag for AI/ folder); body cross-references to vault files use [[wikilinks]]; references to projects/ use plain markdown; if obsidian_present is false, brief is saved without frontmatter (current behavior)"
+  },
+  {
+    "scenario": "S19 — Session-end push, mixed unpushed/configured/empty origins",
+    "prompt": "End the session. We have new commits in knowledge/ and projects/foo/, plus projects/bar/ has unpushed commits but its origin in .meta is empty.",
+    "expect": "session-end protocol invokes consolidated push (meta git push or .pka/push-all.sh); knowledge/ and projects/foo/ are pushed (and their results — success or failure — reported per repo); projects/bar/ is reported as SKIPPED (empty origin), not failed; root repo is checked but only pushed if it has been committed by the user; session summary lists pushed/skipped/failed counts per child repo"
+  },
+  {
+    "scenario": "S20 — Push failure surfaces, doesn't block",
+    "prompt": "End the session. projects/foo/ has a remote that's currently unreachable.",
+    "expect": "push to projects/foo/ fails with a network/auth error; failure is recorded in session summary with the repo path and error message; OTHER child repos are still pushed (failure does not short-circuit the loop); session close still proceeds (push failures don't block session end); no destructive retry (no --force, no rebase)"
+  },
+  {
+    "scenario": "S21 — User 'push now' mid-session",
+    "prompt": "Push the changes.",
+    "expect": "consolidated push runs immediately across child repos with unpushed commits; summary returned (pushed/skipped/failed counts and details); session continues — does NOT trigger session-end protocol; same skip/failure semantics as session-end push"
   }
 ]
