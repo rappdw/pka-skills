@@ -106,7 +106,43 @@ echo "Moving ${NAME} to knowledge/${SUBDIR:+${SUBDIR}/}..."
 mkdir -p "$DEST_PARENT"
 mv "$PROJECT_DIR" "$DEST_DIR"
 
-# Commit in the knowledge child repo (V1 — role prefix + trailer)
+# Pointer-row propagation (added in v1.6.1):
+# Rewrite any `[[projects/<NAME>/...]]` wikilinks inside `knowledge/**/_MOC.md`
+# files to point at the new vault-relative path. Idempotent — if no such
+# wikilinks exist (the typical case), the pass is a no-op. The rewrite is
+# anchored to the Pointers table content but operates on the whole MOC for
+# robustness; user-authored wikilinks elsewhere in the MOC pointing at
+# projects/<NAME>/ would also be rewritten, which is the right behavior.
+NEW_PREFIX="${SUBDIR:+${SUBDIR}/}${NAME}"
+POINTER_REWRITES=0
+if [ -d "${WORKSPACE_ROOT}/knowledge" ]; then
+  POINTER_REWRITES=$(python3 - "${WORKSPACE_ROOT}/knowledge" "${NAME}" "${NEW_PREFIX}" <<'PY'
+import os, re, sys
+root, name, new_prefix = sys.argv[1], sys.argv[2], sys.argv[3]
+old = re.compile(r"\[\[projects/" + re.escape(name) + r"(/[^\]]+)\]\]")
+total = 0
+for dirpath, _, files in os.walk(root):
+    for fn in files:
+        if not fn.endswith("_MOC.md"):
+            continue
+        p = os.path.join(dirpath, fn)
+        with open(p, "r", encoding="utf-8") as f:
+            text = f.read()
+        new_text, n = old.subn(lambda m: f"[[{new_prefix}{m.group(1)}]]", text)
+        if n:
+            with open(p, "w", encoding="utf-8") as f:
+                f.write(new_text)
+            total += n
+print(total)
+PY
+  )
+fi
+if [ "${POINTER_REWRITES:-0}" -gt 0 ]; then
+  echo "Pointer-row wikilinks rewritten: ${POINTER_REWRITES}"
+fi
+
+# Commit in the knowledge child repo (V1 — role prefix + trailer).
+# The pointer-row rewrites (if any) are bundled into the same graduation commit.
 echo "Committing to knowledge/..."
 KNOWLEDGE_PATH_LABEL="knowledge/${SUBDIR:+${SUBDIR}/}"
 COMMIT_SUBJECT="Graduate: ${NAME} → ${KNOWLEDGE_PATH_LABEL}"

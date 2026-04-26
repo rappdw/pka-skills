@@ -40,19 +40,29 @@ nonexistent paths within the knowledge base.
 
 **Scope:**
 - Relative paths within PKA root
-- `[[wikilinks]]` resolved against `wiki-home` folders
+- `[[wikilinks]]` resolved against the vault root (`knowledge/`) — covers
+  wiki-home folders, MOC files, and **pointer-row Files columns inside
+  `_MOC.md` files**
 - Absolute paths outside PKA root are skipped (user's responsibility)
 
-**Why:** File moves and deletions leave dangling references.
+**Why:** File moves and deletions leave dangling references. Pointer rows in
+particular accumulate over time and are append-only by the librarian, so
+broken pointer wikilinks need the user's attention to clean up.
 
 **Output:**
 ```
 ## N broken links
 - `<source-file>:line` → `<target-path>` (missing)
+- `<source-MOC>:line` → `<target-path>` (missing — in Pointers row, topic '<slug>')
 - ...
 ```
 
-**Action hint:** "Fix or remove these references."
+When a broken link is inside a `_MOC.md` Pointers table, the report annotates
+the row's topic slug to make the cleanup target clear.
+
+**Action hint:** "Fix or remove these references. For broken pointer-row
+wikilinks: edit the MOC manually — the librarian is append-only and will not
+remove them on its own."
 
 ---
 

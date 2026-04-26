@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""upgrade-roles.py — merge v1.6 additions into existing .pka/roles/ files.
+"""upgrade-roles.py — merge v1.6 / v1.6.1 additions into existing .pka/roles/ files.
 
 A workspace bootstrapped with pka-skills v1.5 has these role files:
   .pka/roles/orchestrator.md
@@ -11,7 +11,13 @@ v1.6 adds:
   - New H2 sections in each existing role file (Obsidian coexistence,
     commit/push protocol, bootstrap dispatch, session-end push, etc.)
 
-This script applies those additions IN PLACE without overwriting any content
+v1.6.1 adds (additive on top of 1.6.0):
+  - A "## Pointer Layer" section in .pka/roles/_obsidian.md (for workspaces
+    that already have an _obsidian.md file from a previous upgrade)
+  - Three new H2 sections in librarian.md (Pointer-row maintenance, Indexing
+    pointer rows, Rename / graduate propagation)
+
+This script applies all additions IN PLACE without overwriting any content
 the user has customized. It is:
 
   - Deterministic (no LLM in the loop for the merge — line-exact behavior)
@@ -223,10 +229,148 @@ When `hybrid_monorepo_present` is false: no auto-commit; current behavior.
     ),
 ]
 
+# --- v1.6.1 additions ---
+# Three new H2 sections on the librarian role file. Same anchor (insert
+# before `## Output Conventions`).
+
+LIBRARIAN_SECTIONS_V161 = [
+    (
+        "## Pointer-row maintenance (gated only on routing into a domain — NOT on `obsidian_present`)",
+        """\
+After every route into `knowledge/<domain>/` or `projects/<name>/`, append a step to maintain the destination MOC's `## Pointers` table:
+
+1. **Identify the cluster** using Jaccard similarity (≥ 0.5) between the file's frontmatter tokens (`type`, `topic`, `tags`, `attendees`/`person`/`related`) plus any routing-context directive, and the existing topic-slug tokens in the MOC's Pointers table. If no row scores above threshold, coin a new slug from the file's primary `topic` field, first tag, or `type` (in that priority order).
+2. **Update the row.** Existing cluster: append the new file's wikilink to the Files column; merge new entities into the Entities column (deduped, sorted alphabetically). New cluster: append a new row below existing rows.
+3. **Cross-MOC duplication.** If the file's tags include multiple top-level domain tags (e.g., `[ai, leadership]`), duplicate the pointer row to each corresponding MOC.
+4. **Append-only.** Existing rows are extended, never deleted, reordered, or merged. User edits to row content are preserved verbatim across librarian routes.
+5. **Soft size cap.** If a row's Files column reaches 8 entries, flag the row in the routing summary for human review rather than auto-splitting.
+6. **Idempotency.** Re-routing the same file produces no change (the wikilink and entities are already present).
+
+This step runs **regardless of `obsidian_present`** — the retrieval value comes from FTS, not from rendering. Wikilinks render literally outside Obsidian; that's fine.
+
+Full algorithm in `.pka/roles/_obsidian.md` (Pointer Layer section) and `pka-skills/skills/pka-librarian/references/pointer-layer.md`.
+""",
+    ),
+    (
+        "## Indexing pointer rows",
+        """\
+When ingesting an `_MOC.md` file into `search_fts`, detect rows in the `## Pointers` table and tag them with `is_pointer = 1`. On retrieval, multiply the BM25 rank of `is_pointer = 1` rows by `3.0` (FTS5 BM25 returns negative values where more negative = better match; the `3.0` multiplier makes pointer matches more negative, ranking them above equivalent body matches). See `pka-skills/skills/pka-bootstrap/references/sqlite-modes.md` for the schema change and retrieval contract.
+""",
+    ),
+    (
+        "## Rename / graduate propagation",
+        """\
+When a file is renamed or moved by the librarian, every Pointers-row wikilink to its old path is updated to the new path across **all** `_MOC.md` files in the vault. When a project is graduated from `projects/<name>/` into `knowledge/<subdir>/<name>/`, `graduate.sh` rewrites Pointers wikilinks for every file in that project. Both operations are idempotent and append-only at the row level.
+""",
+    ),
+]
+
 ROLE_SECTIONS = {
     "orchestrator": ORCHESTRATOR_SECTIONS,
-    "librarian": LIBRARIAN_SECTIONS,
+    "librarian": LIBRARIAN_SECTIONS + LIBRARIAN_SECTIONS_V161,
     "researcher": RESEARCHER_SECTIONS,
+}
+
+# Shared-reference section additions (for files that already exist in
+# .pka/roles/ from a v1.6.0 upgrade and need the v1.6.1 sections merged in).
+# Anchor: insert BEFORE the first one of these existing sections.
+SHARED_REF_ANCHORS = ("## Tag conventions", "## Filename conventions", "## Error handling")
+
+OBSIDIAN_SECTIONS_V161 = [
+    (
+        "## Pointer Layer (added in v1.6.1)",
+        """\
+A small set of curated, dense, machine-readable rows inside each `_MOC.md` — one row per concept cluster — that the librarian maintains as files are routed. The pointer layer is **not Obsidian-specific** (it works in plain markdown too), but it lives in the same files as the rest of the MOC convention so it's documented here.
+
+### Why
+
+At ~1,500+ files, body-level FTS retrieval signal-to-noise drops. Pointer rows give roles a fast pre-FTS targeting layer: hit a pointer row first (high keyword density makes it rank above body matches), then expand to the small list of files the row points at. Converts "1,500-file haystack" queries into "30-cluster summary, then 3–5 targeted file reads". No vector store, no embeddings, no separate database — just markdown table rows that FTS naturally ranks highly.
+
+### File location
+
+A new section appended below the existing `## Subdomains` and `## Files` sections in each `_MOC.md`:
+
+```markdown
+# AI
+
+## Subdomains
+- [[AI/azure/_MOC|Azure]]
+
+## Files
+- [[AI/some-brief]]
+
+## Pointers
+
+Compact retrieval rows maintained by the librarian. Format: one row per concept cluster. FTS-indexed for fast lookup before expanding to file bodies.
+
+| Topic | Entities | Files |
+|---|---|---|
+| anthropic-partnership-2026 | sam-werboff, jordan-josloff, tom-turvey | [[anthropic/2026-04-23-gcn-partnership-meeting]], [[anthropic/anthropic_partnership_proposal]] |
+| ai-adoption-research | satya-nadella, sundar-pichai | [[AI/ai-adoption-tier-productivity-gap-research]], [[AI/companies/darktrace-email-security-research]] |
+```
+
+### Row schema
+
+Three columns. All values are plain text; no nested structures; no YAML.
+
+- **Topic** — hyphenated lowercase slug. Stable identifier for the concept cluster. Date-suffixed when event-bound (`anthropic-partnership-2026`); undated for ongoing initiatives (`ai-adoption-research`).
+- **Entities** — comma-separated lowercase hyphenated slugs (people, products, organizations, dates). No `[[wikilinks]]` here — entities are denormalized for FTS keyword density.
+- **Files** — comma-separated `[[wikilinks]]` to constituent files. Use full relative paths from the vault root (`[[anthropic/2026-04-23-gcn-partnership-meeting]]`) to match the wikilink convention above.
+
+**Granularity rule:** one row per concept cluster, not one row per file. A file may appear in multiple rows; that is correct. Row count per MOC should grow logarithmically with file count, not linearly — if a domain MOC has more pointer rows than files, the granularity is wrong.
+
+### Librarian behavior (gated only on routing into a domain — NOT on `obsidian_present`)
+
+When the librarian routes a file into a domain, after the file is moved and other Obsidian-mode side-effects are applied, it runs the pointer-maintenance step:
+
+1. **Identify the cluster.** Use the file's frontmatter (`type`, `topic`, `tags`, `attendees`/`person`/`related`) plus any routing-context directive. Pick an existing topic slug from the destination MOC's Pointers table by Jaccard similarity ≥ 0.5 against the candidate token set; if no row matches, coin a new slug from the file's primary topic / first tag / type.
+2. **Update the row.** If a cluster matches, append the new file's wikilink to the Files column and merge any new entities from the file's frontmatter into the Entities column (deduped, sorted alphabetically). If no cluster matches, append a new row below existing rows.
+3. **Cross-MOC duplication.** If the file's tags include multiple top-level domain tags (e.g., `[ai, leadership]`), duplicate the pointer row to each corresponding MOC. The same row may appear in multiple `_MOC.md` files — that is correct and intentional.
+4. **Append-only.** Existing rows are extended, never deleted, reordered, or merged. User edits to row content are preserved verbatim across librarian routes.
+5. **Soft size cap.** If a row's Files column reaches 8 entries, the librarian flags the row in the routing summary for human review rather than auto-splitting.
+6. **Ambiguous cluster?** Default to the conservative read: append to the most-specific existing topic OR create a new row. Do not silently merge clusters that look similar but might not be.
+
+The full algorithm lives in `pka-skills/skills/pka-librarian/references/pointer-layer.md`.
+
+### Retrieval behavior
+
+When a role needs to answer a question that requires reading existing knowledge:
+
+1. **Query the FTS index** as today, but boost rows from `_MOC.md` Pointers tables ~3× over body-level matches (rows tagged `is_pointer = 1` in the index — see `skills/pka-bootstrap/references/sqlite-modes.md`).
+2. **For each high-ranked pointer row hit**, parse the Files column → list of file paths.
+3. **Expand to file bodies** by reading those files (typically 2–5 per cluster) instead of grepping all 1,500.
+4. **Fall back to body-level FTS** if no pointer row matches above the confidence threshold. Pointer rows are a fast path, not the only path.
+
+### Behavior without Obsidian
+
+The pointer layer works regardless of `obsidian_present`:
+
+- Without Obsidian: pointer-row wikilinks render as literal `[[path]]` text in plain-markdown viewers. The FTS index still parses them, the librarian still maintains them, retrieval still benefits — just less navigable for the human reader.
+- With Obsidian: the wikilinks become clickable navigation; the Pointers section becomes a usable at-a-glance map of the domain.
+
+Roles do **not** skip pointer-layer maintenance based on `obsidian_present` — the retrieval value is independent of the rendering layer.
+
+### Invariants
+
+1. **Rows are append-only at the row level.** Existing rows are extended (new files / new entities) but never deleted, reordered, or merged by the librarian.
+2. **Files column entries are wikilinks to actual files** — broken links inside Pointers tables are bugs, surfaced by the lint health check (rule 2: broken links).
+3. **A renamed/moved file triggers pointer-row updates** in every MOC where the file is referenced.
+4. **A graduated project's files do not lose their pointer-row entries** — `graduate.sh` rewrites the wikilinks to the new `knowledge/` paths.
+5. **Pointer rows are never read by an LLM at full-document scale** — they are FTS-targeted retrieval primitives. If a row is being rendered to a user verbatim, the data has been pulled into the wrong layer.
+
+### What this is NOT
+
+- Not a vector store. No embeddings.
+- Not a replacement for full-text search. It is a faster path that sits in front of FTS.
+- Not a separate file. It is a section inside existing `_MOC.md` files, never a `_pointers.md` or similar.
+- Not Obsidian-dependent. Plain-markdown workspaces benefit from FTS-side gains; Obsidian only improves the rendering.
+""",
+    ),
+]
+
+SHARED_REF_SECTIONS = {
+    "_obsidian.md": OBSIDIAN_SECTIONS_V161,
+    # _git-protocol.md has no v1.6.1 additions
 }
 
 # ---------------------------------------------------------------------------
@@ -593,45 +737,55 @@ def section_present(text: str, heading: str) -> bool:
     return False
 
 
-def find_anchor_offset(text: str) -> int | None:
+def find_anchor_offset(text: str, anchors: tuple[str, ...] = ANCHOR_SECTIONS) -> int | None:
     """Return the character offset where new sections should be inserted.
 
-    Searches for the first occurrence of any ANCHOR_SECTIONS heading. Returns
-    None if no anchor is found (caller will append at end of file).
+    Searches for the first occurrence of any anchor heading. Returns None if
+    no anchor is found (caller will append at end of file).
     """
     lines = text.splitlines(keepends=True)
     offset = 0
     for line in lines:
         stripped = line.rstrip("\n").rstrip()
-        if stripped in ANCHOR_SECTIONS:
+        if stripped in anchors:
             return offset
         offset += len(line)
     return None
 
 
-def merge_role(text: str, sections: list[tuple[str, str]]) -> tuple[str, list[str]]:
-    """Insert any missing sections from `sections` into `text`. Returns the
-    updated text and the list of headings that were added.
+def merge_sections(
+    text: str,
+    sections: list[tuple[str, str]],
+    anchors: tuple[str, ...] = ANCHOR_SECTIONS,
+) -> tuple[str, list[str]]:
+    """Insert any missing sections into `text` before the first anchor.
+    Returns the updated text and the list of headings that were added.
+
+    Identical merge logic for both role files and shared-reference files;
+    only the anchor list differs.
     """
     added: list[str] = []
     insertion = ""
     for heading, body in sections:
         if section_present(text, heading):
             continue
-        # Each new section: blank line, heading, blank line, body, blank line
         insertion += f"\n{heading}\n\n{body.rstrip()}\n"
         added.append(heading)
 
     if not insertion:
         return text, []
 
-    anchor = find_anchor_offset(text)
+    anchor = find_anchor_offset(text, anchors)
     if anchor is None:
-        # No anchor — append at end with a leading newline.
         new_text = text.rstrip() + "\n" + insertion + "\n"
     else:
         new_text = text[:anchor] + insertion.lstrip("\n") + "\n" + text[anchor:]
     return new_text, added
+
+
+def merge_role(text: str, sections: list[tuple[str, str]]) -> tuple[str, list[str]]:
+    """Backwards-compatible wrapper. Use merge_sections directly for new code."""
+    return merge_sections(text, sections, ANCHOR_SECTIONS)
 
 
 # ---------------------------------------------------------------------------
@@ -651,6 +805,8 @@ def upgrade_workspace(workspace: Path, dry_run: bool = False) -> dict:
         "backup": None,
         "shared_seeded": [],
         "shared_already_present": [],
+        "shared_sections_added": {},
+        "shared_sections_already_present": {},
         "role_sections_added": {},
         "role_sections_already_present": {},
         "roles_unchanged": [],
@@ -680,6 +836,21 @@ def upgrade_workspace(workspace: Path, dry_run: bool = False) -> dict:
         if not dry_run:
             git_target.write_text(GIT_PROTOCOL_SEED, encoding="utf-8")
         summary["shared_seeded"].append("_git-protocol.md")
+
+    # 2b. Per-shared-reference section merge (v1.6.1+ additions). Runs against
+    # both freshly-seeded files (which carry only the v1.6.0 baseline content)
+    # and existing files (which may also be on the v1.6.0 baseline).
+    for filename, sections in SHARED_REF_SECTIONS.items():
+        target = roles_dir / filename
+        if not target.exists():
+            continue  # Should not happen — step 2 either seeded or skipped only when present
+        original = target.read_text(encoding="utf-8")
+        merged, added = merge_sections(original, sections, SHARED_REF_ANCHORS)
+        already_present = [h for h, _ in sections if h not in added]
+        summary["shared_sections_added"][filename] = added
+        summary["shared_sections_already_present"][filename] = already_present
+        if added and not dry_run:
+            target.write_text(merged, encoding="utf-8")
 
     # 3. Per-role section merge
     for role, sections in ROLE_SECTIONS.items():
@@ -720,6 +891,19 @@ def print_summary(s: dict) -> None:
     print(f"Shared references already present: {len(s['shared_already_present'])}")
     for f in s["shared_already_present"]:
         print(f"  = {f}")
+    # v1.6.1+ section additions inside shared references
+    for filename, added in s.get("shared_sections_added", {}).items():
+        present = s.get("shared_sections_already_present", {}).get(filename, [])
+        if added or present:
+            print(f"{filename}:")
+            if added:
+                print(f"  added {len(added)} section(s):")
+                for h in added:
+                    print(f"    + {h}")
+            if present:
+                print(f"  already had {len(present)} section(s):")
+                for h in present:
+                    print(f"    = {h}")
     print()
     for role in ROLE_SECTIONS:
         added = s["role_sections_added"].get(role, [])

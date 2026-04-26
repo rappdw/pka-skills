@@ -73,8 +73,9 @@ See `references/ocr-patterns.md` for full detection and fallback strategy.
 3. **OCR** — extract text; sidecar `.txt` + SQLite `ocr_text` + `search_fts`; originals never modified
 4. **Move and index** — confirm first (except hands-off); update `file_index`, per-folder table, `search_fts`; append to `session-log.md`
 5. **Obsidian-aware enhancements** (only when `obsidian_present` and the destination is inside `knowledge/`) — see `references/obsidian-routing.md` for the per-route checklist. Conventions live in `.pka/roles/_obsidian.md`.
-6. **Commit per semantic unit** (only when `hybrid_monorepo_present` and the destination is inside a child repo) — see `references/commit-protocol.md` for the trigger and message format. Rules live in `.pka/roles/_git-protocol.md`.
-7. **Report** — `owner-inbox/librarian-report-<YYYY-MM-DD>.md` with counts, destinations, OCR status, unsorted items, and (when `obsidian_present`) any malformed-frontmatter files surfaced for user review
+6. **Pointer-row maintenance** (always, when the destination is inside a domain that has — or will have — a `_MOC.md`) — see `references/pointer-layer.md` for the cluster-discovery and append-only contract. Runs whether or not Obsidian is present; the retrieval value comes from FTS.
+7. **Commit per semantic unit** (only when `hybrid_monorepo_present` and the destination is inside a child repo) — see `references/commit-protocol.md` for the trigger and message format. Rules live in `.pka/roles/_git-protocol.md`. The pointer-row update rides along in the same commit as the route.
+8. **Report** — `owner-inbox/librarian-report-<YYYY-MM-DD>.md` with counts, destinations, OCR status, unsorted items, and (when `obsidian_present`) any malformed-frontmatter files surfaced for user review, plus any pointer rows that hit the 8-file soft cap
 
 Unsorted files → `team-inbox/unsorted/`, never silently discarded.
 
@@ -116,3 +117,4 @@ Lint reports only — never auto-fixes. User acts on the report. See `references
 - When `obsidian_present`, never modify a file's existing frontmatter fields — merge only. See `.pka/roles/_obsidian.md`.
 - When `obsidian_present`, never read file bodies during the Obsidian bootstrap (mechanical retrofit only). The lazy/per-route behavior may use frontmatter and routing context, but bootstrap uses filename + folder structure exclusively.
 - When `hybrid_monorepo_present`, auto-commits land **only in child repos** (`knowledge/`, `projects/*`). The root repo is **never** auto-committed; root-tracked side effects are staged and surfaced for user review.
+- Pointer-row maintenance is **append-only at the row level**: existing rows are extended, never deleted, reordered, or merged by the librarian. User edits to pointer-row content are preserved verbatim across routes. Cross-MOC duplication is OK and intentional — same row may appear in multiple MOCs corresponding to the file's domain tags.
