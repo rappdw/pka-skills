@@ -1,5 +1,54 @@
 # Changelog
 
+## v1.6.0 — 2026-04-26
+
+### Added — Obsidian coexistence (additive; opt-in via bootstrap)
+
+- **Detection**: `obsidian_present := directory_exists("./knowledge/.obsidian")` evaluated once per session. When true, the orchestrator surfaces a one-line greeting and roles enable additive Obsidian-aware behavior. When false, behavior is identical to v1.5.
+- **Shared-reference seed**: new `.pka/roles/_obsidian.md` documenting frontmatter schemas (daily, meeting, 1on1, brief, person), wikilink rules, MOC policy, tag conventions, and error handling. Roles link here rather than duplicate.
+- **`bootstrap obsidian` target**: one-time mechanical retrofit of an existing vault. Creates `_MOC.md` stubs per top-level domain, person index stubs at `personnel/<name>/index.md`, filename-pattern frontmatter (1on1, meeting, daily). No body reading; idempotent; merges, never overwrites.
+- **Librarian per-route enhancements** when `obsidian_present`: frontmatter merge on routed files, MOC append, person backlinks (high-confidence only), wikilink hygiene.
+- **Researcher brief frontmatter** (`type: brief`) when briefs land in vault.
+
+### Added — Hybrid monorepo bootstrap (additive; opt-in)
+
+- **`bootstrap git` target**: one-time setup of a `meta`-coordinated hybrid monorepo. Initializes root `.git` (no commit — human-review gate), `knowledge/.git` and each `projects/*/.git` with LFS, generates `.meta` JSON manifest, installs `.pka/` templates and helper scripts.
+- **Vendored `bootstrap-assets/`**: `gitattributes-template`, `gitignore-template`, plus scripts `graduate.sh`, `init_project_repos.sh`, `reinit-project-with-lfs.sh`, `push-all.sh`, `build-repo-list.sh`. All are idempotent, network-free, root-no-commit, with typed-confirmation gates on destructive operations.
+- **Optional opt-in origin**: `init_project_repos.sh` accepts `ORIGIN_BASE` env var when the user wants to set origin URLs at init time. Default: no origin set.
+
+### Added — Commit/push protocol
+
+- **Shared-reference seed**: new `.pka/roles/_git-protocol.md` documenting commit triggers, message format (`<Role>:` prefix + `Co-Authored-By: Claude` trailer), push triggers, graduation sequence, failure behavior. Activates only when `hybrid_monorepo_present`.
+- **Per-role auto-commits** in child repos when `hybrid_monorepo_present`: librarian commits one routing unit per route, researcher commits one brief per save. Each side-effect (MOC update, frontmatter, backlink) rides along in the same commit.
+- **Root never auto-commits**. Hard rule across all paths: root-tracked changes are staged for human review and surfaced in the session summary.
+- **Session-end consolidated push** via `meta git push` (or fallback `.pka/push-all.sh` iterating `.meta`). Failures surface; session close still proceeds. Empty origins reported as skipped.
+- **Mid-session "push now"** uses the same primitive.
+
+### Added — Bootstrap upgrade (`bootstrap upgrade`)
+
+- **`upgrade` target** for users on v1.5 who want the v1.6 additions without losing customizations. Implementation: `bootstrap-assets/scripts/upgrade-roles.py` performs deterministic structured merge (no LLM in the loop) — backs up `.pka/roles/`, seeds missing shared references, appends new H2 sections to existing role files anchored before `## Output Conventions`. Idempotent. Never modifies the body of existing sections; never modifies frontmatter.
+
+### Added — Tests
+
+- **JSON evals** for the 22 spec scenarios (1–11 Obsidian, 12–16 git bootstrap, 17–22 commit/push protocol).
+- **Shell test harness** under `tests/`: 4 suites (git-bootstrap, obsidian-bootstrap, commit-protocol, upgrade) totalling 22 mechanical tests. Includes a Python reference implementation of the Obsidian retrofit algorithm for testability.
+
+### Added — Documentation
+
+- `docs/specification-addendum.md` — full spec for the addendum.
+- `bootstrap-assets/README.md` — vendored asset contract and provenance.
+- New algorithm references in `skills/pka-bootstrap/references/`: `obsidian-conventions.md`, `git-protocol.md`, `obsidian-bootstrap.md`, `git-bootstrap.md`, `upgrade.md`.
+- New librarian references: `obsidian-routing.md`, `commit-protocol.md`.
+
+### Backward compatibility
+
+A user with no Obsidian vault (`knowledge/.obsidian/` absent) and no hybrid monorepo (`.meta` + `.git` at root absent) sees output identical to v1.5. Every new behavior is gated on the relevant detection predicate or explicit user invocation. Bootstraps never auto-run on detection.
+
+### Skills
+
+- `pka-bootstrap` v1.6.0 (Obsidian, git, upgrade targets; vendored assets)
+- `pka-librarian` v1.6.0 (per-route Obsidian behavior; commit-per-unit)
+
 ## v1.5.0 — 2026-04-05
 
 ### Added

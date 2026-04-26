@@ -31,6 +31,10 @@ Ingest, OCR, categorize, and index documents for a Personal Knowledge Assistance
 2. Load `CLAUDE.md` `## Repo Map` if present
 3. Check for `.pka/knowledge.db` — determines whether to update SQLite
 4. If no Repo Map: read `references/inference-guide.md` and infer routing from destination folder structure
+5. **Cache detection predicates** (used by Obsidian and commit-protocol behavior below):
+   - `obsidian_present := directory_exists("./knowledge/.obsidian")`
+   - `hybrid_monorepo_present := file_exists("./.meta") AND directory_exists("./.git")`
+   These are evaluated once per session and used to gate the additive behaviors at the end of routing.
 
 ## Transcript Awareness
 
@@ -68,7 +72,9 @@ See `references/ocr-patterns.md` for full detection and fallback strategy.
 2. **Infer routing** — Repo Map first; flag project slugs in filenames; present proposals before moving. See `references/file-routing-rules.md`.
 3. **OCR** — extract text; sidecar `.txt` + SQLite `ocr_text` + `search_fts`; originals never modified
 4. **Move and index** — confirm first (except hands-off); update `file_index`, per-folder table, `search_fts`; append to `session-log.md`
-5. **Report** — `owner-inbox/librarian-report-<YYYY-MM-DD>.md` with counts, destinations, OCR status, unsorted items
+5. **Obsidian-aware enhancements** (only when `obsidian_present` and the destination is inside `knowledge/`) — see `references/obsidian-routing.md` for the per-route checklist. Conventions live in `.pka/roles/_obsidian.md`.
+6. **Commit per semantic unit** (only when `hybrid_monorepo_present` and the destination is inside a child repo) — see `references/commit-protocol.md` for the trigger and message format. Rules live in `.pka/roles/_git-protocol.md`.
+7. **Report** — `owner-inbox/librarian-report-<YYYY-MM-DD>.md` with counts, destinations, OCR status, unsorted items, and (when `obsidian_present`) any malformed-frontmatter files surfaced for user review
 
 Unsorted files → `team-inbox/unsorted/`, never silently discarded.
 
@@ -107,3 +113,6 @@ Lint reports only — never auto-fixes. User acts on the report. See `references
 - Never auto-route transcripts — hold for `pka-meetings`
 - OCR stored in sidecars only — originals never modified
 - Routing proposals shown before moves (except hands-off mode)
+- When `obsidian_present`, never modify a file's existing frontmatter fields — merge only. See `.pka/roles/_obsidian.md`.
+- When `obsidian_present`, never read file bodies during the Obsidian bootstrap (mechanical retrofit only). The lazy/per-route behavior may use frontmatter and routing context, but bootstrap uses filename + folder structure exclusively.
+- When `hybrid_monorepo_present`, auto-commits land **only in child repos** (`knowledge/`, `projects/*`). The root repo is **never** auto-committed; root-tracked side effects are staged and surfaced for user review.

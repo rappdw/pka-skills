@@ -1,0 +1,19 @@
+# Installed by pka-bootstrap into child repos (knowledge/, projects/*) as `.gitignore`.
+# Merged with any existing .gitignore (lines added, never replaced).
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Office lock files (Word, Excel, PowerPoint open-document markers)
+~$*
+
+# vim swap
+*.swp
+*.swo
+
+# Editor / tool directories
+.claude/
+.vscode/
+.idea/
