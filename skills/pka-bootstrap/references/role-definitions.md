@@ -299,7 +299,7 @@ When the orchestrator's session-start detection reports `hybrid_monorepo_present
 
   Co-Authored-By: Claude <noreply@anthropic.com>
   ```
-- One commit per routing unit. Side-effects of the route (MOC update, frontmatter, person-index backlink) belong to the same semantic unit and ride along in the same commit.
+- One commit per routing unit. Side-effects of the route (MOC update, frontmatter, person-index backlink, **pointer-row maintenance**) belong to the same semantic unit and ride along in the same commit.
 - Never auto-commit in the **root repo**. If routing produces root-tracked side effects (e.g., updates to `CLAUDE.md`'s Repo Map when a new domain folder is added), stage those changes and surface them in the routing report for user review.
 - A bulk re-routing pass should produce **one commit per logical unit**, not one giant commit — this preserves reviewability and enables targeted reverts.
 
@@ -307,10 +307,33 @@ Full protocol in `.pka/roles/_git-protocol.md`.
 
 When `hybrid_monorepo_present` is false: no auto-commit; current behavior.
 
+## Pointer-row maintenance (gated only on routing into a domain — NOT on `obsidian_present`)
+
+After every route into `knowledge/<domain>/` or `projects/<name>/`, append a step to maintain the destination MOC's `## Pointers` table:
+
+1. **Identify the cluster** using Jaccard similarity (≥ 0.5) between the file's frontmatter tokens (`type`, `topic`, `tags`, `attendees`/`person`/`related`) plus any routing-context directive, and the existing topic-slug tokens in the MOC's Pointers table. If no row scores above threshold, coin a new slug from the file's primary `topic` field, first tag, or `type` (in that priority order).
+2. **Update the row.** Existing cluster: append the new file's wikilink to the Files column; merge new entities into the Entities column (deduped, sorted alphabetically). New cluster: append a new row below existing rows.
+3. **Cross-MOC duplication.** If the file's tags include multiple top-level domain tags (e.g., `[ai, leadership]`), duplicate the pointer row to each corresponding MOC.
+4. **Append-only.** Existing rows are extended, never deleted, reordered, or merged. User edits to row content are preserved verbatim across librarian routes.
+5. **Soft size cap.** If a row's Files column reaches 8 entries, flag the row in the routing summary for human review rather than auto-splitting.
+6. **Idempotency.** Re-routing the same file produces no change (the wikilink and entities are already present).
+
+This step runs **regardless of `obsidian_present`** — the retrieval value comes from FTS, not from rendering. Wikilinks render literally outside Obsidian; that's fine.
+
+Full algorithm in `.pka/roles/_obsidian.md` (Pointer Layer section) and `pka-skills/skills/pka-librarian/references/pointer-layer.md`.
+
+## Indexing pointer rows
+
+When ingesting an `_MOC.md` file into `search_fts`, detect rows in the `## Pointers` table and tag them with `is_pointer = 1`. On retrieval, multiply the BM25 rank of `is_pointer = 1` rows by `3.0` (FTS5 BM25 returns negative values where more negative = better match; the `3.0` multiplier makes pointer matches more negative, ranking them above equivalent body matches). See `pka-skills/skills/pka-bootstrap/references/sqlite-modes.md` for the schema change and retrieval contract.
+
+## Rename / graduate propagation
+
+When a file is renamed or moved by the librarian, every Pointers-row wikilink to its old path is updated to the new path across **all** `_MOC.md` files in the vault. When a project is graduated from `projects/<name>/` into `knowledge/<subdir>/<name>/`, `graduate.sh` rewrites Pointers wikilinks for every file in that project. Both operations are idempotent and append-only at the row level.
+
 ## Output Conventions
 - Saves reports to: `owner-inbox/`
 - File naming: `librarian-report-<YYYY-MM-DD>.md`
-- Reports include: file count, destinations, OCR status, unsorted items, plus any malformed-frontmatter files surfaced for user review (when `obsidian_present`)
+- Reports include: file count, destinations, OCR status, unsorted items, plus any malformed-frontmatter files surfaced for user review (when `obsidian_present`), plus any pointer rows that hit the 8-file soft cap
 - Unsorted files go to `team-inbox/unsorted/`, never discarded
 
 ## Invocation

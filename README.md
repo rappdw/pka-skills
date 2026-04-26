@@ -77,6 +77,8 @@ Two additive capabilities sit on top of the base PKA setup. Both are user-trigge
 
 A user with no Obsidian vault and no hybrid monorepo sees identical behavior to before. See [`docs/specification-addendum.md`](docs/specification-addendum.md) (spec) and the seed references in `skills/pka-bootstrap/references/` (`obsidian-conventions.md`, `git-protocol.md`, `obsidian-bootstrap.md`, `git-bootstrap.md`).
 
+**v1.6.1 — Pointer layer for MOC files.** The librarian maintains a `## Pointers` section inside each `_MOC.md` (one row per concept cluster, three columns: Topic, Entities, Files). FTS5 indexes pointer-row content with a 3× rank boost over body matches, turning a 1,500-file haystack query into a 30-cluster summary followed by 3–5 targeted file reads. No vector store, no embeddings. See `skills/pka-librarian/references/pointer-layer.md`.
+
 ## Documentation
 
 - [Tutorial](docs/TUTORIAL.md) — A practical walkthrough of the system after setup

@@ -1,5 +1,34 @@
 # Changelog
 
+## v1.6.1 — 2026-04-26
+
+### Added — Pointer layer for MOC files (closet pattern)
+
+A small set of curated, dense, machine-readable rows inside each `_MOC.md` — one row per concept cluster — that the librarian maintains as files are routed. Sits between FTS queries and file bodies, converting "1,500-file haystack" queries into "30-cluster summary, then 3–5 targeted file reads". No vector store, no embeddings — just markdown table rows that FTS5's BM25 ranks above sparse body matches.
+
+- **New section in `.pka/roles/_obsidian.md`**: "Pointer Layer" — file location, three-column row schema (Topic, Entities, Files), librarian behavior, retrieval behavior, behavior-without-Obsidian, invariants. Layered onto the existing MOC convention; works in plain-markdown workspaces too (the retrieval value comes from FTS, not Obsidian rendering).
+- **Librarian per-route step**: after every route into a domain, identify the cluster (slug-coverage similarity ≥ 0.5 against existing topic slugs), update the matching row append-only, OR coin a new slug from frontmatter and append a new row. Cross-MOC duplication when the file's tags imply multiple top-level domains. 8-file soft cap surfaced in the routing summary; the librarian never auto-splits.
+- **Indexing tweak**: pointer-table rows tagged `is_pointer = 1` in `search_fts`; retrieval applies `rank * 3.0` to those rows (FTS5 BM25 returns negatives where more negative = better match, so `× 3` makes pointer matches more negative and ranks them above body-level matches).
+- **Rename / graduate propagation**: when a file is moved or a project is graduated, every pointer-row wikilink referencing the old path is rewritten across all `_MOC.md` files in the vault. `graduate.sh` does the rewrite as part of the same graduation commit in `knowledge/`.
+- **Lint coverage**: existing "broken links" rule (rule 2) now explicitly covers wikilinks inside `_MOC.md` Pointers tables; output annotates the row's topic slug for cleanup targeting.
+- **Upgrade path**: `bootstrap upgrade` (introduced in 1.6.0) now also adds the v1.6.1 pointer-layer sections to existing `.pka/roles/_obsidian.md` and `.pka/roles/librarian.md` files. Idempotent and append-only at the section level — never modifies content the user has customized.
+
+### Tests
+
+- Shell suite `tests/test_pointer_layer.sh` covering scenarios PR1–PR6 + cross-MOC duplication: 7 mechanical tests, all passing.
+- Python reference impl `tests/pointer_maintainer.py` for deterministic per-route maintenance, rename propagation, and lint scanning.
+
+### Backward compatibility
+
+A workspace bootstrapped on v1.6.0 continues to work identically. The Pointers section is invisible to existing MOC behavior; adding a `## Pointers` section to a v1.6.0 MOC produces a clean diff that the user can commit. No 1.6.0 test scenarios changed.
+
+### Skills
+
+- `pka-bootstrap` v1.6.1 (new sqlite-modes section for pointer indexing; updated obsidian-conventions seed; upgrade-roles helper extended for v1.6.1)
+- `pka-librarian` v1.6.1 (pointer-layer routing step; new references `pointer-layer.md`)
+
+Spec: [`docs/specification-addendum.md`](docs/specification-addendum.md) plus the 1.6.1 pointer-layer additions documented inline in `skills/pka-bootstrap/references/obsidian-conventions.md` and `skills/pka-librarian/references/pointer-layer.md`.
+
 ## v1.6.0 — 2026-04-26
 
 ### Added — Obsidian coexistence (additive; opt-in via bootstrap)
