@@ -4,42 +4,63 @@
 # Usage:
 #   graduate.sh <project-name> [knowledge-subdir]
 #
-# Defaults knowledge-subdir to "reference" when not given.
+# Defaults knowledge-subdir to "" — i.e., moves to knowledge/<name>/.
+# Pass an explicit subdir to nest under (e.g., "reference" → knowledge/reference/<name>/).
 #
-# Steps:
-#   1. Verify projects/<name>/ exists, knowledge/.git exists.
-#   2. Move project content (excluding .git) to knowledge/<subdir>/<name>/.
-#      The project's existing git history is left as a tarball backup at
-#      .pka/graduate-backups/<name>-<date>.tar so it isn't lost silently.
-#   3. In knowledge/ (child repo): commit the new content with message
-#      `Graduate: <name> → knowledge/<subdir>/`, including the Claude trailer.
-#   4. Remove projects/<name>/ from the workspace.
-#   5. Stage (do not commit) the .meta change in root that removes the
-#      projects/<name> entry. Also stage the projects/<name> deletion.
-#   6. Print remote-archival instructions for the user — never call APIs.
+# What it does:
+#   1. If the project has a .git, save its history as a `git bundle` to
+#      .pka/graduate-backups/ (P4). Bundles are portable: `git clone <bundle>`
+#      restores the project's full history if you ever need it.
+#   2. Remove the project's .git directory and move the content into knowledge/.
+#   3. Auto-commit in the knowledge child repo with the role-prefixed message
+#      and Co-Authored-By: Claude trailer (V1).
+#   4. STAGE (do not commit) the .meta change in the root repo (C1). The user
+#      reviews and commits root.
+#   5. Print remote-archival instructions only (never call remote APIs).
 #
-# Idempotent within a single workspace state: re-running after a successful
-# graduation is a no-op (source no longer exists, knowledge/ already has it).
+# Idempotency: re-running after a successful graduation is a no-op (source no
+# longer exists, knowledge/ already has it).
+#
+# Exit codes:
+#   0  success
+#   1  precondition failure (missing source, missing knowledge .git, etc.)
+#   2  required binary (`git` / `git-lfs`) missing on PATH
+#  64  usage error
 
-set -u
+set -uo pipefail
 
+# --- preflight (P5) ---
+for cmd in git git-lfs; do
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "ERROR: '$cmd' not found on PATH. Install it and re-run." >&2
+    exit 2
+  fi
+done
+
+# --- workspace resolution (P1) ---
 WORKSPACE_ROOT="${WORKSPACE_ROOT:-$(pwd)}"
 COAUTHOR_TRAILER="Co-Authored-By: Claude <noreply@anthropic.com>"
 
 if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
   echo "Usage: $0 <project-name> [knowledge-subdir]" >&2
-  echo "Example: $0 widget reference" >&2
+  echo "Examples:" >&2
+  echo "  $0 widget                # → knowledge/widget/" >&2
+  echo "  $0 widget reference      # → knowledge/reference/widget/" >&2
   exit 64
 fi
 
 NAME="$1"
-SUBDIR="${2:-reference}"
+SUBDIR="${2:-}"
 
 PROJECT_DIR="${WORKSPACE_ROOT}/projects/${NAME}"
-DEST_PARENT="${WORKSPACE_ROOT}/knowledge/${SUBDIR}"
+if [ -n "$SUBDIR" ]; then
+  DEST_PARENT="${WORKSPACE_ROOT}/knowledge/${SUBDIR}"
+else
+  DEST_PARENT="${WORKSPACE_ROOT}/knowledge"
+fi
 DEST_DIR="${DEST_PARENT}/${NAME}"
 META_FILE="${WORKSPACE_ROOT}/.meta"
-BACKUP_DIR="${WORKSPACE_ROOT}/.pka/graduate-backups"
+BACKUP_DIR="${WORKSPACE_ROOT}/.pka/graduate-backups"  # P4
 
 if [ ! -d "$PROJECT_DIR" ]; then
   echo "ERROR: ${PROJECT_DIR} does not exist." >&2
@@ -57,48 +78,48 @@ fi
 # Capture origin for archival instructions
 PROJECT_ORIGIN=""
 if [ -d "${PROJECT_DIR}/.git" ]; then
-  PROJECT_ORIGIN=$(cd "$PROJECT_DIR" && git remote get-url origin 2>/dev/null || echo "")
+  PROJECT_ORIGIN=$(git -C "$PROJECT_DIR" remote get-url origin 2>/dev/null || echo "")
 fi
 
-# Backup the project's git history before we lose it
-mkdir -p "$BACKUP_DIR"
-TS=$(date +%Y%m%d-%H%M%S)
-BACKUP_PATH="${BACKUP_DIR}/${NAME}-${TS}.tar"
+# Save git history as a bundle BEFORE deleting .git (P4: lives in
+# .pka/graduate-backups/, NOT inside the knowledge repo where the user's
+# adopted version put it).
 if [ -d "${PROJECT_DIR}/.git" ]; then
-  (cd "${WORKSPACE_ROOT}/projects" && tar cf "$BACKUP_PATH" "${NAME}/.git")
-  echo "Backed up project .git to ${BACKUP_PATH}"
+  echo "Saving git history bundle..."
+  mkdir -p "$BACKUP_DIR"
+  ts=$(date +%Y%m%d-%H%M%S)
+  bundle_path="${BACKUP_DIR}/${NAME}-${ts}.bundle"
+  git -C "$PROJECT_DIR" bundle create "$bundle_path" --all 2>/dev/null || {
+    # Empty repo (no refs to bundle) — degrade quietly to a tar so we still
+    # have *something*. Bundles fail on truly empty repos.
+    tar_path="${BACKUP_DIR}/${NAME}-${ts}.tar"
+    (cd "${WORKSPACE_ROOT}/projects" && tar cf "$tar_path" "${NAME}/.git")
+    bundle_path="$tar_path"
+  }
+  echo "  Saved to: $bundle_path"
+  echo "Removing project .git directory..."
+  rm -rf "${PROJECT_DIR}/.git"
 fi
 
-# Move content (excluding .git)
+# Move content to destination
+echo "Moving ${NAME} to knowledge/${SUBDIR:+${SUBDIR}/}..."
 mkdir -p "$DEST_PARENT"
-mkdir -p "$DEST_DIR"
-# Copy everything except .git, then remove the source after successful copy
-(
-  cd "$PROJECT_DIR"
-  shopt -s dotglob nullglob
-  for entry in *; do
-    [ "$entry" = ".git" ] && continue
-    cp -a "$entry" "${DEST_DIR}/"
-  done
-  shopt -u dotglob nullglob
-)
+mv "$PROJECT_DIR" "$DEST_DIR"
 
-# Commit in knowledge/
-(
-  cd "${WORKSPACE_ROOT}/knowledge"
-  git add -A "${SUBDIR}/${NAME}"
-  git commit -m "Graduate: ${NAME} → knowledge/${SUBDIR}/" -m "" -m "$COAUTHOR_TRAILER" >/dev/null
-)
+# Commit in the knowledge child repo (V1 — role prefix + trailer)
+echo "Committing to knowledge/..."
+KNOWLEDGE_PATH_LABEL="knowledge/${SUBDIR:+${SUBDIR}/}"
+COMMIT_SUBJECT="Graduate: ${NAME} → ${KNOWLEDGE_PATH_LABEL}"
+git -C "${WORKSPACE_ROOT}/knowledge" add -A
+git -C "${WORKSPACE_ROOT}/knowledge" commit -q \
+  -m "$(printf '%s\n\n%s\n' "$COMMIT_SUBJECT" "$COAUTHOR_TRAILER")"
 
-# Remove the source project (after successful copy + commit)
-rm -rf "$PROJECT_DIR"
-
-# Update .meta if present (remove projects/<name>); leave changes staged in root
+# Update .meta (remove projects/<NAME>); leave the change STAGED in the root,
+# never committed (C1). Done by editing .meta in place + `git add` only.
 if [ -f "$META_FILE" ]; then
   python3 - "$META_FILE" "projects/${NAME}" <<'PY'
 import json, sys
-path = sys.argv[1]
-key = sys.argv[2]
+path, key = sys.argv[1], sys.argv[2]
 with open(path) as f:
     data = json.load(f)
 projects = data.get("projects") or {}
@@ -111,33 +132,40 @@ if key in projects:
 PY
 fi
 
-# Stage root changes (do NOT commit — root is human-review only).
-# .meta is the main artifact; projects/<NAME> is just removed from disk
-# (and only appears as a deletion in `git status` if root previously tracked it,
-# which is uncommon since `.gitignore` typically excludes child repos).
+# Stage root changes (C1: stage only, NEVER commit)
+ROOT_STAGED=()
 if [ -d "${WORKSPACE_ROOT}/.git" ]; then
-  (
-    cd "$WORKSPACE_ROOT"
-    [ -f .meta ] && git add .meta 2>/dev/null || true
-    # If projects/<NAME> was tracked in root, mark its deletion staged
-    git ls-files --error-unmatch "projects/${NAME}" >/dev/null 2>&1 \
-      && git add -A "projects/${NAME}" 2>/dev/null || true
-  )
+  if [ -f "$META_FILE" ]; then
+    git -C "$WORKSPACE_ROOT" add .meta 2>/dev/null && ROOT_STAGED+=(".meta") || true
+  fi
+  # If projects/<NAME> was tracked in root (rare — typically excluded by
+  # .gitignore) then mark its deletion staged.
+  if git -C "$WORKSPACE_ROOT" ls-files --error-unmatch "projects/${NAME}" >/dev/null 2>&1; then
+    git -C "$WORKSPACE_ROOT" add -A "projects/${NAME}" 2>/dev/null \
+      && ROOT_STAGED+=("projects/${NAME}") || true
+  fi
 fi
 
-# Output
+# --- output ---
 cat <<EOF
 
-Graduated ${NAME} → knowledge/${SUBDIR}/${NAME}/
+Graduated ${NAME} → ${KNOWLEDGE_PATH_LABEL}${NAME}/
 
-Knowledge child repo: committed (auto).
-Root repo: changes STAGED but NOT committed (.meta updated, projects/${NAME} removed).
-           Review with 'git status' / 'git diff --cached' and commit when ready.
-
+Knowledge child repo: COMMITTED (auto).
+                      Subject: '${COMMIT_SUBJECT}'
 EOF
+
+if [ ${#ROOT_STAGED[@]} -gt 0 ]; then
+  echo "Root repo:            STAGED (NOT committed — root is human-review only)."
+  echo "                      Staged files:"
+  for f in "${ROOT_STAGED[@]}"; do echo "                        - $f"; done
+  echo "                      Review with: git -C ${WORKSPACE_ROOT} diff --cached"
+  echo "                      Commit when ready: git -C ${WORKSPACE_ROOT} commit"
+fi
 
 if [ -n "$PROJECT_ORIGIN" ]; then
   cat <<EOF
+
 Remote archival (manual — never automated):
   The previous project remote was: ${PROJECT_ORIGIN}
   Archive it via your forge's UI or API. Examples:
@@ -149,5 +177,5 @@ Remote archival (manual — never automated):
 EOF
 fi
 
-echo "Backup of original .git: ${BACKUP_PATH}"
+[ -n "${bundle_path:-}" ] && echo "" && echo "History bundle: $bundle_path"
 exit 0

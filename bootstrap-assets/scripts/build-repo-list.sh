@@ -20,6 +20,14 @@
 
 set -u
 
+# --- preflight (P5) ---
+for cmd in git python3; do
+  if ! command -v "$cmd" >/dev/null 2>&1; then
+    echo "ERROR: '$cmd' not found on PATH. Install it and re-run." >&2
+    exit 2
+  fi
+done
+
 WORKSPACE_ROOT="${WORKSPACE_ROOT:-$(pwd)}"
 META_FILE="${WORKSPACE_ROOT}/.meta"
 

@@ -62,9 +62,11 @@ assert_file_exists "$ws/.meta"
 assert_file_exists "$ws/knowledge/.gitattributes"
 assert_file_exists "$ws/knowledge/.gitignore"
 assert_file_contains "$ws/knowledge/.gitattributes" "filter=lfs" "LFS filters present"
-assert_commit_count "$ws/knowledge"        1 "knowledge/ initial commit"
-assert_commit_count "$ws/projects/foo"     1 "projects/foo initial commit"
-assert_commit_count "$ws/projects/bar"     1 "projects/bar initial commit"
+# init creates a two-commit history per child repo: (1) LFS+gitignore config,
+# (2) initial content. Each carries the role-prefixed message + trailer.
+assert_commit_count "$ws/knowledge"        2 "knowledge/ has two-commit init history"
+assert_commit_count "$ws/projects/foo"     2 "projects/foo has two-commit init history"
+assert_commit_count "$ws/projects/bar"     2 "projects/bar has two-commit init history"
 assert_last_commit_message_starts_with "$ws/knowledge"     "Bootstrap (git):"
 assert_last_commit_has_trailer        "$ws/knowledge"     "Co-Authored-By: Claude <noreply@anthropic.com>"
 assert_last_commit_message_starts_with "$ws/projects/foo" "Bootstrap (git):"
@@ -134,7 +136,7 @@ knowledge_head_after=$(cd "$ws/knowledge" && git rev-parse HEAD)
 
 assert_eq "$knowledge_head_before" "$knowledge_head_after" "preexisting knowledge HEAD untouched"
 assert_dir_exists "$ws/projects/newbie/.git"               "newbie initialized"
-assert_commit_count "$ws/projects/newbie" 1                "newbie has initial commit"
+assert_commit_count "$ws/projects/newbie" 2                "newbie has two-commit init history"
 assert_file_contains "$ws/projects/newbie/.gitattributes" "filter=lfs" "newbie has LFS filters"
 
 cleanup_workspace "$ws"
@@ -255,12 +257,13 @@ assert_last_commit_has_trailer        "$ws/knowledge" "Co-Authored-By: Claude <n
 
 # Root: .meta updated, projects/widget/ removal staged, BUT NO ROOT COMMIT
 assert_no_commit "$ws" "root has no commits after graduation"
-# Backup created
-backup_count=$(ls -1 "$ws/.pka/graduate-backups"/*.tar 2>/dev/null | wc -l | tr -d ' ')
+# Backup created — graduate.sh prefers `git bundle` (more portable than tar);
+# falls back to tar only on truly-empty repos. Either format is acceptable.
+backup_count=$(ls -1 "$ws/.pka/graduate-backups"/*.bundle "$ws/.pka/graduate-backups"/*.tar 2>/dev/null | wc -l | tr -d ' ')
 if [ "$backup_count" -ge 1 ]; then
-  pass_step "graduation backup created"
+  pass_step "graduation backup created (bundle or tar)"
 else
-  fail "no backup tar in .pka/graduate-backups/"
+  fail "no backup bundle or tar in .pka/graduate-backups/"
 fi
 # Archival instructions printed
 if echo "$out" | grep -q "https://gitea.example.com/dan/widget.git"; then

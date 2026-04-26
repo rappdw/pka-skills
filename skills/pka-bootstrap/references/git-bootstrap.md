@@ -37,11 +37,11 @@ Procedure for the `git` bootstrap target. Invoked when the user explicitly reque
 
 ## Hard rules (revisit before every step)
 
-1. **No remote operations.** No `git remote add`, no `git push`, no `curl`, no anything that touches the network.
+1. **No network operations.** No `curl`, no `git push`, no API calls. The bootstrap may set an origin URL only if the caller has explicitly opted in via the `ORIGIN_BASE` environment variable on `init_project_repos.sh` (and even that just calls `git remote add` locally — no network round-trip). Default behavior: no origin set at all.
 2. **Root never auto-commits.** Stage only.
-3. **Existing child repos are not reinitialized.** A project with `.git` but no LFS is **flagged** in the summary, not modified.
+3. **Existing child repos are not reinitialized.** A project with `.git` but no LFS is **flagged** in the summary, not modified. Reinit is a separate, opt-in, destructive operation (`reinit-project-with-lfs.sh`) that requires typed confirmation per project.
 4. **Idempotent.** Re-running on an already-bootstrapped state must produce no changes.
-5. **Required binaries**: `git`, `git-lfs` on PATH. If either is missing, abort with a remediation hint and exit code 2.
+5. **Required binaries**: `git`, `git-lfs` on PATH (plus `python3` for `.meta` JSON manipulation). If any are missing, abort with a remediation hint and exit code 2.
 
 ## Steps
 
