@@ -30,6 +30,7 @@ SUITES_FAIL=()
 run_suite "git-bootstrap"      "$THIS_DIR/test_git_bootstrap.sh"
 run_suite "obsidian-bootstrap" "$THIS_DIR/test_obsidian_bootstrap.sh"
 run_suite "commit-protocol"    "$THIS_DIR/test_commit_protocol.sh"
+run_suite "upgrade"            "$THIS_DIR/test_upgrade.sh"
 
 echo
 echo "=============================="

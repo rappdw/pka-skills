@@ -65,7 +65,8 @@ Everything related to PKA setup and management:
 | (default)  | Original PKA setup: Repo Map, `.pka/`, roles, SQLite, `CLAUDE.md`. Phase 1–3 below.            | Yes         | This document                          |
 | `obsidian` | One-time mechanical retrofit of an Obsidian vault at `knowledge/`: MOC stubs, person indexes, filename-pattern frontmatter, domain tags. | Yes | `references/obsidian-bootstrap.md`     |
 | `git`      | One-time setup of a hybrid monorepo: root `.git`, `knowledge/.git`, each `projects/*/.git` with LFS, `.meta` manifest, `.pka/` templates and helper scripts. | Yes | `references/git-bootstrap.md`          |
-| `all`      | Run base PKA setup if needed, then `obsidian` if `knowledge/.obsidian/` exists, then `git`.    | Yes         | All three references                    |
+| `upgrade`  | For a workspace already bootstrapped on an earlier version of pka-skills: backs up `.pka/roles/`, seeds missing shared-reference files (`_obsidian.md`, `_git-protocol.md`), structured-merges new H2 sections into existing role files. Never overwrites user customizations. | Yes | `references/upgrade.md`                |
+| `all`      | Run `upgrade` if a previous bootstrap exists, else base PKA setup; then `obsidian` if `knowledge/.obsidian/` exists; then `git`. | Yes         | All four references                    |
 
 **Resolution rules** (the orchestrator dispatches; this skill is the executor):
 
@@ -73,7 +74,8 @@ Everything related to PKA setup and management:
 |--------------------------------------------------------------|------------|
 | "bootstrap obsidian", "bootstrap the vault", "moc stubs", "frontmatter retrofit" | `obsidian` |
 | "bootstrap git", "bootstrap the hybrid repo", "bootstrap the monorepo", "set up meta" | `git`      |
-| "bootstrap all", "bootstrap everything", or both vocabularies appear            | `all`      |
+| "upgrade", "upgrade my pka", "bootstrap upgrade", "update my role files", "refresh the addendum behavior" | `upgrade`  |
+| "bootstrap all", "bootstrap everything", or all vocabularies appear              | `all`      |
 | Generic "bootstrap" without a target qualifier                                  | base PKA setup (existing behavior) |
 
 If the orchestrator can't tell, it asks the user before delegating here.
@@ -392,11 +394,76 @@ Re-running produces no changes. Each step checks "is this already done?" before 
 
 ---
 
+## Upgrade Existing Bootstrap (target: `upgrade`)
+
+A user with an already-bootstrapped workspace (typically from a pre-v1.6 install) requests this target to refresh role files in place without losing customizations. Common phrasings: "upgrade my pka", "bootstrap upgrade", "update my role files".
+
+### Preconditions
+
+- `.pka/roles/` exists (the workspace has been bootstrapped at least once).
+- The user has explicitly requested the upgrade.
+
+If `.pka/roles/` is absent, refuse with a message pointing to base bootstrap.
+
+### Procedure
+
+Full step-by-step algorithm in `references/upgrade.md`. Summary:
+
+1. **Vendor `.pka/upgrade-roles.py`** from `bootstrap-assets/scripts/upgrade-roles.py` if absent. (This is a Python helper that does the deterministic merge — no LLM-driven editing of user role files.)
+2. **Run the helper** with `python3 .pka/upgrade-roles.py --workspace <root>`. The helper:
+   - Backs up `.pka/roles/` to `.pka/upgrade-backups/<timestamp>/`
+   - Seeds `.pka/roles/_obsidian.md` and `.pka/roles/_git-protocol.md` if absent
+   - Structured-merges new H2 sections into orchestrator/librarian/researcher role files
+   - Never modifies the body of existing sections
+3. **Print the helper's summary** to the user.
+4. **Suggest follow-ups** based on what's now present:
+   - If `knowledge/.obsidian/` exists and the user hasn't already, suggest `bootstrap obsidian` for the mechanical retrofit.
+   - If no `.meta` file at root, suggest `bootstrap git` if the user wants the hybrid monorepo.
+   - Mention the manual bullet-merges into `## Key Competencies` and `## Output Conventions` (the upgrade does not touch these — see `references/upgrade.md` for the rationale).
+
+### Hard rules
+
+- **Never auto-commits.** Even when run inside a hybrid monorepo, leaves changes in the working tree for human review.
+- **Never modifies the body of existing H2 sections.** Only ADDS new sections.
+- **Never modifies frontmatter** in role files.
+- **Always creates a backup** before any modification (even if the upgrade ends up being a no-op, the backup is created — cheap insurance).
+
+### Idempotency
+
+Re-running on an already-upgraded workspace produces no further role-file changes (every new section's H2 heading is detected as already-present). A new backup is still created, by design.
+
+### Output
+
+The helper prints (and the orchestrator surfaces):
+```
+Role upgrade summary
+------------------------
+Backup:  /workspace/.pka/upgrade-backups/<timestamp>/roles
+
+Shared references seeded:           N (M already present)
+orchestrator: added K section(s):
+  + ## Session-start checks (cached for the session)
+  + ## File references in responses
+  ...
+librarian:    added K section(s):
+  + ## Obsidian coexistence (gated on `obsidian_present`)
+  + ## Commit/push protocol (gated on `hybrid_monorepo_present`)
+researcher:   added K section(s):
+  ...
+
+NOTE: This upgrade only ADDS new H2 sections. It does NOT modify
+      existing sections (e.g., 'Key Competencies', 'Output Conventions',
+      or 'Invocation'). See references/role-definitions.md for any
+      bullet-level additions you may want to merge manually.
+```
+
+---
+
 ## All-target Bootstrap (target: `all`)
 
 If the user requests `bootstrap all` or `bootstrap everything`:
 
-1. If no PKA setup exists, run base bootstrap (Phase 1–3).
+1. If `.pka/roles/` already exists (bootstrapped previously), run the `upgrade` target first to refresh roles. Otherwise run base bootstrap (Phase 1–3).
 2. If `knowledge/.obsidian/` exists, run the Obsidian bootstrap. (If absent, skip with a one-line note in the summary.)
 3. Run the git bootstrap.
-4. Print one consolidated summary across all three.
+4. Print one consolidated summary across all phases.

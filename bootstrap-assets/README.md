@@ -15,6 +15,7 @@ These are **vendored** here so the bootstrap works for any user without reading 
 | `scripts/reinit-project-with-lfs.sh`     | `.pka/reinit-project-with-lfs.sh`  |
 | `scripts/push-all.sh`                    | `.pka/push-all.sh`                 |
 | `scripts/build-repo-list.sh`             | `.pka/build-repo-list.sh`          |
+| `scripts/upgrade-roles.py`               | `.pka/upgrade-roles.py`            |
 
 ## Hard guarantees
 

@@ -75,13 +75,13 @@ Two additive capabilities sit on top of the base PKA setup. Both are user-trigge
 - **Obsidian coexistence** — when `knowledge/.obsidian/` exists, roles enhance files they touch with frontmatter, MOC entries, and `[[wikilinks]]`. Run `bootstrap obsidian` for a one-time mechanical retrofit (MOC stubs, person indexes, filename-pattern frontmatter — never reads file bodies, never overwrites).
 - **Hybrid monorepo bootstrap** — `bootstrap git` sets up a root `.git` coordinating independent child repos at `knowledge/` and each `projects/<name>/` via a `.meta` manifest, with LFS-configured templates. Roles then auto-commit per semantic unit in **child** repos (with `Co-Authored-By: Claude` trailer) while the root repo remains a human-review gate. Sessions end with a consolidated push.
 
-A user with no Obsidian vault and no hybrid monorepo sees identical behavior to before. See [`docs/specification_addendum.md`](../specification_addendum.md) (spec) and the seed references in `skills/pka-bootstrap/references/` (`obsidian-conventions.md`, `git-protocol.md`, `obsidian-bootstrap.md`, `git-bootstrap.md`).
+A user with no Obsidian vault and no hybrid monorepo sees identical behavior to before. See [`docs/specification-addendum.md`](docs/specification-addendum.md) (spec) and the seed references in `skills/pka-bootstrap/references/` (`obsidian-conventions.md`, `git-protocol.md`, `obsidian-bootstrap.md`, `git-bootstrap.md`).
 
 ## Documentation
 
 - [Tutorial](docs/TUTORIAL.md) — A practical walkthrough of the system after setup
 - Individual skill documentation in `skills/<name>/SKILL.md`
-- Addendum spec: [`specification_addendum.md`](../specification_addendum.md) — Obsidian coexistence, hybrid monorepo bootstrap, commit/push protocol
+- Addendum spec: [`specification-addendum.md`](docs/specification-addendum.md) — Obsidian coexistence, hybrid monorepo bootstrap, commit/push protocol
 - Test harness: [`tests/README.md`](tests/README.md) — shell tests for mechanical bootstrap operations; JSON evals for role-level behavior
 
 ## Repository Structure

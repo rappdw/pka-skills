@@ -24,6 +24,7 @@ Each suite exits 0 when all its tests pass. The runner aggregates and prints a f
 | Git bootstrap             | `test_git_bootstrap.sh`             | S12, S13, S14, S15, S16, S22             |
 | Obsidian bootstrap        | `test_obsidian_bootstrap.sh`        | S3, S4, S5, S6                           |
 | Commit/push protocol      | `test_commit_protocol.sh`           | S17, S18, S19, S20, S21                  |
+| Upgrade (v1.5 → v1.6)     | `test_upgrade.sh`                   | U1, U2, U3, U4, U5, U6, U7               |
 
 ## Why some scenarios are JSON-only
 
