@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.6.2 — 2026-07-03
+
+### Added — earshot capture directory awareness (closes #3)
+
+[earshot](https://github.com/rappdw/earshot) records meetings locally into capture directories (`YYYY-MM-DD_HHMMSS[_<title>]/`, marked by a `meeting.json` file) containing audio, diarized `transcript.json`/`transcript.md`, machine `notes.md`, and `narrative.md`. `pka-meetings` and `pka-librarian` now recognize them.
+
+- **Detection**: any directory containing `meeting.json` is an earshot capture — marker-based, not path-based. Added to the `pka-meetings` pre-flight scan alongside the existing `team-inbox/` transcript patterns. A capture with `transcript.md` and no reconciled note is a Mode 2 candidate, same as a detected Zoom transcript. New "Earshot Capture Directories" section in `references/transcript-patterns.md` documents contents, detection logic, and handling rules.
+- **Capture directories never move.** Routing files notes (`YYYY-MM-DD-<slug>.md`); capture directories stay where earshot wrote them. The `**Recording**: <capture-dir>` header pointer that thinkkit v0.8.0's take-notes adds is preserved verbatim through routing and rewrites — it stays valid precisely because the notes move and the directory doesn't. The transcript-disposition question (keep/archive/delete) never applies to capture artifacts. The librarian treats captures as off-limits: never routed, moved, renamed, or deleted (new guard in the routing decision tree and key constraints).
+- **Pipeline ordering**: reconcile (and narrate, if the user runs earshot's `/meeting-narrative`) **before** routing, while notes are still in `meeting-notes/` — meeting-narrative finds notes by globbing there.
+- **Indexing**: when a capture has a `narrative.md`, it is indexed into `search_fts` at its in-place path and referenced from the session-log entry.
+
+Cross-references: thinkkit v0.8.0 (earshot-aware take-notes / resolve-against-transcript, Meeting-Artifacts Contract); rappdw/earshot#1 (meeting-narrative honors the `**Recording**:` pointer).
+
+### Skills
+
+- `pka-meetings` v1.6.2 (earshot pre-flight detection; Mode 2 capture support; routing/indexing/session-log updates; 2 new eval scenarios)
+- `pka-librarian` v1.6.2 (capture directories off-limits in transcript awareness and routing decision tree)
+
 ## v1.6.1 — 2026-04-26
 
 ### Added — Pointer layer for MOC files (closet pattern)

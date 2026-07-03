@@ -19,6 +19,10 @@ Heuristics for routing files from `team-inbox/` into the knowledge structure. Us
 ```
 File arrives in team-inbox/
 │
+├─ Is it inside (or is it) an earshot capture directory? (dir contains meeting.json)
+│  └─ YES → Off-limits. Never move, rename, or delete. Flag unreconciled
+│           transcripts for pka-meetings; the capture stays in place.
+│
 ├─ Is it a transcript? (.vtt, .srt, *transcript*)
 │  └─ YES → Hold for pka-meetings. Do NOT route.
 │

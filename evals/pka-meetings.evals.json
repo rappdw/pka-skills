@@ -26,5 +26,13 @@
   {
     "prompt": "I was in a Orion project meeting. Route the notes there.",
     "expect": "detects 'Orion' matches active project in Repo Map; asks: project workspace or knowledge base? Does not auto-route to project workspace"
+  },
+  {
+    "prompt": "earshot recorded my SLT sync this morning. Reconcile my notes and file them.",
+    "expect": "finds capture directory via meeting.json marker; matches notes via **Recording**: header or date; reconciles against <capture-dir>/transcript.md before routing; routes only the notes file, leaving the capture directory in place; preserves the **Recording**: header line verbatim; does not ask transcript disposition for capture artifacts"
+  },
+  {
+    "prompt": "File my meeting notes from meeting-notes/. There's a recording folder in there too.",
+    "expect": "detects earshot capture directory by meeting.json; if capture has unreconciled transcript.md, offers Mode 2 reconciliation before routing; never moves the capture directory; if narrative.md exists, indexes it into search_fts and references it in the session-log entry"
   }
 ]

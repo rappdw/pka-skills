@@ -1,6 +1,48 @@
 # Transcript File Patterns
 
-Detection patterns for meeting transcript files in `team-inbox/`. Used by `pka-meetings` pre-flight and by the librarian's transcript awareness check.
+Detection patterns for meeting transcript files in `team-inbox/` and earshot capture directories. Used by `pka-meetings` pre-flight and by the librarian's transcript awareness check.
+
+---
+
+## Earshot Capture Directories
+
+[earshot](https://github.com/rappdw/earshot) records meetings locally and writes capture directories named `YYYY-MM-DD_HHMMSS[_<title>]/`. Detection is **marker-based, not path-based**: any directory containing a `meeting.json` file is an earshot capture, wherever it lives. In an earshot+PKA workspace they typically sit under `meeting-notes/` (earshot's output root is configurable).
+
+### Capture Directory Contents
+
+| File | Purpose |
+|------|---------|
+| `meeting.json` | Marker + metadata — presence of this file identifies the capture |
+| `*.wav` | Recorded audio |
+| `transcript.json` | Diarized transcript (machine format) |
+| `transcript.md` | Diarized transcript (readable — use this for reconciliation) |
+| `notes.md` | Machine notes |
+| `narrative.md` | Meeting narrative from earshot's meeting-narrative skill — richest artifact when present |
+
+### Detection Logic
+
+```python
+from pathlib import Path
+
+def find_earshot_captures(root: Path) -> list[Path]:
+    """Find earshot capture directories: any dir containing meeting.json."""
+    return sorted(p.parent for p in root.rglob("meeting.json"))
+
+def is_mode2_candidate(capture: Path) -> bool:
+    """A capture with a transcript but no reconciliation yet."""
+    return (capture / "transcript.md").exists()
+```
+
+A capture with `transcript.md` but no reconciled note is a Mode 2 candidate, same as a detected Zoom transcript. To check whether reconciliation happened, look for a routed/filed notes file whose `**Recording**:` header points at the capture directory (or a same-date session-log entry referencing it).
+
+### Handling Rules
+
+- **Never move, rename, or delete capture directories.** Routing files notes; captures stay where earshot wrote them.
+- Reconcile in place: pass `<capture-dir>/transcript.md` to `resolve-against-transcript`.
+- The transcript-disposition question (keep/archive/delete) does **not** apply to capture artifacts — they always stay in the capture directory.
+- Notes created by thinkkit v0.8.0+ take-notes carry a `**Recording**: <capture-dir>` header. Preserve that line verbatim through routing and rewrites — it stays valid because the capture directory never moves.
+- Matching notes to a capture: prefer the `**Recording**:` pointer; fall back to date match on the directory name (`YYYY-MM-DD_HHMMSS`), then title-keyword match on the optional `_<title>` suffix.
+- Capture directories must not be covered by `.pkaignore` patterns that would hide `meeting.json` from the scan.
 
 ---
 

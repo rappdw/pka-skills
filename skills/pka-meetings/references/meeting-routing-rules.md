@@ -100,6 +100,18 @@ If a file with the generated name already exists at the destination:
 
 ---
 
+## Earshot Capture Directories
+
+Routing moves **notes files only**. Earshot capture directories (any directory containing `meeting.json` — see `transcript-patterns.md`) are never moved, renamed, or deleted, regardless of autonomy level. The audio, transcripts, and `narrative.md` stay where earshot wrote them.
+
+When the notes being routed carry a `**Recording**: <capture-dir>` header pointer (thinkkit v0.8.0+ take-notes adds it):
+- Preserve the line verbatim — do not rewrite, relativize, or strip it
+- The pointer stays valid after routing precisely because the notes move and the capture directory does not
+
+Ordering constraint: reconciliation against `<capture-dir>/transcript.md` (and narrative generation, if requested) must complete **before** routing, while the notes are still in `meeting-notes/`.
+
+---
+
 ## Confirmation Behavior
 
 | Autonomy level | Routing behavior |

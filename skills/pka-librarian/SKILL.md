@@ -50,6 +50,8 @@ If transcripts found:
 
 This prevents transcripts from being buried in the knowledge base before reconciliation.
 
+**Earshot capture directories:** any directory containing a `meeting.json` marker is an earshot meeting capture (audio, transcripts, `narrative.md`; typically under `meeting-notes/`). These are **never routed, moved, renamed, or deleted** — not held-pending-decision like loose transcripts, simply off-limits. Filed notes point at them via `**Recording**:` headers that break if the directory moves. Unreconciled captures (containing `transcript.md`) are flagged for `pka-meetings`, in place.
+
 ## OCR Capability Detection
 
 Check in order before any OCR attempt:
@@ -112,6 +114,7 @@ Lint reports only — never auto-fixes. User acts on the report. See `references
 - Never delete from `team-inbox/` without explicit confirmation
 - Never auto-route to project workspaces
 - Never auto-route transcripts — hold for `pka-meetings`
+- Never move, rename, or delete earshot capture directories (marked by `meeting.json`)
 - OCR stored in sidecars only — originals never modified
 - Routing proposals shown before moves (except hands-off mode)
 - When `obsidian_present`, never modify a file's existing frontmatter fields — merge only. See `.pka/roles/_obsidian.md`.
