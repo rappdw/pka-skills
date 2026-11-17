@@ -213,8 +213,8 @@ class Timeline(support.ToolsCase):
         self.ok("timeline", "add", PRIYA_1ON1)
         self.ok("timeline", "strip")
         self.assertEqual(self.text(PRIYA), before)
-        robin = self.text("knowledge/personnel/robin-smith/index.md")
-        self.assertNotIn("Timeline", robin)
+        # Robin's index.md was a stub the tool created for the timeline: it goes too
+        self.assertFalse(self.path("knowledge/personnel/robin-smith/index.md").exists())
 
     def test_check_reports(self):
         self.ok("timeline", "add", JOINT)
@@ -277,3 +277,144 @@ class PostRouteTimeline(support.ToolsCase):
     def test_person_index_itself_is_not_timelined(self):
         result = self.json("post-route", PRIYA, "--no-commit")
         self.assertEqual({s["step"]: s["action"] for s in result["steps"]}["timeline"], "not-applicable")
+
+
+class ReviewFindings(support.ToolsCase):
+    """Regression tests for the review of the first Phase 4 build."""
+
+    def block(self, rel):
+        lines = self.text(rel).split("\n")
+        return lines[lines.index(OPEN) + 1: lines.index(CLOSE)]
+
+    def note(self, rel, date, attendees):
+        self.write(rel, meeting(date, attendees))
+        return rel
+
+    def test_prefix_rename_into_a_subfolder_rewrites_once(self):
+        rel = self.note("knowledge/leadership/2026-11-18-northwind.md", "2026-11-18", ["priya"])
+        self.ok("timeline", "add", rel)
+        os.makedirs(str(self.path("knowledge/leadership/archive")))
+        os.rename(str(self.path(rel)), str(self.path("knowledge/leadership/archive/2026-11-18-northwind.md")))
+        dry = self.json("pointers", "rename", "leadership", "leadership/archive", "--prefix", "--notes", "--dry-run")
+        self.assertIn(PRIYA, dry["timeline_changed"])
+        self.ok("pointers", "rename", "leadership", "leadership/archive", "--prefix", "--notes")
+        block = "\n".join(self.block(PRIYA))
+        self.assertIn("[[leadership/archive/2026-11-18-northwind|", block)
+        self.assertNotIn("archive/archive", block)
+        self.assertEqual(self.json("timeline", "check")["problems"], [])
+
+    def test_a_link_in_a_summary_does_not_mark_its_note_present(self):
+        first = self.note("knowledge/leadership/2026-11-12-orion-sync.md", "2026-11-12", ["priya"])
+        self.ok("timeline", "add", first, "--summary", "next: [[leadership/2026-11-20-orion-retro]]")
+        retro = self.note("knowledge/leadership/2026-11-20-orion-retro.md", "2026-11-20", ["priya"])
+        self.assertEqual(self.json("timeline", "add", retro)["people"][0]["action"], "added")
+        self.assertEqual(len(self.block(PRIYA)), 2)
+
+    def test_symlinked_person_folder_is_not_a_person(self):
+        outside = self.base / "outside-person"
+        outside.mkdir()
+        os.symlink(str(outside), str(self.path("knowledge/personnel/orion-north")))
+        self.assertNotIn("orion-north", [p["slug"] for p in self.json("people", "list")["people"]])
+        rel = self.note("knowledge/leadership/2026-11-21-sync.md", "2026-11-21", ["Orion North", "priya"])
+        result = self.json("timeline", "add", rel)
+        self.assertEqual([p["slug"] for p in result["people"]], ["priya"])
+        self.assertEqual(list(outside.iterdir()), [])
+
+    def test_timeline_heading_or_markers_inside_a_comment_are_ignored(self):
+        text = "# Priya\n\n<!--\nTemplate:\n## Timeline\n(the tool fills this)\n-->\n"
+        self.write(PRIYA, text)
+        self.ok("timeline", "add", PRIYA_1ON1)
+        after = self.text(PRIYA)
+        self.assertTrue(after.startswith(text))
+        self.assertTrue(after[len(text):].startswith("\n## Timeline\n" + OPEN))
+
+    def test_one_word_slug_shared_as_a_first_name_is_ambiguous(self):
+        os.makedirs(str(self.path("knowledge/personnel/priya-orion")))
+        result = self.json("people", "resolve", "Priya")["results"][0]
+        self.assertEqual((result["status"], result["candidates"]), ("ambiguous", ["priya", "priya-orion"]))
+        self.assertEqual(self.json("people", "resolve", "Priya Nair")["results"][0]["slug"], "priya")
+
+    def test_hash_in_a_filename_without_obsidian(self):
+        shutil.rmtree(str(self.path("knowledge/.obsidian")))
+        rel = self.note("knowledge/personnel/priya/2026-11-13 Q#4 review (Orion) ü.md", "2026-11-13", [])
+        self.ok("timeline", "add", rel)
+        self.assertEqual(self.json("timeline", "add", rel)["people"][0]["action"], "present")
+        self.assertEqual(len(self.block(PRIYA)), 1)
+        self.assertIn("(<2026-11-13 Q%234 review (Orion) ü.md>)", self.block(PRIYA)[0])
+        self.assertEqual(self.json("timeline", "check")["problems"], [])
+
+    def test_a_short_wikilink_the_user_wrote_counts(self):
+        rel = self.note("knowledge/leadership/2026-11-12-orion-sync.md", "2026-11-12", ["priya"])
+        self.write(PRIYA, self.text(PRIYA) + "\n## Timeline\n%s\n- 2026-11-12 · meeting · [[2026-11-12-orion-sync]] — my note\n%s\n" % (OPEN, CLOSE))
+        self.assertEqual(self.json("timeline", "add", rel)["people"][0]["action"], "present")
+        self.assertEqual(self.json("timeline", "check")["problems"], [])
+
+    def test_strip_keeps_a_heading_the_user_wrote(self):
+        text = "# P\n\n## Timeline\n\nI joined in 2019.\n- 2019 hired\n"
+        self.write(PRIYA, text)
+        self.ok("timeline", "add", PRIYA_1ON1)
+        self.ok("timeline", "strip")
+        self.assertEqual(self.text(PRIYA), text)
+
+    def test_leftover_line_from_an_earlier_person_run_is_committed(self):
+        self.git(self.ws, "init", "-q", "-b", "main")
+        self.write(".gitignore", "knowledge/\nprojects/\n")
+        self.write(".meta", '{"projects": {}}\n')
+        repo = self.init_child_repo("knowledge")
+        rel = "knowledge/AI/brief.md"
+        self.write(rel, "---\ndate: 2026-06-12\n---\n# Brief\n")
+        self.ok("post-route", rel, "--person", "robin-smith", "--no-commit")
+        self.ok("post-route", rel)
+        self.assertEqual(self.git(repo, "status", "--porcelain").strip(), "")
+
+    def test_list_on_a_non_utf8_index(self):
+        self.write(PRIYA, b"caf\xe9\n")
+        code, out, err = self.tool("timeline", "list", "priya", "--json")
+        self.assertEqual(code, 0, err)
+        self.assertIn("not valid UTF-8", out)
+
+    def test_alias_that_could_mean_someone_else_is_refused(self):
+        for slug in ("robin-jones", "sam-nair"):
+            os.makedirs(str(self.path("knowledge/personnel/" + slug)))
+        for alias in ("Robin", "Nair"):
+            code, _out, err = self.tool("people", "alias", "priya", alias)
+            self.assertEqual(code, 64, alias)
+            self.assertIn("could mean", err)
+
+    # low
+    def test_no_timeline_with_person_is_accepted(self):
+        self.ok("post-route", "knowledge/AI/ai-adoption-research.md", "--no-timeline", "--person", "nobody")
+
+    def test_truncation_keeps_characters_whole(self):
+        from pka_tools.timeline import SUMMARY_MAX, clean_summary
+        accent = "x" * (SUMMARY_MAX - 2) + "é" + "tail"
+        self.assertTrue(clean_summary(accent).endswith("x…"))
+        family = "x" * (SUMMARY_MAX - 3) + "\U0001F468‍\U0001F469‍\U0001F467" + "tail"
+        self.assertTrue(clean_summary(family).endswith("x…"))
+
+    def test_read_only_index_is_reported_as_skipped(self):
+        if hasattr(os, "geteuid") and os.geteuid() == 0:
+            self.skipTest("root ignores permissions")
+        os.chmod(str(self.path(PRIYA)), 0o444)
+        result = self.json("post-route", PRIYA_1ON1)
+        self.assertEqual({s["step"]: s["action"] for s in result["steps"]}["timeline"], "skipped")
+
+    def test_decomposed_unicode_slug_resolves(self):
+        import unicodedata
+        nfd = unicodedata.normalize("NFD", "zoë-åkesson")
+        self.assertEqual(self.json("people", "resolve", nfd)["results"][0]["slug"], "zoë-åkesson")
+        self.assertEqual(self.json("people", "resolve", "[[personnel/%s/index]]" % nfd)["results"][0]["status"], "high")
+
+    def test_people_home_on_the_vault_root_is_refused(self):
+        self.write("CLAUDE.md", self.text("CLAUDE.md").replace(
+            "| `knowledge/personnel/` | Notes per person | by person | Active | active | High | people-home |",
+            "| `knowledge/personnel/` | Notes per person | by person | Active | active | High | |\n"
+            "| `knowledge/` | Everything | by topic | Active | active | High | people-home |"))
+        code, _out, err = self.tool("people", "list")
+        self.assertEqual(code, 3)
+        self.assertIn("vault root", err)
+        result = self.json("post-route", "knowledge/AI/ai-adoption-research.md")
+        steps = {s["step"]: s for s in result["steps"]}
+        self.assertEqual(steps["timeline"]["action"], "not-applicable")
+        self.assertFalse(self.path("knowledge/leadership/index.md").exists())
+

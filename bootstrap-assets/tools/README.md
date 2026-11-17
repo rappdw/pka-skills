@@ -96,11 +96,13 @@ Every command that writes to a user's file follows these. The tests in `tests/to
 
 ## People and timelines
 
-- A person is a subfolder of the people home (Repo Map tag `people-home`; fallback `knowledge/personnel/`). `index.md` may give `name` and `aliases`.
-- `people resolve` answers **high** only for an exact slug, name or alias (case, accents, punctuation, `@` and titles ignored), the slug's words in either order, a link to the person's folder, or a first name only one person has. A last name alone, or a name that fits two people, is **ambiguous**. Nothing is guessed: nicknames become aliases when the user says so.
-- A timeline is a block between `<!-- pka:timeline v1 … -->` and `<!-- /pka:timeline -->` under `## Timeline` in the person's `index.md`. Lines are `- <date> · <kind> · <link>[ — <summary>]`, newest first. A note is on a timeline when any link in the block points at it, so adding is idempotent; an existing line is never changed except to follow a renamed note. A missing `index.md` is created as a stub, only inside an existing person folder.
+- A person is a subfolder of the people home (Repo Map tag `people-home`; fallback `knowledge/personnel/`). `index.md` may give `name` and `aliases`. A symbolically linked folder is not a person (its notes live elsewhere). A `people-home` tag on the vault root itself is refused.
+- `people resolve` answers **high** only for an exact slug, name or alias (case, accents, punctuation, `@` and titles ignored), the slug's words in either order, a link to the person's folder, or a first name only one person has. A last name alone, or a name that fits two people, is **ambiguous** — including a one-word slug that is also someone else's first name (`priya` and `priya-orion`). Nothing is guessed: nicknames become aliases when the user says so, and `people alias` refuses a name that already means, or could mean, someone else.
+- A timeline is a block between `<!-- pka:timeline v1 … -->` and `<!-- /pka:timeline -->` under `## Timeline` in the person's `index.md`. Lines are `- <date> · <kind> · <link>[ — <summary>]`, newest first. A note is on a timeline when a line's own link points at it (links inside summaries do not count; a short `[[name]]` that can only mean the note does), so adding is idempotent; an existing line is never changed except to follow a renamed note. A missing `index.md` is created as a stub, only inside an existing person folder.
 - Evidence: the note is in the person's folder (T1); or its `person` / `attendees` frontmatter, an `## Attendees` link, or a filename containing the slug names them with high confidence (T2). Body mentions do not count. More than 8 resolved attendees: none are added unless `--include-large`. `no-backref: true` opts a note out.
-- Summaries are at most 140 characters; the role writes them from the note.
+- Summaries are at most 140 characters (cut without splitting a character); the role writes them from the note.
+- Without Obsidian the links are relative markdown links; `%` and `#` in a filename are percent-encoded.
+- `timeline strip` removes the blocks, the `## Timeline` heading when nothing else is under it, and an `index.md` that was only the stub the tool created. Text the user typed inside a block goes with it. Whitespace next to the block may differ by a line from before the first `add`.
 
 ## Git rules
 

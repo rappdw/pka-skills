@@ -43,6 +43,10 @@ def display_name(slug: str) -> str:
     return " ".join(words) or slug
 
 
+def nfc(text: str) -> str:
+    return unicodedata.normalize("NFC", text)
+
+
 def words_of(text: str) -> List[str]:
     """Lower-case words, accents folded for comparison, honorifics and
     `@` removed."""
@@ -93,6 +97,12 @@ class Registry:
         self.ws = ws
         self.home = ws.people_home()
         self.people: Dict[str, Person] = {}
+        self._by_nfc: Dict[str, Person] = {}
+        self.problem: Optional[str] = None
+        if self.home is not None and self.home in (ws.vault, ws.root):
+            self.problem = ("the folder tagged people-home is the vault root; tag the folder that holds "
+                            "one subfolder per person instead")
+            self.home = None
         if self.home is None or not self.home.is_dir():
             return
         try:
@@ -100,7 +110,8 @@ class Registry:
         except OSError:
             children = []
         for entry in children:
-            if entry.name.startswith(".") or not entry.is_dir():
+            # A linked folder's notes live elsewhere: never a person here.
+            if entry.name.startswith(".") or entry.is_symlink() or not entry.is_dir(follow_symlinks=False):
                 continue
             folder = Path(entry.path)
             if (folder / CAPTURE_MARKER).exists() or ws.ignore.match(ws.rel(folder), True):
@@ -109,7 +120,13 @@ class Registry:
                 entry.name.encode("utf-8")
             except UnicodeEncodeError:
                 continue
-            self.people[entry.name] = Person(entry.name, folder).load()
+            person = Person(entry.name, folder).load()
+            self.people[entry.name] = person
+            self._by_nfc[nfc(entry.name)] = person
+
+    def get(self, slug: str) -> Optional[Person]:
+        """A person by slug, however the slug's accents are encoded."""
+        return self.people.get(slug) or self._by_nfc.get(nfc(slug))
 
     # ---------------------------------------------------------------- lookup
     def person_of_path(self, path: Path) -> Optional[Person]:
@@ -121,7 +138,7 @@ class Registry:
         except ValueError:
             return None
         first = rel.parts[0] if rel.parts else ""
-        return self.people.get(first) if len(rel.parts) > 1 or path.is_dir() else None
+        return self.get(first) if len(rel.parts) > 1 or path.is_dir() else None
 
     def _from_link(self, text: str) -> Optional[Person]:
         """A person named by a link to their folder or index.md: a wikilink
@@ -144,14 +161,14 @@ class Registry:
         prefixes = {home_rel}
         if vault_rel and home_rel.startswith(vault_rel + "/"):
             prefixes.add(home_rel[len(vault_rel) + 1:])
-        cleaned = target
+        cleaned = nfc(target)
         while cleaned.startswith("./") or cleaned.startswith("../"):
             cleaned = cleaned[2:] if cleaned.startswith("./") else cleaned[3:]
-        for prefix in sorted(prefixes, key=len, reverse=True):
+        for prefix in sorted((nfc(p) for p in prefixes), key=len, reverse=True):
             if cleaned == prefix or cleaned.startswith(prefix + "/"):
                 rest = cleaned[len(prefix):].strip("/").split("/")
-                if rest and rest[0] in self.people:
-                    return self.people[rest[0]]
+                if rest and self.get(rest[0]) is not None:
+                    return self.get(rest[0])
         return None
 
     def resolve(self, text: str) -> dict:
@@ -184,12 +201,8 @@ class Registry:
             forms |= {"-".join(words_of(alias)) for alias in person.aliases}
             if joined in forms:
                 exact.append(person.slug)
-        if len(exact) == 1:
-            result.update(status="high", slug=exact[0], reason="slug, name or alias")
-            return result
-        if len(exact) > 1:
-            result.update(status="ambiguous", candidates=sorted(exact), reason="matches more than one person")
-            return result
+        first: List[str] = []
+        last: List[str] = []
         if len(words) == 1:
             word = words[0]
             first = [p.slug for p in self.people.values()
@@ -197,6 +210,16 @@ class Registry:
             last = [p.slug for p in self.people.values()
                     if (len(words_of(p.name)) > 1 and words_of(p.name)[-1] == word)
                     or (len(words_of(p.slug)) > 1 and words_of(p.slug)[-1] == word)]
+        if exact:
+            # One word that is exactly someone (`priya`) but also another
+            # person's first or last name (`priya-orion`) fits two people.
+            everyone = sorted(set(exact) | set(first) | set(last))
+            if len(everyone) == 1:
+                result.update(status="high", slug=exact[0], reason="slug, name or alias")
+                return result
+            result.update(status="ambiguous", candidates=everyone, reason="matches more than one person")
+            return result
+        if len(words) == 1:
             if len(first) == 1 and not [s for s in last if s != first[0]]:
                 result.update(status="high", slug=first[0], reason="a first name only one person has")
                 return result
@@ -244,6 +267,8 @@ def registry(ws: Workspace) -> Registry:
 
 
 def require_home(reg: Registry) -> None:
+    if reg.problem:
+        raise ToolError(reg.problem, EXIT_NOT_READY)
     if reg.home is None:
         raise ToolError(
             "no people folder: tag one Repo Map folder `people-home` (or create knowledge/personnel/)",
@@ -256,16 +281,19 @@ def add_alias(ws: Workspace, slug: str, alias: str, dry_run: bool = False) -> di
     maiden name, an initialism)."""
     reg = registry(ws)
     require_home(reg)
-    person = reg.people.get(slug)
+    person = reg.get(slug)
     if person is None:
         raise ToolError("no person folder %r under %s" % (slug, ws.rel(reg.home)), EXIT_USAGE)
+    slug = person.slug
     alias = " ".join(alias.split())
     if not words_of(alias):
         raise ToolError("the alias needs letters or digits", EXIT_USAGE)
     clash = reg.resolve(alias)
-    if clash["status"] == "high" and clash["slug"] != slug:
-        raise ToolError("%r already means %s (%s); not adding it to %s" % (alias, clash["slug"], clash["reason"], slug),
-                        EXIT_USAGE)
+    others = [s for s in ([clash["slug"]] if clash["slug"] else []) + clash["candidates"] if s != slug]
+    if clash["status"] in ("high", "ambiguous") and others:
+        raise ToolError("%r already %s %s (%s); as an alias of %s it would take their notes. Not added."
+                        % (alias, "means" if clash["status"] == "high" else "could mean", ", ".join(others),
+                           clash["reason"], slug), EXIT_USAGE)
     result = {"slug": slug, "alias": alias, "action": "noop", "index": ws.rel(person.index), "problem": None,
               "dry_run": dry_run}
     created = reg.ensure_index(person, dry_run)
