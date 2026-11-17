@@ -7,7 +7,7 @@ Use this template when generating the root `CLAUDE.md` for a PKA system. Fill al
 ## Template
 
 ```markdown
-<!-- PKA v1.2 | vendor-agnostic -->
+<!-- PKA v1.6 | vendor-agnostic -->
 <!-- Works as: Claude Code CLAUDE.md | Gemini system prompt | local LLM context -->
 <!-- Repo Map maintained by orchestrator — do not hand-edit -->
 
@@ -45,7 +45,11 @@ Completed projects archive to: `{{archive_destination}}`
 
 ## Session Start Protocol
 1. Read last 20 entries in `.pka/session-log.md`
-2. Scan `team-inbox/` for new files — route general files; flag transcripts
+2. Scan `team-inbox/` for new files — route general files; flag transcripts.
+   Also look for earshot capture directories (any directory holding a
+   `meeting.json`, usually under `meeting-notes/`): a capture with a
+   `transcript.md` and no reconciled note is flagged for `pka-meetings`.
+   Capture directories are never moved or routed.
 3. Top-level folder diff against Repo Map — flag new folders
 4. Check project workspaces with no activity in 60+ days — surface suggestion
 5. Greet {{name}} with: open threads + new inbox items + lifecycle flags

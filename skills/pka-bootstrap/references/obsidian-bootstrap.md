@@ -128,11 +128,14 @@ If `hybrid_monorepo_present` is true:
 
 ```
 cd knowledge
-git add -A
+git add -- <every file Steps 1–5 created or modified>
 git commit -m "Bootstrap (obsidian): N MOCs, M person indexes, K frontmatter additions" \
           -m "" \
-          -m "Co-Authored-By: Claude <noreply@anthropic.com>"
+          -m "Co-Authored-By: Claude <noreply@anthropic.com>" \
+          -- <the same paths>
 ```
+
+Stage and commit by path, not with `git add -A`: the vault may hold notes the user is in the middle of editing, and those must not be swept into the bootstrap commit. Keep the list of files as Steps 1–5 write them.
 
 The commit lives in the `knowledge/` child repo. The root repo is untouched.
 

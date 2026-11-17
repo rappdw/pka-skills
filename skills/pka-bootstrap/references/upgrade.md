@@ -15,7 +15,7 @@ Procedure for the `upgrade` bootstrap target. Invoked when a user with an alread
 
 ## What it does
 
-1. **Backup `.pka/roles/`** to `.pka/upgrade-backups/<timestamp>/roles/`.
+1. **Backup `.pka/roles/`** to `.pka/upgrade-backups/<timestamp>/roles/` (a second run in the same second gets `<timestamp>-2`). The backup directory carries its own `.gitignore`, so backups never show up as changes in the root repo.
 2. **Seed shared references** if absent:
    - `.pka/roles/_obsidian.md` ← `references/obsidian-conventions.md`
    - `.pka/roles/_git-protocol.md` ← `references/git-protocol.md`
@@ -23,6 +23,8 @@ Procedure for the `upgrade` bootstrap target. Invoked when a user with an alread
 3. **Structured-merge new H2 sections** into existing role files (orchestrator, librarian, researcher).
    - Inserts BEFORE the first `## Output Conventions` or `## Invocation` heading found.
    - Only adds sections whose H2 heading text is not already present.
+   - Headings inside fenced code blocks (``` or ~~~) are examples, not structure: they are neither counted as "already present" nor used as the insertion point.
+   - Keeps each file's line endings (a CRLF file stays CRLF).
    - Never modifies the body of existing sections.
 4. **Print a summary** listing:
    - Backup path
@@ -64,14 +66,16 @@ Note: a fresh backup IS created on every non-dry-run invocation, even if no role
 
 - **`.pka/roles/` doesn't exist**: refuse with a message pointing to base bootstrap. Exit 1.
 - **A role file is missing** (e.g., user deleted `librarian.md`): report it as "skipped — file not found" in the summary; continue with the others. Do not attempt to re-create from a seed (that's a different operation).
-- **Existing role file has no anchor section** (`## Output Conventions` or `## Invocation`): the new sections are appended at the end of the file. The summary notes this.
-- **Filesystem errors** (permission, disk full): surface the error verbatim, abort, leave the backup intact. Partial role files are not written — Python's `Path.write_text` is atomic on most filesystems but the backup is the safety net regardless.
+- **Existing role file has no anchor section** (`## Output Conventions` or `## Invocation`): the new sections are appended at the end of the file, and the summary prints a `WARNING` naming each such file. Relay that warning to the user so they can check the placement.
+- **Filesystem errors** (permission, disk full): surface the error verbatim, abort, leave the backup intact. Each role file is written to a temporary name and renamed into place, so a half-written role file cannot be left behind.
 
 ## Vendoring
 
 `upgrade-roles.py` is installed to `.pka/upgrade-roles.py` as part of:
 - Base bootstrap (so future workspaces have it ready)
 - `bootstrap upgrade` itself (so users on v1.5 who upgrade the plugin can run upgrade without first re-running base bootstrap)
+
+**Always refresh before running.** If `.pka/upgrade-roles.py` exists and differs from the plugin's copy (`cmp -s`), replace it first. The section list is hardcoded in the helper, so an old copy reports "already present" for everything it knows and never adds what later versions introduced. The same goes for the shell helpers in `.pka/`: replace any that differ from the plugin's copies and list them as "updated" in the summary.
 
 It's a Python file (the only Python in the asset bundle), kept in sync with the seeds it uses. When the seeds change, the embedded copies in this script must change too — that's the trade-off for not depending on the plugin's reference docs at runtime (the script needs to work even if the plugin's source isn't accessible from the user's workspace).
 

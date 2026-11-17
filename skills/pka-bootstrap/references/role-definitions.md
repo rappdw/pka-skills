@@ -136,7 +136,7 @@ In addition to the existing session log entry:
 1. If `hybrid_monorepo_present`, run a consolidated push across child repos with unpushed commits. Implementation: `meta git push` if `meta` is on PATH; otherwise iterate `.meta` entries and run `git push` in each child directory (helper: `.pka/push-all.sh`).
 2. If any child repo's push fails (auth, network, conflict, LFS upload disconnect): record the failure in the session summary with the repo path and error. Do not retry destructively. Session close still proceeds.
 3. **Surface, do not commit, root-repo changes.** If `git status` in the root shows staged or unstaged changes, list them in the session summary and tell the user they're awaiting human review. Never auto-commit root.
-4. Skipped pushes (no origin configured, placeholder `.meta` URL, nothing to push) are reported as **skipped**, not failures.
+4. Skipped pushes (the child repo has no `origin` remote, or there is nothing to push) are reported as **skipped**, not failures.
 
 ## Mid-session push handling
 

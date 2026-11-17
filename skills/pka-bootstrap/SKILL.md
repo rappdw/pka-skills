@@ -285,14 +285,22 @@ Triggered by: "transition `<folder>` to knowledge"
 2. Read project `CLAUDE.md` + top-level markdown → generate `project-summary.md` draft using `references/project-summary-template.md` → save to `owner-inbox/<folder>-summary-draft.md`
 3. **Mandatory pause** for user review and approval regardless of autonomy level
 4. Show artifact cleanup list (`.pkaignore` matches) → confirm deletion
-5. Move: `mv <project>/ <archive-destination>/<folder>/`; copy approved summary
+5. Move — the method depends on whether git child repos are involved:
+   - **Child repos present** (the workspace has `.meta` and a root `.git`, **or** the project folder contains `.git`): do **not** `mv`. A plain move would carry the project's whole repository, `.git` included, into the `knowledge/` repo. Run the helper instead:
+     ```
+     .pka/graduate.sh <folder> [<archive destination relative to knowledge/>]
+     ```
+     It sets the project's repository aside under `.pka/graduate-backups/` (full history, nothing deleted), moves the content, rewrites pointer-row links, commits in `knowledge/` by path, and stages the `.meta` change in the root for the user to commit. If it exits non-zero it has already rolled everything back: report its error and stop the workflow here. The helper only handles `projects/<folder>` → `knowledge/[<subdir>/]<folder>`; if the project lives elsewhere or the archive destination is outside `knowledge/`, stop and ask the user how to proceed rather than falling back to `mv`.
+   - **No git involved**: `mv <project>/ <archive-destination>/<folder>/`.
+
+   Then copy the approved summary into the moved directory as `project-summary.md`. With child repos present, commit that one file by path in `knowledge/` (`Orchestrator: Add project summary for <folder>` plus the trailer).
 6. Update Repo Map: status → archived, Priority → Reference
 7. Librarian runs content index pass on moved directory
 8. Append to `session-log.md`
 
 ### Reverse Transition
 
-1. Move back from archive destination to original location
+1. Move back from archive destination to original location. If the project was graduated with `graduate.sh`, its original repository is still at `.pka/graduate-backups/<folder>-<timestamp>.git`: after moving the content back, tell the user it can be restored as the project's `.git` (`mv <backup> projects/<folder>/.git`), commit the removal in `knowledge/` by path, and run `.pka/build-repo-list.sh` to put the project back in `.meta`. Ask before doing any of these.
 2. Update Repo Map: status → active
 3. Remove from full-text index; add back to shallow index
 4. `project-summary.md` stays in project directory as context
@@ -361,10 +369,11 @@ Full step-by-step algorithm in `references/git-bootstrap.md`. Summary:
    - `gitignore-template` → `.pka/gitignore-template`
 2. **Install `.pka/` helper scripts** from `bootstrap-assets/scripts/`:
    - `graduate.sh`, `init_project_repos.sh`, `reinit-project-with-lfs.sh`, `push-all.sh`, `build-repo-list.sh`
+   - Copy when absent; **replace when the existing copy differs from the plugin's** (these are plugin-owned helpers, and a stale copy keeps fixed bugs alive). Report replaced scripts as "updated".
    - Set executable bit on each.
 3. **Seed `.pka/roles/_git-protocol.md`** from `references/git-protocol.md` if absent.
-4. **Root `.gitignore`**: create or augment to exclude child-repo content (`knowledge/`, `projects/`), inboxes (`owner-inbox/`, `team-inbox/`), local artifacts (`.pka/knowledge.db*`, `.pka/*-log.txt`), and secrets (`.gitea-pat*`, `*.token`, `*.secret`). Merge — never replace.
-5. **Root `.git`**: initialize if absent. Stage files. **Do not commit.** Root commits are the user's review gate.
+4. **Root `.gitignore`**: create or augment to exclude child-repo content (`knowledge/`, `projects/`), inboxes (`owner-inbox/`, `team-inbox/`), meeting captures (`meeting-notes/`), local artifacts (`.pka/knowledge.db*`, `.pka/*-log.txt`, `.pka/*-backups/`), and secrets (`.gitea-pat*`, `*.token`, `*.secret`). Merge — never replace.
+5. **Root `.git`**: initialize if absent. Stage the scaffolding **by path** (never `git add -A` at the root). **Do not commit.** Root commits are the user's review gate.
 6. **`knowledge/` child repo**: if `knowledge/.git` is absent, initialize with `init_project_repos.sh`'s pattern (templates → `git init -b main` → `git lfs install --local` → initial commit `Bootstrap (git): Initial hybrid monorepo setup`).
 7. **Each `projects/*/`**: same as `knowledge/` for any directory lacking `.git`. Projects with `.git` but no LFS are **flagged** in the summary as reinit candidates — never modified silently.
 8. **`.meta` generation**: walk `knowledge/` and `projects/*/`, read each child's origin remote (or empty if none), write `.meta` JSON at root. Use `build-repo-list.sh` after the init pass.
@@ -374,7 +383,8 @@ Full step-by-step algorithm in `references/git-bootstrap.md`. Summary:
 - **No remotes are created or set.** Bootstrap never calls `git remote add origin`, never makes network requests.
 - **No pushes.** Bootstrap never calls `git push`.
 - **Root never auto-commits.** Stage scaffolding, surface in summary.
-- **Existing child repos with `.git` but no LFS are NOT reinitialized.** They are flagged with a pointer to `reinit-project-with-lfs.sh` (which is a destructive opt-in operation).
+- **Existing child repos with `.git` but no LFS are NOT reinitialized.** They are flagged with a pointer to `reinit-project-with-lfs.sh` (an opt-in operation that replaces the history and keeps the old repository as a backup).
+- **Run the helpers; do not re-implement them.** `init_project_repos.sh`, `reinit-project-with-lfs.sh` and `graduate.sh` check every step and undo their own partial work on failure. Report a non-zero exit and the script's "Failed" list to the user as they are — never as success.
 
 ### Output summary
 
@@ -409,7 +419,7 @@ If `.pka/roles/` is absent, refuse with a message pointing to base bootstrap.
 
 Full step-by-step algorithm in `references/upgrade.md`. Summary:
 
-1. **Vendor `.pka/upgrade-roles.py`** from `bootstrap-assets/scripts/upgrade-roles.py` if absent. (This is a Python helper that does the deterministic merge — no LLM-driven editing of user role files.)
+1. **Vendor `.pka/upgrade-roles.py`** from `bootstrap-assets/scripts/upgrade-roles.py`: copy it when absent, and **replace it when the existing copy differs from the plugin's**. An old copy only knows the sections of its own version, reports everything as present, and silently skips whatever was added since. Do the same for any helper scripts already in `.pka/` (`graduate.sh`, `init_project_repos.sh`, `reinit-project-with-lfs.sh`, `push-all.sh`, `build-repo-list.sh`): replace the ones that differ and list them as "updated". (The Python helper does the deterministic merge — no LLM-driven editing of user role files.)
 2. **Run the helper** with `python3 .pka/upgrade-roles.py --workspace <root>`. The helper:
    - Backs up `.pka/roles/` to `.pka/upgrade-backups/<timestamp>/`
    - Seeds `.pka/roles/_obsidian.md` and `.pka/roles/_git-protocol.md` if absent

@@ -8,11 +8,16 @@ After a routing operation **completes successfully** and lands the file inside a
 
 ```
 cd <child-repo-path>
-git add -A
+git add -- <routed-file> <each side-effect file this routing touched>
 git commit -m "Librarian: Route <filename> to <destination-folder>/" \
           -m "" \
-          -m "Co-Authored-By: Claude <noreply@anthropic.com>"
+          -m "Co-Authored-By: Claude <noreply@anthropic.com>" \
+          -- <the same paths>
 ```
+
+**Stage and commit by path. Never `git add -A`, `git add .` or `git commit -a`.** The child repo is also the user's working area (and, with Obsidian, a vault being edited live), so at any moment it can hold half-written notes and changes the user staged themselves. Naming the paths on both `git add` and `git commit` puts exactly this routing's files in the commit and leaves everything else as it was — modified files stay modified, the user's staged files stay staged.
+
+The paths are the routed file plus every file the routing wrote as a side effect: the `_MOC.md` files that gained a link or pointer row, the person `index.md` files that gained a back-link, and so on. Keep the list as you go.
 
 One commit per semantic unit. The unit is "this routing operation, including its Obsidian side-effects (frontmatter merge, MOC append, person backlink)". All side-effects ride along in the same commit.
 
@@ -44,7 +49,7 @@ Some routing operations touch root-tracked files:
 
 A semantic unit that produces no actual change must produce no commit. Specifically:
 
-- If routing a file that's already at its destination (no-op move), and the Obsidian side-effects also produce no diff: **no commit**. Use `git diff --cached --quiet` after `git add -A` to detect this.
+- If routing a file that's already at its destination (no-op move), and the Obsidian side-effects also produce no diff: **no commit**. Use `git diff --cached --quiet -- <paths>` after staging those paths to detect this.
 - If the user re-runs `process my team-inbox` on an already-processed inbox: each routed file produces zero-diff routings, hence zero commits.
 
 ## Failure handling
@@ -52,7 +57,7 @@ A semantic unit that produces no actual change must produce no commit. Specifica
 | Failure                                       | Behavior                                                                |
 |-----------------------------------------------|-------------------------------------------------------------------------|
 | `git commit` returns non-zero (hook failure, conflict, etc.) | Surface to the user. Leave files staged. Do not retry destructively. Continue with the next routing — but flag the failed commit in the report. |
-| Working tree is dirty before routing (uncommitted user changes) | Proceed; the user's pre-existing changes are not entangled with our commit because we `git add` only the files our routing touched. **However**: if `git add -A` would catch unrelated user changes, narrow the add to specific paths instead. |
+| Working tree is dirty before routing (uncommitted or staged user changes) | Proceed. The user's changes are not entangled with our commit because both `git add` and `git commit` name only the paths this routing touched. If one of those paths already had uncommitted user edits (for example a `_MOC.md` the user was editing), their edits go into the commit with ours — say so in the routing report. |
 | Pre-commit hook in the child repo modifies files | Re-stage and commit. Hook-modified content is a legitimate part of the unit. |
 | LFS upload pending (commit succeeds locally but objects aren't pushed yet) | This is fine for commit. Push happens at session end (or on user "push now"). |
 

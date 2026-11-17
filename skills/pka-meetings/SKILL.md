@@ -46,8 +46,8 @@ Both thinkkit and pka-skills should be installed. `pka-meetings` checks for thin
 ## Pre-Flight
 
 1. Load `.pkaignore` and Repo Map from `CLAUDE.md`
-2. Check for `take-notes`: `ls .claude/skills/take-notes/ 2>/dev/null`
-3. Check for `resolve-against-transcript`: `ls .claude/skills/resolve-against-transcript/ 2>/dev/null`
+2. Check for `take-notes`: look in this session's list of available skills for `take-notes` or `thinkkit:take-notes`. Plugin-installed skills carry the plugin prefix and are **not** copied under `.claude/skills/`, so the skill list is the source of truth. Only if the list cannot be consulted, fall back to the filesystem: `ls .claude/skills/take-notes/ ~/.claude/skills/take-notes/ 2>/dev/null`.
+3. Check for `resolve-against-transcript` the same way (`resolve-against-transcript` or `thinkkit:resolve-against-transcript`).
 4. Check for `.pka/knowledge.db`
 5. Scan `team-inbox/` for transcript files (patterns in `references/transcript-patterns.md`)
 6. Scan for earshot capture directories — any directory containing a `meeting.json` marker file (typically under `meeting-notes/`, but the check is marker-based, not path-based; see `references/transcript-patterns.md`). A capture containing `transcript.md` with no reconciled note yet is a Mode 2 candidate, same as a detected Zoom transcript.
