@@ -2,6 +2,8 @@
 
 Applies **only when** `obsidian_present` is true and the routing destination is **inside** `knowledge/`. Run after the file has been moved to its destination.
 
+**Steps 2, 3 and 4 are carried out by `.pka/bin/pka-tools post-route <file>`** (see the librarian's step 5). They are described here so you know what it does and what to expect in its output; do not perform them by hand. Steps 1, 5 and 6 are yours.
+
 Conventions (frontmatter schemas, wikilink rules, MOC structure, malformed-frontmatter handling) live in `.pka/roles/_obsidian.md`. This document is the **operational checklist**; the conventions document is the **contract**. When they disagree, the conventions document wins.
 
 ## Per-route checklist
@@ -14,28 +16,37 @@ For each file routed into `knowledge/`:
 - Preserve spaces — Obsidian handles them; existing content uses them.
 - Do not rename a file that's already at its destination unless the user asks.
 
-### 2. Frontmatter merge
+### 2. Frontmatter merge (done by `post-route`)
 
-If the destination filename or folder matches a known type (meeting, 1on1, brief, daily, person), ensure schema fields are present in the frontmatter:
+If the note's name and folder match a known kind, the schema fields are added when missing. Which folder plays which role comes from the Repo Map tags:
 
-| Type    | Trigger                                                       | Required fields                                                                |
-|---------|---------------------------------------------------------------|--------------------------------------------------------------------------------|
-| 1on1    | path matches `personnel/<name>/YYYY-MM-DD-1on1.md`             | `type: 1on1`, `date`, `person: "[[personnel/<name>/index]]"`, `tags: [1on1]`   |
-| meeting | path matches `leadership/YYYY-MM-DD-*.md` or `ArchCouncil/YYYY-MM-DD-*.md` | `type: meeting`, `date`, `topic` (filename slug), `attendees: []`, `tags: [meeting, <domain>]` |
-| brief   | created by @researcher, see `obsidian-routing` rules above     | `type: brief`, `date`, `related: []`, `tags: [research, <domain>]`              |
-| daily   | path matches `lab-notebook/YYYY-MM-DD.md`                      | `date`, `tags: [daily]`                                                         |
-| person  | path matches `personnel/<name>/index.md`                       | `type: person`, `name`, `role: ""`, `org: ""`, `tags: [person]`                 |
+| Repo Map tag | Folder role | Fallback when no folder carries the tag |
+|---|---|---|
+| `people-home` | one subfolder per person | `knowledge/personnel/` |
+| `meeting-home` | dated meeting notes (several folders may carry it) | `knowledge/leadership/`, `knowledge/ArchCouncil/` |
+| `daily-home` | daily notes | `knowledge/lab-notebook/` |
 
-Merge rules:
-- If frontmatter is **absent**: create it. Required fields with no high-confidence value get `""` or `[]`.
-- If frontmatter is **present and parses as YAML**: add missing required fields; **leave existing fields untouched**, even if they look incomplete.
-- If frontmatter is **present but malformed**: **skip the file**. Add it to the routing report's `malformed_frontmatter` list. Do not attempt repair.
+| Kind | Trigger | Fields written when missing |
+|---|---|---|
+| 1on1 | `<people-home>/<person>/YYYY-MM-DD-<1-1 marker>[-<anything>].md` | `type: 1on1`, `date`, `person: "[[<people-home>/<person>/index]]"`, `tags: [1on1, <domain>]` |
+| meeting | `<meeting-home>/YYYY-MM-DD-<topic>.md` | `type: meeting`, `date`, `topic` (the rest of the filename), `attendees: []`, `tags: [meeting, <domain>]` |
+| daily | `<daily-home>/YYYY-MM-DD.md` | `date`, `tags: [daily, <domain>]` |
+| any other note in a top-level folder | — | `tags: [<domain>]` |
+| brief | written by @researcher | the researcher writes these itself (`type: brief`, `date`, `related`, `tags: [research, <domain>]`); `post-route` adds only the domain tag if missing |
+| person | `<people-home>/<person>/index.md` | created by `bootstrap obsidian` only |
 
-Filename-derived values are safe (date, person from `personnel/<name>/`, domain tag from folder). Body-derived values (attendees beyond filename, topic beyond filename slug) require care — leave empty when not high-confidence.
+**1-1 filenames.** Existing notes use several forms and are never renamed. The 1-1 marker is any of `1on1`, `1-1` or `1-on-1`, in any case, optionally followed by more of the name: `2026-03-31-1on1.md`, `2026-03-31-1-1.md`, `2026-03-31-1-1-priya.md` and `2026-03-31-1-on-1-priya-roadmap.md` are all 1-1 notes. **New** 1-1 notes are written as `YYYY-MM-DD-1-1-<person-slug>.md` (`pka-meetings` does this), because a name in the filename keeps the note findable outside its folder.
 
-### 3. Domain tag
+Merge rules (the tool keeps to them):
+- Frontmatter **absent**: a block is added above the content, which is otherwise left byte for byte.
+- Frontmatter **present and readable**: missing keys are inserted as new lines; existing lines are never changed. The one exception is `tags:`, which gains the domain tag.
+- Frontmatter **present but unreadable** (or the file is not UTF-8, is read-only, or uses bare carriage returns): the file is skipped and the reason is in the output. Put it in the routing report's malformed-frontmatter list. Do not repair it.
 
-Every file landing in a top-level `knowledge/` folder should carry a domain tag matching the folder. Examples:
+Filename-derived values are the only ones the tool writes. Body-derived values (attendees, a topic beyond the filename, related notes) are yours to add afterwards, and only when confidence is high.
+
+### 3. Domain tag (done by `post-route`)
+
+The domain tag is the top-level folder's name in lower case with spaces and underscores as hyphens:
 
 | Destination folder | Domain tag       |
 |--------------------|------------------|
@@ -45,20 +56,17 @@ Every file landing in a top-level `knowledge/` folder should carry a domain tag 
 | `knowledge/lab-notebook/`  | `lab-notebook`  |
 | `knowledge/ArchCouncil/`   | `archcouncil`   |
 
-Merge into the existing `tags:` list (don't overwrite). If `tags:` is absent, add `tags: [<domain-tag>]`.
+It is added to a flow list (`tags: [a, b]`) or a block list (`- a` lines). A `tags:` value in any other form is left alone and reported.
 
-### 4. MOC update
+### 4. MOC update (done by `post-route`)
 
-Append a bullet linking to the routed file in the destination domain's `_MOC.md`:
+A `- [[<vault-relative path>]]` bullet goes into the nearest `_MOC.md`: the note's own folder if it has one, else the nearest parent up to the top-level folder, else a new stub in the top-level folder.
 
-- If the MOC exists: locate the appropriate section (`## Files`, or thematic section if user has created one). If unsure, append to `## Files` or to a `## Unsorted` section at the bottom.
-- If the MOC does not exist: create a stub matching the structure in `.pka/roles/_obsidian.md`.
-- Never reorder existing entries.
-- Never remove entries.
+- It is added at the end of `## Files`, or under a `## Unsorted` section appended to the file. When the user keeps thematic sections and the right one is obvious, pass `--section "<heading>"` to `post-route`.
+- A note already linked anywhere in the MOC's text gets no second bullet. (A link inside the Pointers table, a fenced example or inline code does not count.)
+- Existing entries are never reordered or removed.
 
-The bullet is a wikilink: `- [[<path-relative-to-vault>]]`.
-
-### 5. Person backlinks (high-confidence only)
+### 5. Person backlinks (high-confidence only, yours)
 
 If the routed file's filename or **first-line title** clearly references a person (e.g., `2026-04-22-1-1-priya.md`, or H1 = `1-1 with Priya`), **and** `personnel/<that-person>/index.md` exists:
 

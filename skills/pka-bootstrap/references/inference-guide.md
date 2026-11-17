@@ -47,6 +47,7 @@ The flat vs. subfolder distinction is critical for inference quality.
 **Inferred:** "Per-person notes — one subfolder per individual"
 **Organization:** By person
 **Priority:** Active
+**Tags:** `people-home`
 **Confidence:** High if folder name matches; Medium if only subfolder names match
 
 ### Meeting / Strategy Notes
@@ -134,7 +135,21 @@ Multiple folders can be tagged `meeting-home`. Common combinations:
 - `leadership/` for group/strategy meeting notes
 - A dedicated `meetings/` folder
 
-The `meeting-home` tag is used by `pka-meetings` for routing. It does not affect bootstrap behavior otherwise.
+The `meeting-home` tag is used by `pka-meetings` for routing, and by `pka-tools` to decide which dated notes are meetings (frontmatter schema, action-item scan). Without any `meeting-home` tag the tools fall back to folders named `leadership/` and `ArchCouncil/`.
+
+---
+
+## People-Home Detection
+
+Exactly one folder gets the `people-home` tag: the per-person notes folder (see "Per-Person Notes" above), whose immediate subfolders are each one person. If two folders qualify, ask the user at Q3 which one holds their people.
+
+The tag tells `pka-meetings` where 1-1 notes go, and `pka-tools` where person folders live (1-1 frontmatter, person index stubs, and in v1.7.0 the person timeline). Without it the tools fall back to `knowledge/personnel/`. Write it even when the folder is called `personnel/`: the fallback is a convenience, not a contract.
+
+---
+
+## Daily-Home Detection
+
+A folder gets the `daily-home` tag when most of its notes are named `YYYY-MM-DD.md` (a date and nothing else) — a journal or lab notebook. `pka-tools` gives those notes the daily-note frontmatter. Without the tag it falls back to `knowledge/lab-notebook/`.
 
 ---
 

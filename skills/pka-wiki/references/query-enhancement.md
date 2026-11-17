@@ -25,7 +25,7 @@ Query phrases map to slugs via:
 1. **Direct match:** "What do I know about MCP" → `mcp`
 2. **Slugify match:** "Tell me about model context protocol" → `model-context-protocol`
 3. **Frontmatter title match:** query matches `# <title>` H1 of any wiki
-4. **Synonym via related topics:** if `[[mcp]]` is listed as related in another wiki, and query matches that wiki, surface the related wiki too
+4. **Synonym via related topics:** if `[[topics/mcp/wiki|MCP]]` (or, on an older page, a bare `[[mcp]]`) is listed as related in another wiki, and the query matches that wiki, surface the related wiki too
 
 Ambiguity: if multiple wikis match, list them and ask.
 

@@ -107,8 +107,10 @@ Every wiki page has fixed structure: frontmatter, `## What it is`,
 `## Key concepts`, `## Sources` (required), plus optional sections for thinking,
 questions, related topics. See `references/wiki-page-schema.md`.
 
-Citations use inline or footnote format. Inter-wiki links use `[[slug]]`
-wikilink syntax (renders in Obsidian, degrades cleanly elsewhere).
+Citations use inline or footnote format. Inter-wiki links point at the other
+page's `wiki.md` by its vault-relative path, with a display title:
+`[[topics/<slug>/wiki|<Title>]]`. A bare `[[slug]]` does not resolve (every page
+is named `wiki.md`); see `references/wiki-page-schema.md`.
 
 ---
 
@@ -132,10 +134,16 @@ wikilink syntax (renders in Obsidian, degrades cleanly elsewhere).
 - **Source paths must exist** — lint flags dead sources
 - **No auto-ingest** in v1.0.0 — user explicitly triggers every synthesis
 
-## Session Log Entries
+## Filing and Session Log Entries
+
+After writing or changing a `wiki.md`, run `.pka/bin/pka-tools post-route <wiki.md> --role Wiki -m "Wiki: …" [--also <moved source>]` (frontmatter, MOC bullet, pointer row, index, one commit). See `references/ingest-workflow.md` step 7b.
+
+Session-log entries are written with `.pka/bin/pka-tools log add --role pka-wiki …`, giving:
 
 ```
 ## YYYY-MM-DD HH:MM | pka-wiki | Created wiki: <slug> | — | Ingest first source
-## YYYY-MM-DD HH:MM | pka-wiki | Ingested <source> into <slug> | N claims added, M refinements | Cross-wiki candidates: [agents]
+## YYYY-MM-DD HH:MM | pka-wiki | Ingested <source> into <slug>: N claims added, M refinements | <unresolved contradiction, or —> | Cross-wiki candidates: agents
 ## YYYY-MM-DD HH:MM | pka-wiki | Retired wiki: <slug> | — | —
 ```
+
+Counts go in the summary; the fourth field holds only what is still open.

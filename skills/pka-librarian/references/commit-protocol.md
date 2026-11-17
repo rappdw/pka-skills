@@ -4,11 +4,18 @@ Applies **only when** `hybrid_monorepo_present` is true. Conventions and full pr
 
 ## When the librarian commits
 
-After a routing operation **completes successfully** and lands the file inside a child repo (`knowledge/` or `projects/<name>/`):
+After a routing operation **completes successfully** and lands the file inside a child repo (`knowledge/` or `projects/<name>/`), the commit is the last step of `post-route`:
 
 ```
-.pka/bin/pka-tools commit -m "Librarian: Route <filename> to <destination-folder>/" -- \
-    <routed-file> <each side-effect file this routing touched>
+.pka/bin/pka-tools post-route <routed-file> [--also <old path or other side-effect file>]...
+```
+
+It commits the routed file together with every file its own steps changed (frontmatter, MOC bullet, pointer rows) and every `--also` path, with the message `Librarian: Route <filename> to <folder>/` (`--role` and `-m` change it). It only commits when `hybrid_monorepo_present`; otherwise its commit step says "not a hybrid monorepo". `post-route` reports the commit outcome in its last line, using the same reasons as the table below; exit code 1 means the commit was refused.
+
+For a commit that is not a route (a correction, a batch of person back-links), use the commit command directly:
+
+```
+.pka/bin/pka-tools commit -m "Librarian: <description>" -- <path>...
 ```
 
 Paths are given relative to the workspace root (`knowledge/leadership/2026-04-22-slt-meeting.md`). The command finds the child repo the paths are in, runs `git add -- <paths>` and `git commit -- <paths>` there, and appends the trailer. It is the equivalent of:
