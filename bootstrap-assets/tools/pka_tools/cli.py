@@ -22,8 +22,8 @@ from typing import List, Optional
 from . import __version__
 from . import actions as actions_mod
 from . import db as db_mod
-from . import gitops, indexer, install as install_mod, mocs, obsidian, pointers, postroute
-from . import search as search_mod, sessionlog
+from . import gitops, indexer, install as install_mod, mocs, obsidian, people as people_mod, pointers, postroute
+from . import search as search_mod, sessionlog, timeline as timeline_mod
 from .errors import EXIT_FAIL, EXIT_OK, EXIT_USAGE, ToolError
 from .workspace import Workspace, find_root
 
@@ -308,6 +308,9 @@ def cmd_pointers(args: argparse.Namespace) -> int:
             result["from"], result["to"],
             " (dry run)" if args.dry_run else "")]
         text += ["  %s" % rel for rel in result["changed"]]
+        if result.get("timeline_rewrites"):
+            text.append("%d timeline link(s) rewritten in: %s" % (result["timeline_rewrites"],
+                                                                 ", ".join(result["timeline_changed"])))
         text += _listed("Skipped (left unchanged)",
                         ["%s: %s" % (rel, result["skip_reasons"].get(rel, "")) for rel in result["skipped"]])
         _emit(args, result, text)
@@ -347,6 +350,16 @@ def cmd_moc(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _summary_for(items: Optional[List[str]]) -> dict:
+    out = {}
+    for item in items or []:
+        slug, sep, text = item.partition("=")
+        if not sep or not slug.strip():
+            raise ToolError("--summary-for takes SLUG=TEXT, got %r" % item, EXIT_USAGE)
+        out[slug.strip()] = text
+    return out
+
+
 def cmd_post_route(args: argparse.Namespace) -> int:
     ws = _workspace(args)
     entities = [item.strip() for item in (args.entities or "").split(",") if item.strip()]
@@ -354,6 +367,8 @@ def cmd_post_route(args: argparse.Namespace) -> int:
         ws, args.file, role=args.role, message=args.message, body=args.body or "",
         topic=args.topic or "", entities=entities, context=args.context or "", section=args.section,
         also=args.also, do_commit=not args.no_commit, create_mocs=args.create_moc, dry_run=args.dry_run,
+        do_timeline=not args.no_timeline, timeline_people=args.person, summary=args.summary or "",
+        summary_for=_summary_for(args.summary_for), include_large=args.include_large,
     )
     text = ["post-route %s%s" % (result["file"], " (dry run)" if args.dry_run else "")]
     for step in result["steps"]:
@@ -365,6 +380,113 @@ def cmd_post_route(args: argparse.Namespace) -> int:
         text.append("Files changed besides the note: %s" % (", ".join(p for p in result["touched"] if p != result["file"]) or "none"))
     _emit(args, result, text)
     return EXIT_FAIL if result["failed"] else EXIT_OK
+
+
+def cmd_people(args: argparse.Namespace) -> int:
+    ws = _workspace(args)
+    reg = people_mod.registry(ws)
+    if args.people_command == "list":
+        people_mod.require_home(reg)
+        data = {"home": ws.rel(reg.home), "people": [p.as_dict(ws) for p in reg.people.values()]}
+        text = ["%d people in %s" % (len(data["people"]), data["home"])]
+        for p in data["people"]:
+            extra = (" (also: %s)" % ", ".join(p["aliases"])) if p["aliases"] else ""
+            text.append("  %-24s %s%s%s" % (p["slug"], p["name"], extra, "" if p["index"] else "  [no index.md]"))
+        _emit(args, data, text)
+        return EXIT_OK
+    if args.people_command == "resolve":
+        people_mod.require_home(reg)
+        results = [reg.resolve(name) for name in args.names]
+        text = []
+        for r in results:
+            if r["status"] == "high":
+                text.append("%s -> %s (%s)" % (r["text"], r["slug"], r["reason"]))
+            elif r["status"] == "ambiguous":
+                text.append("%s -> AMBIGUOUS: %s (%s)" % (r["text"], ", ".join(r["candidates"]), r["reason"]))
+            else:
+                hint = (" — similar: %s" % ", ".join(r["candidates"])) if r["candidates"] else ""
+                text.append("%s -> no match (%s)%s" % (r["text"], r["reason"], hint))
+        _emit(args, {"results": results}, text)
+        return EXIT_OK
+    result = people_mod.add_alias(ws, args.slug, args.alias, dry_run=args.dry_run)
+    text = ["%s: %s %r%s" % (result["slug"], result["problem"] and "SKIPPED — " + result["problem"] or result["action"],
+                              result["alias"], " (dry run)" if args.dry_run else "")]
+    _emit(args, result, text)
+    return EXIT_OK
+
+
+def cmd_timeline(args: argparse.Namespace) -> int:
+    ws = _workspace(args)
+    command = args.timeline_command
+    if command == "add":
+        result = timeline_mod.add(ws, args.file, people=args.person, summary=args.summary or "",
+                                  summary_for=_summary_for(args.summary_for), kind=args.kind, label=args.label,
+                                  date=args.date, include_large=args.include_large, dry_run=args.dry_run)
+        text = ["Timeline for %s (%s, %s)%s:" % (result["note"], result["date"], result["kind"],
+                                                  " (dry run)" if args.dry_run else "")]
+        for entry in result["people"]:
+            text.append("  %s [%s]: %s" % (entry["slug"], entry["tier"], entry["problem"] or entry["action"]))
+            if entry["line"] and entry["action"] in ("added", "created-index"):
+                text.append("      %s" % entry["line"])
+        if not result["people"]:
+            text.append("  nobody (no person folder matches the note)")
+        for item in result["ambiguous"]:
+            text.append("  ambiguous %r (%s): %s — not added" % (item["text"], item["source"], ", ".join(item["candidates"])))
+        if result["unresolved"]:
+            text.append("  no person folder: %s" % ", ".join(result["unresolved"]))
+        if result["large_skipped"]:
+            text.append("  large meeting (%d attendees): attendees not added; --include-large to add them"
+                        % result["attendees"])
+        _emit(args, result, text)
+        return EXIT_OK
+    if command == "who":
+        reg = people_mod.registry(ws)
+        people_mod.require_home(reg)
+        path = ws.resolve(args.file)
+        if not path.is_file():
+            raise ToolError("no such file: %s" % args.file, EXIT_USAGE)
+        result = timeline_mod.who(ws, reg, timeline_mod.Note(ws, path), include_large=args.include_large)
+        text = ["%s belongs to: %s" % (result["note"], ", ".join(p["slug"] for p in result["people"]) or "nobody")]
+        for p in result["people"]:
+            text += ["  %s: %s" % (p["slug"], why) for why in p["evidence"]]
+        for item in result["ambiguous"]:
+            text.append("  ambiguous %r: %s" % (item["text"], ", ".join(item["candidates"])))
+        if result["unresolved"]:
+            text.append("  no person folder: %s" % ", ".join(result["unresolved"]))
+        _emit(args, result, text)
+        return EXIT_OK
+    if command == "list":
+        result = timeline_mod.listing(ws, args.slug)
+        text = ["%s: %d entr%s" % (args.slug, len(result["entries"]), "y" if len(result["entries"]) == 1 else "ies")]
+        text += ["  %s · %s · %s%s" % (e["date"], e["kind"], e["key"], (" — " + e["summary"]) if e["summary"] else "")
+                 for e in result["entries"]]
+        if result["problem"]:
+            text.append("  PROBLEM: %s" % result["problem"])
+        _emit(args, result, text)
+        return EXIT_OK
+    if command == "rename":
+        old = pointers._normalise_ref(ws, args.old)
+        new = pointers._normalise_ref(ws, args.new)
+        result = timeline_mod.rename(ws, old, new, prefix=args.prefix, dry_run=args.dry_run)
+        text = ["%d timeline link(s) rewritten in %d file(s)%s" % (result["rewrites"], len(result["changed"]),
+                                                                  " (dry run)" if args.dry_run else "")]
+        text += ["  %s" % rel for rel in result["changed"]]
+        text += _listed("Skipped", result["skipped"])
+        _emit(args, result, text)
+        return EXIT_OK
+    if command == "check":
+        result = timeline_mod.check(ws)
+        text = ["%d timeline problem(s)" % len(result["problems"])]
+        text += ["  %s%s: %s" % (p["index"], ":%d" % p["line"] if p["line"] else "", p["problem"])
+                 for p in result["problems"]]
+        _emit(args, result, text)
+        return EXIT_FAIL if args.strict and result["problems"] else EXIT_OK
+    result = timeline_mod.strip(ws, args.person, dry_run=args.dry_run)
+    text = ["Timeline blocks removed from %d file(s)%s" % (len(result["changed"]), " (dry run)" if args.dry_run else "")]
+    text += ["  %s" % rel for rel in result["changed"]]
+    text += _listed("Skipped (block unreadable)", result["skipped"])
+    _emit(args, result, text)
+    return EXIT_OK
 
 
 def cmd_log(args: argparse.Namespace) -> int:
@@ -552,9 +674,65 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--also", action="append", metavar="PATH",
                    help="another path that belongs in the same commit, e.g. the note's old location (repeatable)")
     p.add_argument("--no-commit", action="store_true", help="do every step except the commit")
+    p.add_argument("--no-timeline", action="store_true", help="do not add the note to anyone's timeline")
+    p.add_argument("--person", action="append", metavar="SLUG",
+                   help="put the note on this person's timeline instead of working it out (repeatable)")
+    p.add_argument("--summary", metavar="TEXT", help="timeline summary (max 140 characters)")
+    p.add_argument("--summary-for", action="append", metavar="SLUG=TEXT", help="summary for one person (repeatable)")
+    p.add_argument("--include-large", action="store_true",
+                   help="add attendees of a meeting with more than 8 of them")
     _create_flags(p)
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(func=cmd_post_route)
+
+    p = sub.add_parser("people", help="the people registry (person folders)")
+    psub2 = p.add_subparsers(dest="people_command", metavar="<people command>", parser_class=_Parser)
+    psub2.required = True
+    q = psub2.add_parser("list", parents=[common], help="every person folder, with name and aliases")
+    q.set_defaults(func=cmd_people)
+    q = psub2.add_parser("resolve", parents=[common], help="which person a name, link or slug means")
+    q.add_argument("names", nargs="+", metavar="NAME")
+    q.set_defaults(func=cmd_people)
+    q = psub2.add_parser("alias", parents=[common], help="record that a name means this person")
+    q.add_argument("slug", metavar="SLUG")
+    q.add_argument("alias", metavar="ALIAS")
+    q.add_argument("--dry-run", action="store_true")
+    q.set_defaults(func=cmd_people)
+
+    p = sub.add_parser("timeline", help="person timelines (a managed block in each person's index.md)")
+    tsub = p.add_subparsers(dest="timeline_command", metavar="<timeline command>", parser_class=_Parser)
+    tsub.required = True
+    q = tsub.add_parser("add", parents=[common], help="put a note on the timelines of the people it belongs to")
+    q.add_argument("file", metavar="FILE")
+    q.add_argument("--person", action="append", metavar="SLUG", help="name the people instead (repeatable)")
+    q.add_argument("--summary", metavar="TEXT")
+    q.add_argument("--summary-for", action="append", metavar="SLUG=TEXT")
+    q.add_argument("--kind", choices=timeline_mod.KINDS)
+    q.add_argument("--label", metavar="TEXT", help="link text (default: from the note)")
+    q.add_argument("--date", metavar="YYYY-MM-DD", help="when the note has no date of its own")
+    q.add_argument("--include-large", action="store_true")
+    q.add_argument("--dry-run", action="store_true")
+    q.set_defaults(func=cmd_timeline)
+    q = tsub.add_parser("who", parents=[common], help="whose timeline a note belongs on, and why")
+    q.add_argument("file", metavar="FILE")
+    q.add_argument("--include-large", action="store_true")
+    q.set_defaults(func=cmd_timeline)
+    q = tsub.add_parser("list", parents=[common], help="a person's timeline entries")
+    q.add_argument("slug", metavar="SLUG")
+    q.set_defaults(func=cmd_timeline)
+    q = tsub.add_parser("rename", parents=[common], help="rewrite timeline links after a note or folder moved")
+    q.add_argument("old", metavar="OLD")
+    q.add_argument("new", metavar="NEW")
+    q.add_argument("--prefix", action="store_true")
+    q.add_argument("--dry-run", action="store_true")
+    q.set_defaults(func=cmd_timeline)
+    q = tsub.add_parser("check", parents=[common], help="unreadable blocks, broken links, lines out of order")
+    q.add_argument("--strict", action="store_true")
+    q.set_defaults(func=cmd_timeline)
+    q = tsub.add_parser("strip", parents=[common], help="remove timeline blocks (rollback)")
+    q.add_argument("--person", metavar="SLUG", help="only this person")
+    q.add_argument("--dry-run", action="store_true")
+    q.set_defaults(func=cmd_timeline)
 
     p = sub.add_parser("log", help="the session log (.pka/session-log.md)")
     lsub = p.add_subparsers(dest="log_command", metavar="<log command>", parser_class=_Parser)

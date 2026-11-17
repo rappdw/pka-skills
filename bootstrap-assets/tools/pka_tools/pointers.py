@@ -629,12 +629,18 @@ def rename(ws: Workspace, old: str, new: str, prefix: bool = False, dry_run: boo
         return "[[%s%s%s%s%s%s%s]]" % (lead, dot, replacement, suffix, trail,
                                      match.group("anchor") or "", match.group("alias") or "")
 
+    # Timeline blocks are tool-owned like pointer rows: always kept in step.
+    from . import timeline as timeline_mod
+    timeline_result = timeline_mod.rename(ws, old_ref, new_ref, prefix=prefix, dry_run=dry_run)
+    timeline_files = set(timeline_result["changed"])
     if notes:
         files = [path for path in ws.walk(ws.vault, captures=False)
                  if path.suffix.lower() in (".md", ".markdown")]
     else:
         files = ws.moc_files()
     for moc in files:
+        if ws.rel(moc) in timeline_files and dry_run:
+            continue        # counted by the timeline pass; the file on disk is not updated in a dry run
         try:
             text = read_text(moc)
         except NotText:
@@ -683,7 +689,8 @@ def rename(ws: Workspace, old: str, new: str, prefix: bool = False, dry_run: boo
             total += count
             changed.append(ws.rel(moc))
     return {"from": old_ref, "to": new_ref, "prefix": prefix, "rewrites": total,
-            "changed": changed, "skipped": skipped, "skip_reasons": reasons, "dry_run": dry_run}
+            "changed": changed, "skipped": skipped, "skip_reasons": reasons, "dry_run": dry_run,
+            "timeline_rewrites": timeline_result["rewrites"], "timeline_changed": timeline_result["changed"]}
 
 
 def resolve_link(ws: Workspace, target: str) -> Optional[Path]:
