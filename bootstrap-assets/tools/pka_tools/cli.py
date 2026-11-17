@@ -22,7 +22,8 @@ from typing import List, Optional
 from . import __version__
 from . import actions as actions_mod
 from . import db as db_mod
-from . import gitops, indexer, install as install_mod, obsidian, pointers, search as search_mod
+from . import gitops, indexer, install as install_mod, mocs, obsidian, pointers, postroute
+from . import search as search_mod, sessionlog
 from .errors import EXIT_FAIL, EXIT_OK, EXIT_USAGE, ToolError
 from .workspace import Workspace, find_root
 
@@ -273,18 +274,30 @@ def cmd_pointers(args: argparse.Namespace) -> int:
     if args.pointers_command == "add":
         entities = [item.strip() for item in (args.entities or "").split(",") if item.strip()]
         result = pointers.add(ws, args.file, topic=args.topic or "", entities=entities,
-                              context=args.context or "", extra_mocs=args.moc, dry_run=args.dry_run)
+                              context=args.context or "", extra_mocs=args.moc, dry_run=args.dry_run,
+                              create_mocs=args.create_moc)
         text = ["Pointer rows for %s%s:" % (result["file"], " (dry run)" if args.dry_run else "")]
         if result.get("problem"):
             text.append("  SKIPPED — %s" % result["problem"])
         for entry in result["mocs"]:
             if entry["problem"]:
                 text.append("  %s: SKIPPED — %s" % (entry["moc"], entry["problem"]))
+            elif entry["action"] == "no-moc":
+                text.append("  %s: no MOC, pointer row not written (not an Obsidian vault; "
+                            "`pka-tools pointers init` opts in)" % entry["moc"])
             else:
                 text.append("  %s: %s%s" % (entry["moc"], entry["action"],
                                              " (%s)" % entry["topic"] if entry["topic"] else ""))
         text += _listed("Rows at or over the %d-file soft cap (consider splitting)" % pointers.SIZE_CAP,
                         result["over_cap"])
+        _emit(args, result, text)
+        return EXIT_OK
+    if args.pointers_command == "init":
+        result = pointers.init(ws, args.folders, dry_run=args.dry_run)
+        text = ["Pointer layer%s: %d MOC(s) created, %d already present" % (
+            " (dry run)" if args.dry_run else "", len(result["created"]), len(result["already_present"]))]
+        text += ["  + %s" % rel for rel in result["created"]]
+        text += _listed("Could not create", result["skipped"])
         _emit(args, result, text)
         return EXIT_OK
     if args.pointers_command == "rename":
@@ -316,6 +329,61 @@ def cmd_pointers(args: argparse.Namespace) -> int:
             text.append("  %s — %d file(s)" % (row["topic"], len(row["files"])))
     _emit(args, result, text or ["No pointer rows."])
     return EXIT_OK
+
+
+def cmd_moc(args: argparse.Namespace) -> int:
+    ws = _workspace(args)
+    result = mocs.add_link(ws, args.file, section=args.section, create=args.create_moc, dry_run=args.dry_run)
+    if result["problem"]:
+        text = ["%s: SKIPPED — %s" % (result["moc"], result["problem"])]
+    elif result["action"] == "no-moc":
+        text = ["%s: no MOC, link not written (not an Obsidian vault; pass --create-moc to create one)" % result["moc"]]
+    else:
+        text = ["%s: %s%s" % (result["moc"], result["action"], " (dry run)" if args.dry_run else "")]
+    _emit(args, result, text)
+    return EXIT_OK
+
+
+def cmd_post_route(args: argparse.Namespace) -> int:
+    ws = _workspace(args)
+    entities = [item.strip() for item in (args.entities or "").split(",") if item.strip()]
+    result = postroute.run(
+        ws, args.file, role=args.role, message=args.message, body=args.body or "",
+        topic=args.topic or "", entities=entities, context=args.context or "", section=args.section,
+        also=args.also, do_commit=not args.no_commit, create_mocs=args.create_moc, dry_run=args.dry_run,
+    )
+    text = ["post-route %s%s" % (result["file"], " (dry run)" if args.dry_run else "")]
+    for step in result["steps"]:
+        detail = (" — %s" % step["detail"]) if step["detail"] else ""
+        text.append("  %-12s %s%s" % (step["step"], step["action"], detail))
+        for item in step.get("over_cap", []):
+            text.append("               over the 8-file soft cap: %s" % item)
+    if result["touched"]:
+        text.append("Files changed besides the note: %s" % (", ".join(p for p in result["touched"] if p != result["file"]) or "none"))
+    _emit(args, result, text)
+    return EXIT_FAIL if result["failed"] else EXIT_OK
+
+
+def cmd_log(args: argparse.Namespace) -> int:
+    ws = _workspace(args)
+    if args.log_command == "add":
+        result = sessionlog.add(ws, args.role, args.summary, args.open or "", args.next or "",
+                                at=args.at, dry_run=args.dry_run)
+        _emit(args, result, ["%s%s" % (result["entry"], "  (dry run)" if args.dry_run else "")])
+        return EXIT_OK
+    if args.log_command == "open":
+        result = sessionlog.open_threads(ws, last=args.last)
+        text = ["%d open thread(s) in the last %d entries" % (len(result["open"]), result["looked_at"])]
+        for item in result["open"]:
+            text.append("- %s (%s, %s)" % (item["open"], item["role"], item["at"]))
+        _emit(args, result, text)
+        return EXIT_OK
+    result = sessionlog.check(ws)
+    text = ["%d entries, %d malformed" % (result["entries"], len(result["malformed"]))]
+    for item in result["malformed"]:
+        text.append("  line %d: %s" % (item["line"], item["problem"]))
+    _emit(args, result, text)
+    return EXIT_FAIL if args.strict and result["malformed"] else EXIT_OK
 
 
 def cmd_obsidian(args: argparse.Namespace) -> int:
@@ -350,6 +418,14 @@ def cmd_obsidian(args: argparse.Namespace) -> int:
 
 
 # ------------------------------------------------------------ parser
+
+def _create_flags(parser: argparse.ArgumentParser) -> None:
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--create-moc", dest="create_moc", action="store_true", default=None,
+                       help="create a missing _MOC.md (default: only in an Obsidian vault)")
+    group.add_argument("--no-create-moc", dest="create_moc", action="store_false",
+                       help="never create a missing _MOC.md")
+
 
 def build_parser() -> argparse.ArgumentParser:
     common = argparse.ArgumentParser(add_help=False)
@@ -427,6 +503,12 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--entities", metavar="A,B", help="extra entities (people, organisations, products)")
     q.add_argument("--context", help="the routing directive, if any (adds matching tokens)")
     q.add_argument("--moc", action="append", metavar="PATH", help="an additional _MOC.md to update (repeatable)")
+    _create_flags(q)
+    q.add_argument("--dry-run", action="store_true")
+    q.set_defaults(func=cmd_pointers)
+    q = psub.add_parser("init", parents=[common],
+                        help="opt in: give folders a _MOC.md with an empty Pointers table")
+    q.add_argument("folders", nargs="*", metavar="FOLDER", help="default: every top-level folder of the vault")
     q.add_argument("--dry-run", action="store_true")
     q.set_defaults(func=cmd_pointers)
     q = psub.add_parser("rename", parents=[common], help="rewrite MOC links after a file or folder moved")
@@ -441,6 +523,51 @@ def build_parser() -> argparse.ArgumentParser:
     q = psub.add_parser("list", parents=[common], help="list pointer rows")
     q.add_argument("moc_file", nargs="?", metavar="MOC")
     q.set_defaults(func=cmd_pointers)
+
+    p = sub.add_parser("moc", help="navigation links in _MOC.md files")
+    msub = p.add_subparsers(dest="moc_command", metavar="<moc command>", parser_class=_Parser)
+    msub.required = True
+    q = msub.add_parser("add-link", parents=[common], help="add a - [[note]] bullet to the note's folder MOC")
+    q.add_argument("file", metavar="FILE")
+    q.add_argument("--section", metavar="HEADING", help="an existing ## section to add to (default: Files, else Unsorted)")
+    _create_flags(q)
+    q.add_argument("--dry-run", action="store_true")
+    q.set_defaults(func=cmd_moc)
+
+    p = sub.add_parser("post-route", parents=[common],
+                       help="after filing a note: frontmatter, MOC link, pointer row, index, commit")
+    p.add_argument("file", metavar="FILE")
+    p.add_argument("--role", default="Librarian", help="commit message prefix (default: Librarian)")
+    p.add_argument("-m", "--message", metavar="SUBJECT", help="commit subject (default: <Role>: Route <file> to <folder>/)")
+    p.add_argument("--body", metavar="TEXT", help="optional commit body")
+    p.add_argument("--topic", help="pointer cluster (as for `pointers add`)")
+    p.add_argument("--entities", metavar="A,B")
+    p.add_argument("--context", help="the routing directive, if any")
+    p.add_argument("--section", metavar="HEADING", help="MOC section for the link (as for `moc add-link`)")
+    p.add_argument("--also", action="append", metavar="PATH",
+                   help="another path that belongs in the same commit, e.g. the note's old location (repeatable)")
+    p.add_argument("--no-commit", action="store_true", help="do every step except the commit")
+    _create_flags(p)
+    p.add_argument("--dry-run", action="store_true")
+    p.set_defaults(func=cmd_post_route)
+
+    p = sub.add_parser("log", help="the session log (.pka/session-log.md)")
+    lsub = p.add_subparsers(dest="log_command", metavar="<log command>", parser_class=_Parser)
+    lsub.required = True
+    q = lsub.add_parser("add", parents=[common], help="append one well-formed entry")
+    q.add_argument("--role", required=True)
+    q.add_argument("--summary", required=True)
+    q.add_argument("--open", metavar="TEXT", help="what is still open (the greeting reads this)")
+    q.add_argument("--next", metavar="TEXT", help="the next action")
+    q.add_argument("--at", metavar="'YYYY-MM-DD HH:MM'", help="timestamp (default: now)")
+    q.add_argument("--dry-run", action="store_true")
+    q.set_defaults(func=cmd_log)
+    q = lsub.add_parser("open", parents=[common], help="open threads in recent entries, newest first")
+    q.add_argument("--last", type=int, default=20, help="how many recent entries to read (default 20)")
+    q.set_defaults(func=cmd_log)
+    q = lsub.add_parser("check", parents=[common], help="report entries that do not follow the grammar")
+    q.add_argument("--strict", action="store_true", help="exit 1 when any entry is malformed")
+    q.set_defaults(func=cmd_log)
 
     p = sub.add_parser("obsidian", help="Obsidian vault helpers")
     osub = p.add_subparsers(dest="obsidian_command", metavar="<obsidian command>", parser_class=_Parser)

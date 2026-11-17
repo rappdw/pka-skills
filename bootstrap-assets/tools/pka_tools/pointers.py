@@ -39,7 +39,7 @@ from .markdown import protected_spans, unclosed_fence
 from .textio import (
     NotText, detect_newline, has_bare_cr, line_body, line_end, read_text, split_lines, write_text_atomic,
 )
-from .workspace import MOC_NAME, Workspace, tag_key
+from .workspace import CAPTURE_MARKER, MOC_NAME, Workspace, tag_key
 
 SIZE_CAP = 8
 SECTION_TITLE = "Pointers"
@@ -479,8 +479,18 @@ def add(
     context: str = "",
     extra_mocs: Optional[List[str]] = None,
     dry_run: bool = False,
+    create_mocs: Optional[bool] = None,
 ) -> dict:
-    """Record a routed file in the pointer table of its domain MOC(s)."""
+    """Record a routed file in the pointer table of its domain MOC(s).
+
+    `create_mocs` decides what happens when a target `_MOC.md` does not
+    exist. None (the default) means "create it when the vault is an
+    Obsidian vault": without Obsidian the pointer layer is opt-in, so rows
+    go only into MOCs that already exist. A MOC named with `--moc` is
+    always created, since the caller asked for it.
+    """
+    if create_mocs is None:
+        create_mocs = ws.obsidian_present
     path = ws.resolve(file_arg)
     if not path.is_file():
         raise ToolError("no such file: %s" % file_arg, EXIT_USAGE)
@@ -511,9 +521,16 @@ def add(
             "problem": "the path contains a character a wikilink cannot express ([ ] | # ^); "
                        "no pointer row was written",
         }
+    explicit = set()
+    for given in extra_mocs or []:
+        explicit.add(ws.resolve(given))
     for moc in target_mocs(ws, path, facts, extra_mocs or []):
         rel = ws.rel(moc)
         entry = {"moc": rel, "action": "noop", "topic": "", "problem": None}
+        if not moc.exists() and not moc.is_symlink() and not create_mocs and moc not in explicit:
+            entry.update(action="no-moc")
+            results.append(entry)
+            continue
         try:
             lines = split_lines(read_text(moc)) if moc.is_file() else []
         except NotText:
@@ -691,3 +708,55 @@ def listing(ws: Workspace, moc_arg: Optional[str] = None) -> dict:
             "rows": [{"topic": row.topic, "entities": row.entities, "files": row.targets} for row in rows],
         })
     return {"mocs": out}
+
+
+def _init_stub(title: str) -> str:
+    return "\n".join([
+        "# %s" % title, "", STUB_COMMENT, "",
+        "## %s" % SECTION_TITLE, "", PREAMBLE, "", HEADER_ROW, SEPARATOR_ROW,
+    ]) + "\n"
+
+
+def init(ws: Workspace, folders: Optional[List[str]] = None, dry_run: bool = False) -> dict:
+    """Opt in to the pointer layer: give folders a `_MOC.md` with an empty
+    Pointers table. Existing MOCs are never touched.
+
+    Without arguments: the vault root's top-level folders (dot-folders,
+    ignored folders and capture directories excepted).
+    """
+    targets: List[Path] = []
+    if folders:
+        for given in folders:
+            folder = ws.resolve(given)
+            if not folder.is_dir():
+                raise ToolError("not a folder: %s" % given, EXIT_USAGE)
+            ws.vault_rel(folder / MOC_NAME)
+            targets.append(folder)
+    else:
+        try:
+            children = sorted(ws.vault.iterdir())
+        except OSError as exc:
+            raise ToolError("cannot list %s: %s" % (ws.rel(ws.vault), exc))
+        for child in children:
+            if not child.is_dir() or child.is_symlink() or child.name.startswith("."):
+                continue
+            if ws.ignore.match(ws.rel(child), True) or (child / CAPTURE_MARKER).exists():
+                continue
+            targets.append(child)
+    created: List[str] = []
+    present: List[str] = []
+    skipped: List[str] = []
+    for folder in targets:
+        moc = folder / MOC_NAME
+        rel = ws.rel(moc)
+        if moc.exists() or moc.is_symlink():
+            present.append(rel)
+            continue
+        if not dry_run:
+            try:
+                write_text_atomic(moc, _init_stub(folder.name if folder != ws.vault else (ws.vault.name or "Knowledge")))
+            except OSError as exc:
+                skipped.append("%s: could not write: %s" % (rel, exc))
+                continue
+        created.append(rel)
+    return {"created": created, "already_present": present, "skipped": skipped, "dry_run": dry_run}

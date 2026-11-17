@@ -26,12 +26,13 @@ def note(frontmatter_lines, body="body\n"):
 
 
 class Blank(support.ToolsCase):
-    """An empty vault: knowledge/ with no fixture content."""
+    """An empty Obsidian vault: knowledge/.obsidian/ and nothing else.
+    (Without Obsidian, MOCs are not created; see test_postroute.OptIn.)"""
     fixture = False
 
     def setUp(self):
         super().setUp()
-        (self.ws / "knowledge").mkdir()
+        (self.ws / "knowledge" / ".obsidian").mkdir(parents=True)
 
     def add(self, rel, *extra):
         return self.json("pointers", "add", rel, *extra)

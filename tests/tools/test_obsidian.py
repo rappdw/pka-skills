@@ -8,25 +8,15 @@ import unittest
 import support
 
 
-def owned_change(name: str, removed, added) -> bool:
-    """Is this line-level change one the tools are allowed to make?
-
-    Allowed: pure insertions; a `tags:` line that gained an item; a pointer
-    table row that gained entries; a final line that gained its newline.
-    """
-    if not removed:
-        return True
-    if len(removed) != 1 or not added:
-        return False
-    old = removed[0]
-    new = added[0]
+def _owned_edit(name: str, old: str, new: str) -> bool:
+    """Is `new` an edit of the line `old` that the tools are allowed to make?"""
     old_body = old.rstrip("\r\n")
     new_body = new.rstrip("\r\n")
     if old_body == new_body and not old.endswith("\n"):
         return True                                        # only the missing newline was added
     if old_body.startswith("tags:") and new_body.startswith("tags:"):
         stem = old_body[: old_body.rfind("]")] if "]" in old_body else old_body
-        return new_body.startswith(stem) and len(added) == 1
+        return new_body.startswith(stem)
     if name.endswith("_MOC.md") and old_body.lstrip().startswith("|"):
         old_cells = [cell.strip() for cell in old_body.strip().strip("|").split(" | ")]
         new_cells = [cell.strip() for cell in new_body.strip().strip("|").split(" | ")]
@@ -34,6 +24,24 @@ def owned_change(name: str, removed, added) -> bool:
             return False
         return all(n == o or n.startswith(o) or o in ("—", "") for o, n in zip(old_cells, new_cells))
     return False
+
+
+def owned_change(name: str, removed, added) -> bool:
+    """Is this hunk (lines removed, lines added) one the tools may make?
+
+    Allowed: inserted lines; and, for each removed line, an added line that
+    is an owned edit of it (a `tags:` line that gained an item, a pointer
+    row that gained entries, a final line that gained its newline).
+    """
+    remaining = list(added)
+    for old in removed:
+        for pos, new in enumerate(remaining):
+            if _owned_edit(name, old, new):
+                del remaining[pos]
+                break
+        else:
+            return False
+    return True
 
 
 class Bootstrap(support.ToolsCase):
@@ -200,6 +208,12 @@ class RoundTrip(support.ToolsCase):
                     "knowledge/reference/report.pdf"):
             self.ok("pointers", "add", rel)
         self.ok("pointers", "rename", "knowledge/AI/does-not-exist.md", "knowledge/AI/still-not.md")
+        for rel in ("knowledge/AI/ai-adoption-research.md",
+                    "knowledge/personnel/priya/2026-03-31-1-1-priya.md",
+                    "knowledge/lab-notebook/2026-04-22.md",
+                    "knowledge/reference/code-fence.md"):
+            self.ok("post-route", rel)
+        self.ok("moc", "add-link", "knowledge/AI/northwind/northwind_partnership_proposal.md")
         self.ok("index")
 
     def test_round_trip(self):
