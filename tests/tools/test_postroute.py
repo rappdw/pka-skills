@@ -192,9 +192,10 @@ class PostRoute(support.ToolsCase):
         result = self.file_note(rel, note(["type: meeting", "topic: roadmap-review", "attendees: [priya]",
                                            "tags: [meeting, ai]"], "# Roadmap\n- [ ] Draft plan @Sam\n"))
         self.assertEqual(self.steps(result), {"frontmatter": "merged", "moc-link": "added", "pointers": "written",
-                                              "index": "indexed", "commit": "committed"})
+                                              "timeline": "written", "index": "indexed", "commit": "committed"})
         names = sorted(self.git(self.repo, "show", "--name-only", "--format=", "HEAD").split())
-        self.assertEqual(names, ["AI/_MOC.md", "leadership/2026-06-02-roadmap-review.md", "leadership/_MOC.md"])
+        self.assertEqual(names, ["AI/_MOC.md", "leadership/2026-06-02-roadmap-review.md", "leadership/_MOC.md",
+                                 "personnel/priya/index.md"])
         message = self.git(self.repo, "log", "-1", "--format=%B").strip().splitlines()
         self.assertEqual((message[0], message[-1]),
                          ("Meetings: Route 2026-06-02-roadmap-review.md to leadership/", TRAILER))
@@ -270,7 +271,8 @@ class PostRoute(support.ToolsCase):
         self.write("projects/orion/notes.md", "orion planning notes\n")
         result = self.json("post-route", "projects/orion/notes.md", "-m", "Librarian: Add notes.md to orion")
         self.assertEqual(self.steps(result), {"frontmatter": "not-applicable", "moc-link": "not-applicable",
-                                              "pointers": "not-applicable", "index": "indexed", "commit": "committed"})
+                                              "pointers": "not-applicable", "timeline": "not-applicable",
+                                              "index": "indexed", "commit": "committed"})
         self.assertEqual(self.git(project, "log", "-1", "--format=%s").strip(), "Librarian: Add notes.md to orion")
 
     def test_refusals(self):

@@ -383,15 +383,35 @@ def merge_tag(lines: List[str], fm: Frontmatter, tag: str, newline: str) -> Tupl
       "present"     nothing to do
       "uneditable"  `tags` exists in a form this tool will not edit
     """
-    key = fm.keys.get("tags")
+    return merge_list_item(lines, fm, "tags", tag, newline, _tag_equal, aliases=("tag",))
+
+
+def _plain_equal(a: str, b: str) -> bool:
+    return a.strip().casefold() == b.strip().casefold()
+
+
+def merge_list_item(
+    lines: List[str],
+    fm: Frontmatter,
+    name: str,
+    item: str,
+    newline: str,
+    equal=_plain_equal,
+    aliases: Tuple[str, ...] = (),
+) -> Tuple[List[str], str]:
+    """Make sure `item` is in the list under key `name` (same statuses as
+    `merge_tag`). A missing key is added as a one-item flow list; a key in
+    another case, or under one of `aliases`, is reported as uneditable."""
+    tag = item
+    key = fm.keys.get(name)
     if key is None:
-        other = fm.has_ci("tags") or fm.has_ci("tag")
+        other = fm.has_ci(name) or next((fm.has_ci(alias) for alias in aliases if fm.has_ci(alias)), None)
         if other is not None:
             return lines, "uneditable"
-        return add_keys(lines, fm, [("tags", flow_list([tag]))], newline), "added"
+        return add_keys(lines, fm, [(name, flow_list([tag]))], newline), "added"
 
-    existing = get_list(lines, fm, "tags")
-    if any(_tag_equal(item, tag) for item in existing):
+    existing = get_list(lines, fm, name)
+    if any(equal(found, tag) for found in existing):
         return lines, "present"
 
     value = key.value

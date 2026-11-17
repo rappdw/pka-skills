@@ -36,6 +36,15 @@ The workspace is `--workspace`, else `$WORKSPACE_ROOT`, else the nearest folder 
 | `pointers check [--strict]` | Broken pointer links, unreadable tables, rows over the soft cap | nothing |
 | `pointers list [MOC]` | Pointer rows as data | nothing |
 | `obsidian bootstrap [--dry-run] [--commit]` | The one-time mechanical retrofit of `knowledge/` | MOC and index stubs, frontmatter |
+| `people list` | Every person folder, with name and aliases | nothing |
+| `people resolve NAME…` | Which person a name, link or slug means: high, ambiguous or none | nothing |
+| `people alias SLUG ALIAS` | Record a name the user says means this person | the person's `index.md` |
+| `timeline add FILE [--person S]… [--summary T] [--summary-for S=T]… [--kind K] [--label L] [--date D] [--include-large]` | Put a note on the timelines of the people it belongs to | person `index.md` files |
+| `timeline who FILE` | Whose timeline a note belongs on, with the evidence | nothing |
+| `timeline list SLUG` | A person's timeline entries | nothing |
+| `timeline rename OLD NEW [--prefix]` | Follow a moved note in every timeline (`pointers rename` does this too) | person `index.md` files |
+| `timeline check [--strict]` | Unreadable blocks, links to missing notes, lines out of order | nothing |
+| `timeline strip [--person S]` | Remove timeline blocks (rollback) | person `index.md` files |
 | `log add --role R --summary S [--open T] [--next N]` | Append one well-formed session-log entry | `.pka/session-log.md` |
 | `log open [--last N]` | Open threads of recent entries, newest first | nothing |
 | `log check [--strict]` | Entries that do not follow the grammar | nothing |
@@ -51,6 +60,7 @@ The one command a skill runs after it has put a note in place. Its steps, each r
 | `frontmatter` | missing schema keys and the domain tag | Obsidian vault, a markdown note (`.md`, `.markdown`) inside the vault |
 | `moc-link` | a `- [[note]]` bullet in the nearest `_MOC.md` | Obsidian vault (or `--create-moc`) |
 | `pointers` | a pointer row in the domain MOC(s) | note inside the vault; without Obsidian only into existing MOCs |
+| `timeline` | a line on the timeline of each person the note belongs to (`--summary`, `--summary-for`, `--person`, `--include-large`, `--no-timeline`) | note inside the vault and a people folder exists; with or without Obsidian |
 | `index` | the note, every MOC changed above, and every `--also` path | index mode |
 | `commit` | the note, every file changed above, every MOC that already links to the note, and every `--also` path, by path, with the trailer | hybrid monorepo, and not `--no-commit` |
 
@@ -83,6 +93,14 @@ Every command that writes to a user's file follows these. The tests in `tests/to
 5. **Atomic writes.** A file is written to a temporary name and renamed into place, so an interrupted run cannot leave half a note. The file keeps its permissions; extended attributes (Finder tags, for example) on an edited file are not carried over. A file that is a symbolic link is written through the link, not replaced by a regular file.
 6. **Fenced code blocks and HTML comments are not structure.** A `## Pointers` heading, a table, a `## Files` heading or a link inside a fenced block or a multi-line `<!-- … -->` comment is ignored. `pointers rename` and `moc add-link` also ignore links inside `inline code` and escaped `\[[...]]`. Setext headings (`Title` over `-----`) end a section like `## Title` does.
 7. **Bodies are not interpreted.** Pointer maintenance and the Obsidian retrofit use filenames, folders and frontmatter. (`index` reads bodies to index them; `actions` reads them for checkboxes.)
+
+## People and timelines
+
+- A person is a subfolder of the people home (Repo Map tag `people-home`; fallback `knowledge/personnel/`). `index.md` may give `name` and `aliases`.
+- `people resolve` answers **high** only for an exact slug, name or alias (case, accents, punctuation, `@` and titles ignored), the slug's words in either order, a link to the person's folder, or a first name only one person has. A last name alone, or a name that fits two people, is **ambiguous**. Nothing is guessed: nicknames become aliases when the user says so.
+- A timeline is a block between `<!-- pka:timeline v1 … -->` and `<!-- /pka:timeline -->` under `## Timeline` in the person's `index.md`. Lines are `- <date> · <kind> · <link>[ — <summary>]`, newest first. A note is on a timeline when any link in the block points at it, so adding is idempotent; an existing line is never changed except to follow a renamed note. A missing `index.md` is created as a stub, only inside an existing person folder.
+- Evidence: the note is in the person's folder (T1); or its `person` / `attendees` frontmatter, an `## Attendees` link, or a filename containing the slug names them with high confidence (T2). Body mentions do not count. More than 8 resolved attendees: none are added unless `--include-large`. `no-backref: true` opts a note out.
+- Summaries are at most 140 characters; the role writes them from the note.
 
 ## Git rules
 
@@ -121,6 +139,8 @@ tools/
     ├── mocs.py            moc add-link
     ├── postroute.py       post-route
     ├── sessionlog.py      log add / open / check
+    ├── people.py          people list / resolve / alias
+    ├── timeline.py        timeline add / who / list / rename / check / strip
     ├── obsidian.py        obsidian bootstrap
     └── install.py         install and the manifest
 ```

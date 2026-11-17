@@ -9,7 +9,8 @@ document. The steps, in order:
   2. moc-link      a `- [[note]]` bullet in its MOC      (Obsidian vaults only)
   3. pointers      a pointer row in its domain MOC(s)   (without Obsidian: only
                                                          into MOCs that exist)
-  4. timeline      reserved for the person timeline (v1.7.0)
+  4. timeline      a line on the timeline of each person the note belongs
+                   to (see timeline.py for the evidence rules)
   5. index         the note and every MOC changed above  (index mode only)
   6. commit        the note and every file changed above, in its child repo
                                                         (hybrid monorepo only)
@@ -26,7 +27,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from . import db as db_mod
-from . import gitops, indexer, mocs, obsidian, pointers
+from . import gitops, indexer, mocs, obsidian, people, pointers, timeline
 from .errors import EXIT_USAGE, ToolError
 from .markdown import block_mask, find_heading
 from .textio import NotText, read_text, split_lines
@@ -75,6 +76,11 @@ def run(
     do_commit: bool = True,
     create_mocs: Optional[bool] = None,
     dry_run: bool = False,
+    do_timeline: bool = True,
+    timeline_people: Optional[List[str]] = None,
+    summary: str = "",
+    summary_for: Optional[Dict[str, str]] = None,
+    include_large: bool = False,
 ) -> dict:
     path = ws.resolve(file_arg)
     if not path.is_file():
@@ -98,6 +104,10 @@ def run(
     rel = ws.rel(path)
     if section is not None and in_vault:
         _check_section(ws, path, section)
+    reg = people.registry(ws) if (in_vault and do_timeline) else None
+    for slug in list(timeline_people or []) + list((summary_for or {}).keys()):
+        if reg is None or slug not in reg.people:
+            raise ToolError("no person folder %r for the timeline" % slug, EXIT_USAGE)
 
     # Validate every --also path now: once step 1 has run, a usage error
     # would leave the note edited and uncommitted.
@@ -178,11 +188,11 @@ def run(
                 actions = ", ".join("%s: %s" % (entry["moc"], entry["problem"] or entry["action"])
                                     for entry in result["mocs"])
                 acted = [entry for entry in result["mocs"] if entry["action"] not in ("noop", "no-moc", "skipped")]
-                summary = "written" if acted else (
+                outcome = "written" if acted else (
                     "no MOC, pointer row not written"
                     if result["mocs"] and all(entry["action"] == "no-moc" for entry in result["mocs"])
                     else "noop")
-                record("pointers", summary, actions, list(result["changed"]))
+                record("pointers", outcome, actions, list(result["changed"]))
                 related.extend(str(entry["moc"]) for entry in result["mocs"])
                 if result["over_cap"]:
                     steps[-1]["over_cap"] = result["over_cap"]
@@ -191,7 +201,40 @@ def run(
                 raise
             record("pointers", "skipped", exc.message)
 
-    # 4. timeline: reserved (v1.7.0).
+    # 4. timeline
+    person_files: List[str] = []
+    if not in_vault:
+        record("timeline", "not-applicable", "outside the vault")
+    elif not do_timeline:
+        record("timeline", "not-requested")
+    elif reg is None or reg.home is None:
+        record("timeline", "not-applicable", "no people folder")
+    elif reg.person_of_path(path) is not None and path.name == people.INDEX:
+        record("timeline", "not-applicable", "a person's own index")
+    else:
+        try:
+            result = timeline.add(ws, rel, people=timeline_people, summary=summary, summary_for=summary_for,
+                                  include_large=include_large, dry_run=dry_run)
+        except ToolError as exc:
+            record("timeline", "skipped", exc.message)
+        else:
+            written = [e["slug"] for e in result["people"] if e["action"] in ("added", "created-index")]
+            bits = []
+            for entry in result["people"]:
+                bits.append("%s: %s" % (entry["slug"], entry["problem"] or entry["action"]))
+                person_files.append(entry["index"])
+            if result["ambiguous"]:
+                bits.append("ambiguous: " + "; ".join("%s (%s)" % (a["text"], ", ".join(a["candidates"]))
+                                                       for a in result["ambiguous"]))
+            if result["large_skipped"]:
+                bits.append("large meeting (%d attendees): attendees not added" % result["attendees"])
+            if result.get("opted_out"):
+                bits.append("the note has `no-backref: true`")
+            action = "written" if written else ("noop" if result["people"] else "nobody")
+            record("timeline", action, "; ".join(bits), list(result["changed"]))
+            steps[-1]["people"] = result["people"]
+            steps[-1]["ambiguous"] = result["ambiguous"]
+            steps[-1]["unresolved"] = result["unresolved"]
 
     # MOCs this note is recorded in, changed or not this time: a change left
     # uncommitted by an earlier run (a refused commit, --no-commit) belongs
@@ -206,6 +249,17 @@ def run(
                 leftovers.append(moc_rel)
         except (NotText, OSError):
             continue
+    if in_vault:
+        key = timeline.note_key(ws, path)
+        for index_rel in person_files:
+            if index_rel in touched or index_rel in leftovers:
+                continue
+            try:
+                index = ws.root / index_rel
+                if key in timeline.keys_in(ws, index, read_text(index)):
+                    leftovers.append(index_rel)
+            except (NotText, OSError):
+                continue
 
     # 5. index
     if not ws.db_path.is_file():

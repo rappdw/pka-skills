@@ -144,6 +144,7 @@ def _person_stub(ws: Workspace, folder: Path, notes: List[Path]) -> str:
         "name: %s" % frontmatter.scalar(name),
         'role: ""',
         'org: ""',
+        "aliases: []",
         "tags: [person]",
         "---",
         "",
