@@ -41,6 +41,7 @@ run_suite "commit-protocol"    "$THIS_DIR/test_commit_protocol.sh"
 run_suite "upgrade"            "$THIS_DIR/test_upgrade.sh"
 run_suite "pointer-layer"      "$THIS_DIR/test_pointer_layer.sh"
 run_suite "script-safety"      "$THIS_DIR/test_script_safety.sh"
+run_suite "pka-tools"          "$THIS_DIR/test_tools.sh"
 
 if [ "$GIT_CONFIG_BEFORE" = "$(git_config_fingerprint)" ]; then
   SUITES_PASS+=("global git config untouched")
