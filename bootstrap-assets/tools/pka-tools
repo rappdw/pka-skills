@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+"""pka-tools: the deterministic half of pka-skills.
+
+The skills decide what a note is about and where it belongs. This tool makes
+the edits: schema, index, search, pointer rows, frontmatter, commits. It uses
+the Python standard library only and makes no network calls.
+
+This launcher is kept free of modern syntax so that an old interpreter can
+still print the version error below instead of a SyntaxError.
+"""
+import os
+import sys
+
+if sys.version_info < (3, 9):
+    sys.stderr.write(
+        "pka-tools needs Python 3.9 or newer (this is %d.%d).\n" % sys.version_info[:2]
+    )
+    sys.exit(2)
+
+# The vendored copy lives in .pka/bin/, which the root repo tracks. Keep
+# __pycache__ out of it.
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
+
+from pka_tools.cli import main  # noqa: E402
+
+if __name__ == "__main__":
+    sys.exit(main())

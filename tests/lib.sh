@@ -67,17 +67,31 @@ make_scratch_dir() {
   echo "$dir"
 }
 
-# Install vendored .pka assets into a workspace (mirrors what `bootstrap git`
-# would do for the templates+scripts subset).
+# Install the plugin's helpers into a workspace the way `bootstrap git` does:
+# through `pka-tools install --git`, which also writes .pka/manifest.json.
 install_pka_assets() {
   local ws="$1"
   mkdir -p "$ws/.pka"
-  cp "${ASSETS_DIR}/gitattributes-template" "$ws/.pka/gitattributes-template"
-  cp "${ASSETS_DIR}/gitignore-template"     "$ws/.pka/gitignore-template"
-  for s in "${ASSETS_DIR}"/scripts/*.sh; do
-    cp "$s" "$ws/.pka/$(basename "$s")"
-    chmod +x "$ws/.pka/$(basename "$s")"
-  done
+  python3 "${ASSETS_DIR}/tools/pka-tools" install --workspace "$ws" --git >/dev/null || {
+    echo "${RED}pka-tools install failed for $ws${RESET}" >&2
+    return 1
+  }
+}
+
+# The core helpers only (no hybrid-monorepo scripts), as base bootstrap does.
+install_pka_tools() {
+  local ws="$1"
+  mkdir -p "$ws/.pka"
+  python3 "${ASSETS_DIR}/tools/pka-tools" install --workspace "$ws" >/dev/null || {
+    echo "${RED}pka-tools install failed for $ws${RESET}" >&2
+    return 1
+  }
+}
+
+# Run the workspace's vendored tool: pka_tools <workspace> <command> [args...]
+pka_tools() {
+  local ws="$1"; shift
+  python3 "$ws/.pka/bin/pka-tools" --workspace "$ws" "$@"
 }
 
 # ---------- portable helpers (GNU and BSD userlands differ) ----------
