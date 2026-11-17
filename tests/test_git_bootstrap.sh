@@ -47,6 +47,9 @@ meeting-notes/
 .pka/graduate-backups/
 .pka/reinit-backups/
 .pka/upgrade-backups/
+.pka/db-backups/
+.pka/bin/**/__pycache__/
+.pka/**/*.new
 EOF
 
 # Build .meta
@@ -54,6 +57,14 @@ build_out=$(run_build_repo_list "$ws" 2>&1)
 
 # Stage everything in root (no commit)
 ( cd "$ws" && git add -A )
+staged=$(cd "$ws" && git diff --cached --name-only)
+for vendored in .pka/manifest.json .pka/bin/pka-tools .pka/bin/pka_tools/cli.py .pka/graduate.sh; do
+  if echo "$staged" | grep -qx "$vendored"; then
+    pass_step "vendored file is part of the root scaffolding: $vendored"
+  else
+    fail "expected $vendored among the staged root files"
+  fi
+done
 
 # Assertions
 assert_dir_exists "$ws/.git"               "root .git initialized"
