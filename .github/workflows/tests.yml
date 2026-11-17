@@ -1,0 +1,58 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  shell-tests:
+    name: shell tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install git-lfs if missing
+        run: |
+          if ! command -v git-lfs >/dev/null 2>&1; then
+            if [ "$RUNNER_OS" = "macOS" ]; then
+              brew install git-lfs
+            else
+              sudo apt-get update && sudo apt-get install -y git-lfs
+            fi
+          fi
+
+      - name: Tool versions
+        run: |
+          bash --version | head -1
+          /bin/bash --version | head -1
+          git --version
+          git lfs version
+          python3 --version
+
+      - name: Syntax-check the helper scripts
+        run: |
+          for f in bootstrap-assets/scripts/*.sh tests/*.sh; do
+            /bin/bash -n "$f"
+          done
+          python3 -m py_compile bootstrap-assets/scripts/upgrade-roles.py tests/*.py
+
+      - name: Run the suite
+        run: ./tests/run-all.sh
+
+      # macOS ships bash 3.2 as /bin/bash, and that is what a user's
+      # `#!/usr/bin/env bash` resolves to. Put it first on PATH so the suite
+      # and every helper script it launches run on 3.2.
+      - name: Run the suite under macOS system bash (3.2)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir "$RUNNER_TEMP/system-bash"
+          ln -s /bin/bash "$RUNNER_TEMP/system-bash/bash"
+          PATH="$RUNNER_TEMP/system-bash:$PATH" ./tests/run-all.sh
