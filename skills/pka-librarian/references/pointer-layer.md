@@ -1,6 +1,6 @@
 # Pointer-Layer Maintenance — Per-Route Procedure
 
-Applies to **every** routing operation that lands a file inside the vault (`knowledge/`). **Not** gated on `obsidian_present` — pointer-row maintenance runs in plain-markdown workspaces too. The retrieval value comes from FTS, not from rendering.
+Applies to **every** routing operation that lands a file inside the vault (`knowledge/`), with or without Obsidian. Without Obsidian the layer is **opt-in**: rows are written only into `_MOC.md` files that already exist (see "Without Obsidian" below).
 
 Conventions (file location, row schema, retrieval behavior, invariants) live in `.pka/roles/_obsidian.md` (the "Pointer Layer" section). This document is the **procedure**.
 
@@ -8,13 +8,13 @@ From v1.7 the edit itself is made by `pka-tools`. The librarian decides *which c
 
 ## The command
 
-After the file is at its destination (and its frontmatter is in place):
+When filing a note, this step is part of `.pka/bin/pka-tools post-route <file>`, which takes the same `--topic`, `--entities` and `--context` options and runs it after the frontmatter step. On its own (to put an existing note into a cluster, say):
 
 ```
 .pka/bin/pka-tools pointers add <path-to-routed-file> [--topic <slug>] [--entities <a,b>] [--context "<routing directive>"]
 ```
 
-It prints, per MOC, what it did: `created-moc`, `created-section`, `created-table`, `appended` (a new row), `extended` (an existing row), `noop` (already recorded) or `skipped` with the reason. `--json` gives the same as data, including `changed` — the `_MOC.md` paths to add to this route's commit and to re-index. `--dry-run` shows the outcome without writing.
+It prints, per MOC, what it did: `created-moc`, `created-section`, `created-table`, `appended` (a new row), `extended` (an existing row), `noop` (already recorded), `no-moc` (no MOC there and none may be created) or `skipped` with the reason. `--json` gives the same as data, including `changed` — the `_MOC.md` paths to add to this route's commit and to re-index. `--dry-run` shows the outcome without writing.
 
 ## What the librarian decides
 
@@ -50,7 +50,7 @@ Only the lines the tool owns change. Everything else in the MOC is left byte for
 - **New row**: one line inserted directly after the table's last row.
 - **No table yet**: the header, separator and first row are added inside the existing `## Pointers` section, after any text already there.
 - **No section**: a `## Pointers` section is appended at the end of the file.
-- **No MOC**: a minimal `_MOC.md` (a title and the Pointers section) is created.
+- **No MOC**: in an Obsidian vault, a minimal `_MOC.md` (a title and the Pointers section) is created. Without Obsidian, nothing is written (see "Without Obsidian").
 - A `## Pointers` heading or table inside a fenced code block is an example and is ignored.
 
 Running the same command again changes nothing.
@@ -67,10 +67,19 @@ Files-column links are vault-relative without `.md`: `[[northwind/2026-04-23-joi
 
 A row that reaches 8 files is listed under "Rows at or over the 8-file soft cap". Put that in the routing report for the user to split if they wish. Rows are never split automatically.
 
+## Without Obsidian
+
+When `knowledge/.obsidian/` is absent the pointer layer is opt-in:
+
+- A row is written only into a `_MOC.md` that already exists. No MOC is created by routing, and a tag naming a folder without a MOC is skipped. The output says `no MOC, pointer row not written`.
+- The user opts in with `.pka/bin/pka-tools pointers init [<folder>...]`, which gives each top-level folder of the vault (or the folders named) a `_MOC.md` containing just a title and an empty Pointers table. Existing MOCs are not touched.
+- `--create-moc` creates a missing MOC for one call; `--no-create-moc` prevents creation even in an Obsidian vault. A MOC named with `--moc` is always created.
+
+Offer `pointers init` once when a routing report shows many `no MOC` lines, and only run it on a yes.
+
 ## After the command
 
-1. Re-index the changed MOCs together with the routed file: `.pka/bin/pka-tools index <routed-file> <changed MOC>...`
-2. Include the changed MOCs in the route's commit (see `commit-protocol.md`).
+`post-route` re-indexes the changed MOCs and includes them in the route's commit. When you run `pointers add` on its own, do both yourself: `.pka/bin/pka-tools index <file> <changed MOC>...`, then `.pka/bin/pka-tools commit -m "…" -- <file> <changed MOC>...`.
 
 ## Failure handling
 
@@ -93,7 +102,7 @@ When a file that may be listed in a MOC is renamed or moved:
 
 Every wikilink to the old path in every `_MOC.md` (pointer rows and `## Files` bullets) gets the new target. An alias (`[[old|Name]]`) or heading (`[[old#Decisions]]`) is kept. Fenced examples are not touched. Running it twice changes nothing. Rows are never deleted, even when a file leaves the domain.
 
-Links in ordinary notes are not rewritten by this command.
+Add `--notes` to rewrite links in every markdown note of the vault as well (the same rules: target only, fenced examples and inline code untouched, unreadable files listed and skipped). That edits the user's notes, so run it with `--dry-run` first and, unless the autonomy level is hands-off, show the list and ask. Pass every changed file to `post-route` with `--also` so the move and its link updates are one commit.
 
 ## Graduation propagation
 

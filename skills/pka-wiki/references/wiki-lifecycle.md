@@ -26,14 +26,19 @@ without losing any authored content.
 4. **Create folder** `knowledge/topics/<slug>/`.
 5. **Write `wiki.md`** using scaffold from `wiki-page-schema.md`.
 6. **Update Repo Map.** Add `topics/` with `wiki-home` tag if not already tagged.
-7. **Log to session-log + decision-log:**
+7. **Post-route the page:** `.pka/bin/pka-tools post-route knowledge/topics/<slug>/wiki.md --role Wiki -m "Wiki: Create <slug> wiki"` (MOC bullet, pointer row, index, commit — see `ingest-workflow.md` step 7b).
+8. **Log.** Session log:
+   ```
+   .pka/bin/pka-tools log add --role pka-wiki --summary "Created wiki: <slug>" --next "Ingest first source"
+   ```
+   Decision log (`.pka/decision-log.md`, its own format):
    ```
    ## <date> | Create wiki: <slug>
    **Context:** User wants to track <topic>.
    **Decision:** Created topic wiki at knowledge/topics/<slug>/wiki.md.
    **Decided by:** <owner>
    ```
-8. **Prompt for first ingest:**
+9. **Prompt for first ingest:**
    > Wiki created. Want to ingest a source now? Drop a path or say
    > "ingest X into my `<slug>` wiki."
 

@@ -96,19 +96,39 @@ high-stakes.
 If the source is in `team-inbox/`, move it to the wiki's `sources/` folder
 (or elsewhere per user preference). If the source is already filed, leave it.
 
+### Step 7b — Post-route the page
+
+Once `wiki.md` is written (and the source moved, if it was):
+
+```
+.pka/bin/pka-tools post-route knowledge/topics/<slug>/wiki.md --role Wiki \
+    -m "Wiki: Ingest <source filename> into <slug>" [--also <moved source path>]
+```
+
+It adds any missing frontmatter keys and the domain tag (Obsidian vaults), a bullet for the page in the nearest `_MOC.md`, a pointer row for the topic, indexes the page and every `--also` path, and makes one commit by path in `knowledge/` (hybrid monorepo). Name the moved source with `--also` rather than post-routing it separately: it belongs to the wiki, not to a MOC of its own. The steps that do not apply say so; exit code 1 means the commit was refused (report git's message — the ingest itself is done).
+
 ### Step 8 — Cross-wiki mention scan
 
 Scan the source for mentions of other topic slugs present in `wiki-home` folders.
 Surface suggestions, don't auto-update:
 
-> This source also mentions `[[agents]]` and `[[llm-tooling]]`. Want me to
+> This source also mentions the `agents` and `llm-tooling` topics. Want me to
 > ingest into those wikis too, or note as related topics only?
 
 ### Step 9 — Log to session-log and decision-log
 
 ```
-## 2026-04-05 HH:MM | pka-wiki | Ingested source into mcp wiki | 3 new claims, 1 refinement | —
+.pka/bin/pka-tools log add --role pka-wiki --summary "Ingested <source> into mcp wiki: 3 new claims, 1 refinement" \
+    [--open "<an unresolved contradiction>"] [--next "Consider ingesting into agents"]
 ```
+
+writes
+
+```
+## 2026-04-05 14:10 | pka-wiki | Ingested <source> into mcp wiki: 3 new claims, 1 refinement | — | Consider ingesting into agents
+```
+
+The fourth field is for what is still **open** (the session-start greeting reads it); counts belong in the summary.
 
 If a contradiction was resolved, also log to `decision-log.md`:
 

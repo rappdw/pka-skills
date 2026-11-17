@@ -66,8 +66,8 @@ May be empty on first creation; filled in via owner dialogue or elicitation.>
 remain unreconciled.>
 
 ## Related topics
-- [[other-topic-slug]]
-- [[another-topic-slug]]
+- [[topics/other-topic-slug/wiki|Other topic]]
+- [[topics/another-topic-slug/wiki|Another topic]]
 
 ## Sources
 - `<path-to-authored-note>` — <what this source contributes>
@@ -121,14 +121,15 @@ Every cited path must appear in `## Sources`. Lint flags mismatches.
 
 ## Wikilink Convention
 
-Inter-wiki references use `[[topic-slug]]` format:
+Inter-wiki references are vault-relative wikilinks to the other page's `wiki.md`, with the topic's title as display text:
 
-> Related to [[agents]] and [[llm-tooling]].
+> Related to [[topics/agents/wiki|Agents]] and [[topics/llm-tooling/wiki|LLM tooling]].
 
-This renders natively in Obsidian and degrades to readable text elsewhere.
+The target is the wiki's path relative to the vault root (`knowledge/`), without `.md`. With the default wiki-home that is `topics/<slug>/wiki`; with another `wiki-home` folder it is `<that folder, relative to knowledge/>/<slug>/wiki`. Every wiki file is named `wiki.md`, so the folder must be in the link: a bare `[[agents]]` or `[[wiki]]` resolves to nothing (or to the wrong page) in Obsidian, and lint rule 2 reports it as broken.
 
-Lint verifies that every `[[link]]` target has a corresponding
-`knowledge/topics/<link>/wiki.md`.
+The same form works everywhere else in the vault (MOCs, notes, briefs), renders as the display text in Obsidian, and reads cleanly elsewhere.
+
+Older pages may still contain bare `[[slug]]` links. When you edit a page, rewrite the links you touch to the full form; lint rule 2 lists the rest.
 
 ---
 

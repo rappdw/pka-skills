@@ -148,6 +148,8 @@ For each folder, infer using `references/inference-guide.md`:
 - **How it's organized** — by person, date, topic, flat, etc.
 - **Priority** — Active / Reference / Archive
 - **Meeting tag** — `meeting-home` if the folder contains date-slug meeting files; multiple folders can be tagged
+- **People tag** — `people-home` on the one folder whose subfolders are people (see `references/inference-guide.md`)
+- **Daily tag** — `daily-home` if the folder's notes are named `YYYY-MM-DD.md`
 - **Wiki tag** — `wiki-home` if the folder contains subfolders each with `wiki.md`; multiple folders can be tagged
 - **Archive destination** — flag one folder as where completed projects land
 - **Confidence** — High / Medium / Low
@@ -182,7 +184,7 @@ Three questions only.
 
 **Q3 — Confirm or correct the Repo Map**
 
-Show draft map including meeting-home tags and archive destination. For low-confidence entries, ask specifically. Confirm archive destination: "I've identified `<folder>` as where completed project archives should live — is that right?" If none inferred, ask.
+Show draft map including the meeting-home, people-home and daily-home tags and the archive destination. For low-confidence entries, ask specifically. Confirm archive destination: "I've identified `<folder>` as where completed project archives should live — is that right?" If none inferred, ask.
 
 ---
 
@@ -276,9 +278,15 @@ Seed with bootstrap decisions (storage mode, autonomy level, archive destination
 
 See `references/sqlite-modes.md` for the schema and the commands.
 
-### 3j — Confirm and orient
+### 3j — Pointer layer (plain-markdown workspaces only)
 
-Print: Repo Map summary, meeting-home folders, archive destination, storage mode, roles, two suggested first actions.
+If `knowledge/.obsidian/` exists, skip this: in an Obsidian vault the pointer layer is on by default.
+
+Otherwise it is opt-in. Offer it in one sentence: *"I can add a small `_MOC.md` to each top-level folder so routed files get a searchable summary row — useful once there are hundreds of notes. Want that?"* On a yes, run `.pka/bin/pka-tools pointers init`. On a no, do nothing; routing then writes no MOCs, and the user can opt in later.
+
+### 3k — Confirm and orient
+
+Print: Repo Map summary, meeting-home and people-home folders, archive destination, storage mode, roles, two suggested first actions.
 
 ---
 
@@ -460,10 +468,14 @@ Full step-by-step algorithm in `references/upgrade.md`. Summary:
    - Backs up `.pka/roles/` to `.pka/upgrade-backups/<timestamp>/`
    - Seeds `.pka/roles/_obsidian.md` and `.pka/roles/_git-protocol.md` if absent
    - Structured-merges new H2 sections into orchestrator/librarian/researcher role files
-   - Never modifies the body of existing sections
+   - Never modifies the body of existing sections on this run
+   - Lists **sections seeded by an earlier version**: "can be refreshed" (the text is exactly what an earlier version shipped, so the user never edited it) or "customised — left alone"
 4. **Print the helper's summary** to the user.
-5. **Suggest follow-ups** based on what's now present:
+5. **Offer the refresh, if the summary lists sections that can be refreshed.** These carry superseded instructions (the pre-v1.7 pointer-row rule, for example). Ask once; on a yes run `python3 .pka/upgrade-roles.py --workspace <root> --refresh`. It takes a new backup, replaces only those sections, and leaves customised ones alone.
+   - For a **customised** section, show the difference with `--diff` and let the user decide. Replace one only on an explicit yes for that section: `--refresh --refresh-section '<file>:## <Heading>'`. Never pass `--refresh-section` on your own judgement — it overwrites the user's text (the backup keeps it).
+6. **Suggest follow-ups** based on what's now present:
    - If `knowledge/.obsidian/` exists and the user hasn't already, suggest `bootstrap obsidian` for the mechanical retrofit.
+   - If there is no Obsidian vault and no `_MOC.md` anywhere in `knowledge/`, mention that the pointer layer is opt-in (step 3j of base bootstrap).
    - If no `.meta` file at root, suggest `bootstrap git` if the user wants the hybrid monorepo.
    - Mention the manual bullet-merges into `## Key Competencies` and `## Output Conventions` (the upgrade does not touch these — see `references/upgrade.md` for the rationale).
 

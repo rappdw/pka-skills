@@ -88,9 +88,13 @@ If notes already have an `## Action Items` section:
 After extraction, surface to the user:
 > "Found N action items. Add to session log open threads?"
 
-If confirmed, append to `.pka/session-log.md`:
+If confirmed, append one entry per item with the item in the open-threads field (the field the session-start greeting reads):
 ```
-## YYYY-MM-DD HH:MM | pka-meetings | Open: <action item text> | — | —
+.pka/bin/pka-tools log add --role pka-meetings --summary "Action item from <note filename>" --open "<action item text>"
+```
+which writes:
+```
+## YYYY-MM-DD HH:MM | pka-meetings | Action item from <note filename> | <action item text> | —
 ```
 
 One session log entry per action item. These appear as open threads in future session starts.
@@ -109,8 +113,8 @@ When the user asks "What action items do I have from meetings this week?":
    - Scope: the folders tagged `meeting-home` in the Repo Map plus the people folder (1-1 notes live there). `--scope all` scans every index root; `--under <folder>` scans just that folder.
    - A note's date is its filename prefix (`YYYY-MM-DD-`), else its frontmatter `date`. File modification time is never used (routing, indexing and sync all touch it). Notes with no date are left out unless `--include-undated` is given.
    - Open boxes (`- [ ]`, `* [ ]`) are returned with file, line number, `@owner` mentions and a `by YYYY-MM-DD` due date when present. A ticked box (`- [x]`) is closed and not returned. Boxes inside fenced code blocks are examples and are ignored.
-2. Read `session-log.md` for this period's `pka-meetings | Open:` entries.
-3. Combine and deduplicate. When a session-log `Open:` entry and a checkbox line describe the same item, the note is the truth: if the box is now `- [x]`, the item is closed even though the log entry still says open.
+2. List the open threads in the session log: `.pka/bin/pka-tools log open --last 100` (entries before v1.7 put the item in the summary as `Open: <item>`; read those too).
+3. Combine and deduplicate. When a session-log open thread and a checkbox line describe the same item, the note is the truth: if the box is now `- [x]`, the item is closed even though the log entry still says open.
 4. Surface with source file links:
 
 ```

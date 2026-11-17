@@ -125,35 +125,47 @@ Surface to user: "Found N action items. Add to session log open threads?"
 
 File naming: `<YYYY-MM-DD>-<meeting-slug>.md`
 - slug from title: lowercase, hyphens, max 40 chars
+- 1-1 notes: `<YYYY-MM-DD>-1-1-<person-slug>.md`, in the person's folder. Existing 1-1 notes in other forms (`-1on1`, `-1-on-1`, with or without a name) are recognised as they are and never renamed.
 - Examples: `2026-03-31-1-1-priya.md`, `2026-03-31-slt-q2-planning.md`
 - Duplicate handling: append `-2`, `-3` suffix
 
 **Never move earshot capture directories.** Routing files the notes only; the capture directory (audio, `transcript.*`, `narrative.md`) stays where earshot wrote it. If the notes carry a `**Recording**: <capture-dir>` header (added by thinkkit's take-notes), preserve that line verbatim when moving or rewriting the notes — it stays valid precisely because the capture directory doesn't move.
 
-### Step 5 — Update SQLite index
+### Step 5 — Post-route: frontmatter, MOC, pointer row, index, commit
 
-In index mode (`.pka/knowledge.db` exists), index the filed note with the workspace's tool rather than writing rows by hand:
+Once the note is saved, run the same command the librarian runs after a route, so a meeting note gets exactly what a routed document gets:
 
 ```
-.pka/bin/pka-tools index <path to the filed note>
+.pka/bin/pka-tools post-route <path to the filed note> --role Meetings [--topic <slug>]
 ```
 
-If the meeting has an earshot capture with a `narrative.md`, index the narrative too — it is the richest artifact for the meeting. Pass its in-place path in the same command (`.pka/bin/pka-tools index <note> <capture-dir>/narrative.md`); the capture directory itself never moves. Nothing else in a capture directory is indexed.
+In order: frontmatter and a `- [[note]]` bullet in its folder's `_MOC.md` (when `obsidian_present`), a pointer row, the index (index mode), and one commit by path in the child repo (when `hybrid_monorepo_present`) with the message `Meetings: Route <filename> to <folder>/` and the trailer. Pass `--topic` when the meeting belongs to a known pointer cluster (an ongoing series, a project). If you linked attendees' person pages in step 2, name each changed `index.md` with `--also` so it rides in the same commit. Relay any step that reports `skipped` with its reason; exit code 1 means the commit was refused (report git's message; the note is filed regardless).
 
-In markdown-only mode there is nothing to do. If the tool is missing, or reports that the index needs `db migrate`, say so and suggest `bootstrap upgrade`; do not fall back to manual inserts.
+If the meeting has an earshot capture with a `narrative.md`, index the narrative in place as well — it is the richest artifact for the meeting, and its capture directory never moves:
+
+```
+.pka/bin/pka-tools index <capture-dir>/narrative.md
+```
+
+(`post-route` refuses files inside a capture directory, by design: captures are never routed.) In markdown-only mode the index steps are skipped by the tool. If the tool is missing, or reports that the index needs `db migrate`, say so and suggest `bootstrap upgrade`; do not fall back to manual inserts, table edits or `git add`.
 
 ### Step 6 — Write to session-log.md
 
+One entry for the note:
+
 ```
-## YYYY-MM-DD HH:MM | pka-meetings | Filed: <title> → <path> | Action items: N | <open threads if any>
+.pka/bin/pka-tools log add --role pka-meetings --summary "Filed <title> → <path>" [--next "<next action>"]
 ```
 
-If a `narrative.md` was indexed, include its path in the entry: `... | Narrative: <capture-dir>/narrative.md`.
+Add `Narrative: <capture-dir>/narrative.md` to the summary when a narrative was indexed.
 
-If action items added to log:
+If the user agreed to add action items to the log, one entry per item, with the item in the **open-threads** field — that is the field the session-start greeting reads:
+
 ```
-## YYYY-MM-DD HH:MM | pka-meetings | Open: <action> | — | —
+.pka/bin/pka-tools log add --role pka-meetings --summary "Action item from <note filename>" --open "<action> — @<owner>[ — by <date>]"
 ```
+
+The tool writes the grammar (`## YYYY-MM-DD HH:MM | role | summary | open threads | next action`) and escapes any `|` in the text.
 
 ### Step 7 — Confirm and summarize
 

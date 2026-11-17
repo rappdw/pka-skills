@@ -44,7 +44,7 @@ Completed projects archive to: `{{archive_destination}}`
   not auto-routed to the knowledge base
 
 ## Session Start Protocol
-1. Read last 20 entries in `.pka/session-log.md`
+1. Read the open threads of the last 20 session-log entries: `.pka/bin/pka-tools log open`
 2. Scan `team-inbox/` for new files — route general files; flag transcripts.
    Also look for earshot capture directories (any directory holding a
    `meeting.json`, usually under `meeting-notes/`): a capture with a
@@ -55,8 +55,10 @@ Completed projects archive to: `{{archive_destination}}`
 5. Greet {{name}} with: open threads + new inbox items + lifecycle flags
 
 ## Session End Protocol
-Append one entry to `.pka/session-log.md`:
-`## YYYY-MM-DD HH:MM | role | summary | open threads | next action`
+Append one entry to `.pka/session-log.md` with
+`.pka/bin/pka-tools log add --role <role> --summary "…" [--open "…"] [--next "…"]`,
+which writes `## YYYY-MM-DD HH:MM | role | summary | open threads | next action`.
+Put in `--open` only what is still open: the next session's greeting reads it.
 
 ## Project Lifecycle Commands
 - "transition `<folder>` to knowledge" → harvest summary, clean, move, reindex
@@ -68,7 +70,7 @@ Append one entry to `.pka/session-log.md`:
 <!-- Last updated: {{date}} -->
 <!-- Priority: Active | Reference | Archive -->
 <!-- Status: active | archiving | archived -->
-<!-- Tags: meeting-home (used by pka-meetings for routing), wiki-home (used by pka-wiki for topic synthesis) -->
+<!-- Tags: meeting-home (dated meeting notes), people-home (one subfolder per person; at most one folder), daily-home (YYYY-MM-DD.md journal), wiki-home (topic wikis). pka-meetings, pka-wiki and pka-tools read these. -->
 <!-- Archive destination: {{archive_destination}} -->
 
 | Folder | Contents | Organization | Priority | Status | Confidence | Tags |

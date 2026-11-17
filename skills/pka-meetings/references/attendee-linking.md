@@ -15,7 +15,7 @@ Extract attendee names from:
 
 ## Matching Against Repo Map
 
-For each extracted attendee name, attempt to find a matching folder in the Repo Map's personnel section.
+For each extracted attendee name, attempt to find a matching person folder: a subfolder of the Repo Map folder tagged `people-home` (fallback: `knowledge/personnel/`).
 
 ### Match Order (stop at first match)
 

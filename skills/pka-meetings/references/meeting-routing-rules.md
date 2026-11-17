@@ -15,10 +15,11 @@ Evaluate in order. Stop at first match.
 - OR only one attendee besides the PKA owner
 
 **Routing:**
-- Look up the other attendee's name in the Repo Map
-- If `<personnel-folder>/<person-slug>/` exists → route there
+- Look up the other attendee's name among the person folders of the Repo Map folder tagged `people-home` (fallback: `knowledge/personnel/`)
+- If `<people-home>/<person-slug>/` exists → route there, named `YYYY-MM-DD-1-1-<person-slug>.md`
 - Person slug matching: try first name, last name, `firstname-lastname`, all lowercase
-- If no matching personnel folder: route to the general `meeting-home`-tagged folder and suggest creating a personnel subfolder
+- If no matching person folder: route to the general `meeting-home`-tagged folder and suggest creating a person subfolder
+- Existing 1-1 notes may be named `-1on1`, `-1-1` or `-1-on-1`, with or without a name after the marker. All are recognised; never rename them to match.
 
 **Example:**
 - Title: "1-1 with Priya", Attendees: Dan, Priya

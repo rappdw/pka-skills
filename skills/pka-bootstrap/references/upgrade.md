@@ -26,7 +26,8 @@ Procedure for the `upgrade` bootstrap target. Invoked when a user with an alread
    - Headings inside fenced code blocks (``` or ~~~) are examples, not structure: they are neither counted as "already present" nor used as the insertion point.
    - Keeps each file's line endings (a CRLF file stays CRLF).
    - Never modifies the body of existing sections.
-4. **Print a summary** listing:
+4. **Report sections seeded by an earlier version** (see "Refreshing seeded sections" below). Nothing is replaced unless `--refresh` is given.
+5. **Print a summary** listing:
    - Backup path
    - Shared references seeded vs. already present
    - Per-role: sections added vs. already present
@@ -39,6 +40,29 @@ Procedure for the `upgrade` bootstrap target. Invoked when a user with an alread
 - **Never deletes** content. The whole upgrade is additive.
 - **Never auto-commits.** Even when run inside a hybrid monorepo, the upgrade leaves changes in the working tree for human review.
 - **Never touches files outside `.pka/`.** Only the role files and shared references are modified.
+
+## Refreshing seeded sections
+
+Adding missing sections is not enough on its own: a section seeded by an earlier version keeps its wording, including instructions a later version replaced (before v1.7 the librarian's "Pointer-row maintenance" section described a cluster rule the code no longer uses). So the helper also compares every seeded section a workspace has with the current seed:
+
+| The section's text | Reported as | With `--refresh` |
+|---|---|---|
+| Same as the current seed (ignoring trailing spaces and blank lines) | nothing | nothing |
+| Exactly a version an earlier pka-skills release shipped | can be refreshed | replaced with the current text |
+| Anything else (the user edited it) | customised — left alone | left alone, unless named with `--refresh-section 'FILE:## Heading'` |
+
+"Seeded sections" are the sections the helper itself adds to role files (the list in `upgrade-roles.py`) and every section of `_obsidian.md` and `_git-protocol.md`. Other sections of a role file (`## Purpose`, `## Output Conventions`, …) are never compared or touched.
+
+The record of shipped versions is `KNOWN_SECTION_HASHES` in `upgrade-roles.py`: one SHA-256 per version of each section, taken from this repository's history. It is maintained by `scripts/seeds.py` (see below) and only ever grows.
+
+```
+python3 .pka/upgrade-roles.py                         # report
+python3 .pka/upgrade-roles.py --diff                  # report, with what changed in each section
+python3 .pka/upgrade-roles.py --refresh               # replace the unedited ones (backup first)
+python3 .pka/upgrade-roles.py --refresh --refresh-section 'librarian.md:## Output Conventions'
+```
+
+The skill asks before `--refresh`, and passes `--refresh-section` only for a section the user has said yes to.
 
 ## Implementation
 
@@ -106,7 +130,7 @@ Nothing is deleted. Relay the kept, conflict and backup lines to the user.
 
 To undo: replace `.pka/knowledge.db` with the backup file named in the output. Details in `references/sqlite-modes.md`.
 
-`upgrade-roles.py` is kept in sync with the seeds it uses. When the seeds change, the embedded copies in the script must change too — that's the trade-off for not depending on the plugin's reference docs at runtime.
+`upgrade-roles.py` carries copies of the seeds because it runs inside a workspace, where the plugin's reference files may not be readable. The copies are generated, never edited by hand: edit the seed in `references/role-definitions.md`, `references/obsidian-conventions.md` or `references/git-protocol.md`, then run `python3 scripts/seeds.py --write` from the plugin repository. `scripts/seeds.py --check` (run by the test suite) fails when a copy differs from its reference or a current section is missing from `KNOWN_SECTION_HASHES`.
 
 ## Manual follow-up the user may want
 

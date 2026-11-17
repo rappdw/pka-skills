@@ -45,6 +45,23 @@ nonexistent paths within the knowledge base.
   `_MOC.md` files**
 - Absolute paths outside PKA root are skipped (user's responsibility)
 
+**Resolving a wikilink.** Take the text between `[[` and `]]`. Drop an alias
+(`|Title`, or `\|Title` inside a table) and a heading or block anchor
+(`#Heading`, `#^block`). What is left is the target. It resolves when
+`knowledge/<target>.md` exists, or `knowledge/<target>` exists as written (a
+target may already end in `.md`, or name a PDF, image or other non-markdown
+file). So `[[topics/mcp/wiki|MCP]]`, `[[AI/brief#Findings]]`,
+`[[AI/brief.md]]` and `[[reference/report.pdf]]` all resolve when the files
+exist.
+
+A bare name such as `[[mcp]]` resolves only if `knowledge/mcp.md` exists.
+Obsidian may still find a uniquely named file elsewhere in the vault, but the
+PKA conventions use full vault-relative paths, so report it, with the full
+path as the suggested fix when exactly one file in the vault has that name
+(for a wiki slug: `[[<wiki-home>/<slug>/wiki|<Title>]]`).
+
+Ignore links inside fenced code blocks and inline code: they are examples.
+
 **Why:** File moves and deletions leave dangling references. Pointer rows in
 particular accumulate over time and are append-only by the librarian, so
 broken pointer wikilinks need the user's attention to clean up.
