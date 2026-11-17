@@ -42,7 +42,9 @@ jobs:
           for f in bootstrap-assets/scripts/*.sh tests/*.sh; do
             /bin/bash -n "$f"
           done
-          python3 -m py_compile bootstrap-assets/scripts/upgrade-roles.py tests/*.py
+          python3 -m py_compile bootstrap-assets/scripts/upgrade-roles.py \
+            bootstrap-assets/tools/pka-tools bootstrap-assets/tools/pka_tools/*.py \
+            tests/tools/*.py tests/fixtures/*.py
 
       - name: Run the suite
         run: ./tests/run-all.sh
@@ -56,3 +58,24 @@ jobs:
           mkdir "$RUNNER_TEMP/system-bash"
           ln -s /bin/bash "$RUNNER_TEMP/system-bash/bash"
           PATH="$RUNNER_TEMP/system-bash:$PATH" ./tests/run-all.sh
+
+  # pka-tools promises Python 3.9. The runners' default python3 is much newer,
+  # so run the toolkit's own tests on the oldest version it supports.
+  tools-python-39:
+    name: pka-tools on Python 3.9
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
+      - name: Tool versions
+        run: |
+          python3 --version
+          python3 -c "import sqlite3; print('sqlite', sqlite3.sqlite_version)"
+          git --version
+
+      - name: Run the pka-tools tests
+        run: ./tests/test_tools.sh
