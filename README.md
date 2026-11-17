@@ -79,6 +79,8 @@ A user with no Obsidian vault and no hybrid monorepo sees identical behavior to 
 
 **v1.6.1 — Pointer layer for MOC files.** The librarian maintains a `## Pointers` section inside each `_MOC.md` (one row per concept cluster, three columns: Topic, Entities, Files). FTS5 indexes pointer-row content with a 3× rank boost over body matches, turning a 1,500-file haystack query into a 30-cluster summary followed by 3–5 targeted file reads. No vector store, no embeddings. See `skills/pka-librarian/references/pointer-layer.md`.
 
+**v1.6.3 — Repair and safety.** No new features. The vendored helper scripts no longer lose data: `graduate.sh` and `reinit-project-with-lfs.sh` keep the previous repository as a backup, validate their targets, check every git step and roll back on failure; `init_project_repos.sh` reports failures instead of success; `push-all.sh` and `.meta` agree about remotes. Re-run `bootstrap git` (or `bootstrap upgrade`) in an existing workspace to pick up the fixed scripts. See [`CHANGELOG.md`](CHANGELOG.md).
+
 ## Documentation
 
 - [Tutorial](docs/TUTORIAL.md) — A practical walkthrough of the system after setup
@@ -115,14 +117,18 @@ pka-skills/
 ├── bootstrap-assets/           # vendored templates + helper scripts installed by `bootstrap git`
 │   ├── gitattributes-template
 │   ├── gitignore-template
-│   └── scripts/                # graduate.sh, init_project_repos.sh, push-all.sh, build-repo-list.sh, reinit-project-with-lfs.sh
+│   └── scripts/                # graduate.sh, init_project_repos.sh, push-all.sh, build-repo-list.sh, reinit-project-with-lfs.sh, upgrade-roles.py
 ├── tests/                      # shell-based mechanical tests for bootstrap operations
 │   ├── run-all.sh
 │   ├── lib.sh
 │   ├── test_git_bootstrap.sh
 │   ├── test_obsidian_bootstrap.sh
 │   ├── test_commit_protocol.sh
-│   └── bootstrap_obsidian.py   # reference implementation companion for Obsidian-bootstrap tests
+│   ├── test_upgrade.sh
+│   ├── test_pointer_layer.sh
+│   ├── test_script_safety.sh   # one regression test per helper-script safety fix
+│   ├── bootstrap_obsidian.py   # reference implementation companion for Obsidian-bootstrap tests
+│   └── pointer_maintainer.py   # reference implementation companion for pointer-layer tests
 ├── evals/
 │   ├── pka-bootstrap.evals.json
 │   ├── pka-librarian.evals.json
