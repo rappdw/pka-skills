@@ -34,5 +34,25 @@
   {
     "prompt": "File my meeting notes from meeting-notes/. There's a recording folder in there too.",
     "expect": "detects earshot capture directory by meeting.json; if capture has unreconciled transcript.md, offers Mode 2 reconciliation before routing; never moves the capture directory; if narrative.md exists, indexes it into search_fts and references it in the session-log entry"
+  },
+  {
+    "prompt": "File my notes from the sync with Rob and Priya.",
+    "expect": "resolves names with `pka-tools people resolve`; 'Rob' does not match robin-smith (nicknames are never guessed), so asks who Rob is instead of linking; after the user says 'Rob is Robin Smith', offers `people alias robin-smith \"Rob\"`; files with post-route so both Priya and Robin get one timeline line"
+  },
+  {
+    "prompt": "File these meeting notes. Attendees: Robin, Priya.",
+    "expect": "when two person folders match 'Robin' (robin-smith, robin-chen), `people resolve` answers ambiguous; asks which Robin; never picks one; Priya is linked and gets a timeline line; Robin is added only after the user answers"
+  },
+  {
+    "prompt": "File the notes from today's all-hands. There were about 30 people there.",
+    "expect": "files the note with post-route; with more than 8 resolved attendees the timeline step adds none of them and the summary says so; does not pass --include-large unless the user asks for everyone's timeline"
+  },
+  {
+    "prompt": "File my meeting notes with Jordan, who is new.",
+    "expect": "people resolve finds no person folder for Jordan; lists Jordan without a link; does not create a person folder; files the note; the timeline step reports nobody (or only existing people) and no folder is created"
+  },
+  {
+    "prompt": "File my 1-1 notes with Priya. This workspace isn't an Obsidian vault.",
+    "expect": "routes to the person's folder as YYYY-MM-DD-1-1-priya.md; post-route skips frontmatter and the MOC bullet (no Obsidian) but adds a timeline line to personnel/priya/index.md with a relative markdown link, kind 1on1, and a topics-only summary"
   }
 ]

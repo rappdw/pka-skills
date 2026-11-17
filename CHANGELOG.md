@@ -1,5 +1,44 @@
 # Changelog
 
+## v1.7.0 — unreleased
+
+People and their timelines. Phase 4 of the v1.7 plan.
+
+**Existing workspaces:** run `bootstrap upgrade`. It adds the "Person timeline" section to `.pka/roles/_obsidian.md` and offers to refresh the librarian's role sections that describe person back-links. Timelines then fill in as notes are filed; Phase 5's backfill adds the history.
+
+### Added — the people registry
+
+- `pka-tools people list | resolve | alias`. A person is a subfolder of the folder tagged `people-home` (fallback `knowledge/personnel/`). `index.md` may carry `name` and the new `aliases` field.
+- `people resolve` says **high** only for an exact slug, name or alias (case, accents, punctuation, `@` and titles ignored), the slug's words in either order, a link to the person's folder, or a first name only one person has. A last name alone, or a name two people share, is **ambiguous**: the skills ask, never pick. Nicknames are never guessed; when the user settles one, `people alias` records it, and it refuses an alias that already means someone else.
+- This replaces the three different name-matching specs in `attendee-linking.md`, `obsidian-routing.md` and the librarian role (finding C7).
+
+### Added — person timelines
+
+A managed `## Timeline` block in each person's `index.md`, newest first:
+
+```
+- 2026-11-14 · meeting · [[leadership/2026-11-14-slt-sync|SLT sync]] — deferred the vendor decision; Priya owns the adapter spike
+```
+
+- **Written by `post-route`** (its reserved step 4), so the line rides in the note's commit. Works with or without Obsidian (relative markdown links without it).
+- **Who:** the person whose folder holds the note; people the note's `person` / `attendees` frontmatter or `## Attendees` links name with high confidence; a person whose slug is in the filename. Body mentions do not count. Ambiguous names are reported, not added. Meetings with more than 8 resolved attendees add none of them (`--include-large`). `no-backref: true` opts a note out (the flag `cross-reference-maintenance.md` had already promised).
+- **Summaries** come from the role: at most 140 characters, from the note only; decisions and what that person owns, topics only for a 1-1. `--summary` / `--summary-for <slug>=…`.
+- **Safe to re-run:** a note already linked in the block is never added again, and an existing line is never rewritten, so hand-edited summaries survive. `pointers rename` (and `timeline rename`) follow a moved note in every timeline. `timeline check` reports problems; `timeline strip` removes the blocks.
+- The `## Mentioned in` back-links are no longer written. Existing ones stay, for the Phase 5 backfill to read.
+
+Decided with Dan on 2026-11-17: newest first, the 8-attendee cutoff, topics-only 1-1 summaries.
+
+### Changed
+
+- `pka-meetings` resolves attendees with `people resolve`, offers to save a settled nickname as an alias, and passes per-person timeline summaries to `post-route`.
+- The librarian's per-route "person backlinks" step is now the timeline; the librarian role seed, `_obsidian.md` seed (person schema gains `aliases`, new "Person timeline" section) and `obsidian-routing.md` say so. `bootstrap obsidian` person stubs include `aliases: []`.
+- `frontmatter.merge_list_item` generalises the tag merge to any list key.
+- Evals: five `pka-meetings` scenarios for a nickname, an ambiguous name, a large meeting, an attendee with no person folder, and a workspace without Obsidian.
+
+### Tests
+
+- `tests/tools/test_timeline.py`, including the Phase 4 acceptance tests: filing a note twice changes nothing; a hand-edited summary (and text the user typed inside the block) survives ten further routes; a rename updates every timeline that cites the note. 257 tests in `tests/tools/`.
+
 ## v1.7.0-beta.1 — unreleased
 
 One filing pipeline for every skill, one session-log grammar, single-source seeds. Phase 3 of the v1.7 plan.

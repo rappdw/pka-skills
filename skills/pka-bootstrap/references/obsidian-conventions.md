@@ -83,16 +83,19 @@ tags: [research, <domain-tag>]
 ```
 
 ### Person index
-Location: `personnel/<person>/index.md`
+Location: `<people-home>/<person>/index.md` (the people home is the Repo Map folder tagged `people-home`; usually `personnel/`)
 ```yaml
 ---
 type: person
 name: <full name>
 role: <role/title>
 org: <org>
+aliases: [<other names this person goes by>]
 tags: [person]
 ---
 ```
+
+`aliases` holds names the user has confirmed mean this person (a nickname, a maiden name). Roles add to it only when the user says so (`.pka/bin/pka-tools people alias <slug> "<name>"`); they never guess one.
 
 ## Rules for writing frontmatter
 
@@ -243,6 +246,25 @@ With Obsidian the layer is on by default: MOCs are created as needed, the wikili
 - Not a replacement for full-text search. It is a faster path that sits in front of FTS.
 - Not a separate file. It is a section inside existing `_MOC.md` files, never a `_pointers.md` or similar.
 - Not Obsidian-dependent. Plain-markdown workspaces that opt in get the same FTS-side gains; Obsidian only improves the rendering.
+
+## Person timeline (added in v1.7.0)
+
+Each person's `index.md` carries a `## Timeline`: one line per note about them, newest first, kept by `pka-tools` inside two markers.
+
+```markdown
+## Timeline
+<!-- pka:timeline v1 — maintained by pka-tools; newest first; edit summaries freely, leave links alone -->
+- 2026-11-14 · meeting · [[leadership/2026-11-14-slt-sync|SLT sync]] — deferred the vendor decision; Priya owns the adapter spike
+- 2026-11-10 · 1on1 · [[personnel/priya/2026-11-10-1-1-priya|1-1]] — Q1 goals, hiring plan
+<!-- /pka:timeline -->
+```
+
+- **Line grammar:** `- <date> · <kind> · <link>[ — <summary>]`; kind is `1on1`, `meeting` or `doc`. The link is a wikilink in an Obsidian vault and a relative markdown link otherwise. This section is **not** gated on `obsidian_present`.
+- **Who writes it:** `.pka/bin/pka-tools post-route` when a note is filed (any role). The role supplies the summary: at most 140 characters, drawn only from the note — decisions and what this person owns; for a 1-1, the topics only.
+- **Who is on a note's timeline:** the person whose folder holds the note; people its `person` / `attendees` frontmatter or `## Attendees` links name with high confidence; a person whose slug is in the filename. A body mention is not enough. Ambiguous names are never added. Meetings with more than 8 resolved attendees add none of them. A note with `no-backref: true` goes on nobody's timeline.
+- **Editing:** the user may rewrite any summary or add text inside the block; the tool never changes an existing line except to follow a renamed note. Do not reorder lines by hand if you want new ones to land in date order.
+- **Rollback:** `.pka/bin/pka-tools timeline strip` removes the blocks.
+- The older `## Mentioned in` back-link sections are no longer written; existing ones stay.
 
 ## Tag conventions
 

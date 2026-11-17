@@ -59,6 +59,7 @@ SECTION_LISTS = {
     "LIBRARIAN_SECTIONS_V161": ("role", "librarian"),
     "RESEARCHER_SECTIONS": ("role", "researcher"),
     "OBSIDIAN_SECTIONS_V161": ("shared", "OBSIDIAN_SEED"),
+    "OBSIDIAN_SECTIONS_V170": ("shared", "OBSIDIAN_SEED"),
 }
 _FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 
@@ -188,7 +189,7 @@ def _upgrade_module():
 
 FILE_OF_LIST = {"ORCHESTRATOR_SECTIONS": "orchestrator.md", "LIBRARIAN_SECTIONS": "librarian.md",
                 "LIBRARIAN_SECTIONS_V161": "librarian.md", "RESEARCHER_SECTIONS": "researcher.md",
-                "OBSIDIAN_SECTIONS_V161": "_obsidian.md"}
+                "OBSIDIAN_SECTIONS_V161": "_obsidian.md", "OBSIDIAN_SECTIONS_V170": "_obsidian.md"}
 FILE_OF_SEED = {"OBSIDIAN_SEED": "_obsidian.md", "GIT_PROTOCOL_SEED": "_git-protocol.md"}
 ROLE_FILES = {"orchestrator": "orchestrator.md", "librarian": "librarian.md", "researcher": "researcher.md"}
 

@@ -46,6 +46,7 @@ Python `unittest` modules, standard library only. Run them alone with `./tests/t
 | `tools/test_commit_actions.py` | `commit` (exact paths, root never committed, failures reported) and `actions` |
 | `tools/test_install.py` | The installer and manifest; the tool's version matches the plugin's; Python 3.9 syntax; standard library only |
 | `tools/test_postroute.py` | `post-route` (the whole pipeline in a hybrid monorepo, a meeting note filed the same as a librarian route, moves, refused commits, plain vaults), `moc add-link`, the pointer-layer opt-in and `pointers init`, `log add / open / check` |
+| `tools/test_timeline.py` | `people resolve` (what is and is not high confidence), `people alias`, timelines (evidence tiers, newest-first insertion, large meetings, no Obsidian, CRLF, unreadable blocks, rename, check, strip) and their place in `post-route`, including the Phase 4 acceptance tests |
 | `tools/test_upgrade_refresh.py` | `upgrade-roles.py --refresh` (unedited old sections replaced, customised ones kept, CRLF, dry run), and the seed copies matching the references (`scripts/seeds.py --check`) |
 | `tools/test_hardening.py` | One regression test per bug found in review: `GIT_DIR` in the environment, pathspec patterns, read-only and symlinked files, capture directories, unlinkable filenames, bare carriage returns, corrupt database, manifest keys that leave `.pka/` |
 

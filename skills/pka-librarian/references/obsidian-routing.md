@@ -66,25 +66,24 @@ A `- [[<vault-relative path>]]` bullet goes into the nearest `_MOC.md`: the note
 - A note already linked anywhere in the MOC's text gets no second bullet. (A link inside the Pointers table, a fenced example or inline code does not count.)
 - Existing entries are never reordered or removed.
 
-### 5. Person backlinks (high-confidence only, yours)
+### 5. Person timeline (done by `post-route`, not gated on Obsidian)
 
-If the routed file's filename or **first-line title** clearly references a person (e.g., `2026-04-22-1-1-priya.md`, or H1 = `1-1 with Priya`), **and** `personnel/<that-person>/index.md` exists:
+The note gets one line on the `## Timeline` of each person it belongs to, in `<people-home>/<person>/index.md` (the index is created as a stub inside an existing person folder if it is missing; no person folder is ever created). Evidence, strongest first:
 
-- Append a bullet to that person's `index.md` under `## Mentioned in` (create the section if absent).
-- Bullet: `- [[<path-to-routed-file>]] (YYYY-MM-DD)`.
+- **T1** — the note is inside the person's folder.
+- **T2** — frontmatter `person` or `attendees`, or a link under `## Attendees`, resolves to the person with high confidence (`.pka/bin/pka-tools people resolve`), or the person's slug appears as words of the filename (`2026-04-22-1-1-priya.md`).
+- A name only in the body does not count. Ambiguous names are reported, never added. A meeting with more than 8 resolved attendees adds none of them (`--include-large` overrides). `no-backref: true` in the frontmatter opts a note out.
 
-Confidence rules:
-- High confidence: filename contains the personnel folder name as a token (split on `-` or `_`), or the filename matches a 1on1 pattern with that person.
-- Low confidence: a name appears only in the body, or could match multiple personnel folders. **Do not link.**
+Your part is the summary, at most 140 characters and drawn only from the note: decisions and what that person owns; for a 1-1, the topics only. Pass it to `post-route` as `--summary "…"` (everyone) or `--summary-for <slug>="…"` (per person). `--person <slug>` names the people yourself when the evidence is not in the note. Run `.pka/bin/pka-tools timeline who <file>` to see who the tool would pick, and why.
 
-Err strongly on the side of **not linking**. A missing backlink is a minor inconvenience; a wrong backlink is a real correctness issue.
+Do not write `## Mentioned in` bullets any more. Existing ones are left as they are; Phase 5's backfill reads them as evidence.
 
 ### 6. Wikilink hygiene in the routed content (light touch)
 
 This step is **optional and conservative**. The librarian routes — it is not a content-rewriter. But:
 
 - If the routed content contains plain markdown links to **vault-internal** files (e.g., `[Robin](personnel/robin/index.md)`), and `obsidian_present` is true, those links would still work in Obsidian (markdown links are valid). Do not rewrite as a routing side-effect.
-- New content the librarian generates (e.g., the `Mentioned in` bullets, MOC bullets) **must** use `[[wikilinks]]` for vault-internal references and plain markdown for vault-external references.
+- New content the librarian generates (e.g., MOC bullets) **must** use `[[wikilinks]]` for vault-internal references and plain markdown for vault-external references.
 
 ## Failure handling
 

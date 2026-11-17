@@ -61,27 +61,22 @@ for people mentioned but not attending.
 
 ---
 
-## Future: Automatic Back-Reference Maintenance (v1.1+)
+## Automatic back-references for people: the timeline (v1.7)
 
-Design sketch for a future release:
+For people, the back-reference is now automatic. When a note is filed, `.pka/bin/pka-tools post-route` adds one line to the `## Timeline` block in the `index.md` of each person the note belongs to:
 
-**Trigger:** File is filed into knowledge base via librarian or meetings.
+```markdown
+## Timeline
+<!-- pka:timeline v1 — maintained by pka-tools; newest first; edit summaries freely, leave links alone -->
+- 2026-11-14 · meeting · [[leadership/2026-11-14-slt-sync|SLT sync]] — deferred the vendor decision; Priya owns the adapter spike
+<!-- /pka:timeline -->
+```
 
-**Flow:**
-1. Extract entity mentions from new file
-2. For each confirmed match (high-confidence only):
-   - Locate entity's folder or wiki
-   - Find or create a `## Inbound References` section
-   - Append: `- [<new-file>](relative/path) — <date>`
-3. Log back-refs added to session-log
+Only certain or high-confidence evidence counts: the note is in the person's folder, or its `person` / `attendees` frontmatter or `## Attendees` links resolve to them, or the person's slug is part of the filename. A mention in the body does not put a note on a timeline; lint rule 5 reports those as candidates. File renames are followed (`pointers rename` rewrites timeline links too).
 
-**Risks to resolve first:**
-- False positives polluting entity pages
-- Back-ref section placement conventions
-- Handling of file renames (need to update back-refs too)
-- User control over which entity types get auto-backref'd
+The older `## Mentioned in`, `## Related meetings` and `## Inbound References` sections are no longer written. Existing ones are left as they are.
 
-Lint in v1.0 proves out the detection quality before committing to automation.
+For entities other than people (projects, topics, wikis), back-references remain lint-only as described above.
 
 ---
 
@@ -92,4 +87,4 @@ If a user doesn't want a particular file cross-referenced:
 - Add a frontmatter flag: `no-backref: true`
 - Lint skips files with this flag
 
-(Implementation detail for v1.1.)
+The timeline honours this flag: a note with `no-backref: true` goes on nobody's timeline. Lint skips it too.

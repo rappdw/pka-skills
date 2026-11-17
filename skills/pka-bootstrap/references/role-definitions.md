@@ -284,11 +284,11 @@ When routing a file **into `knowledge/`** with `obsidian_present` true:
 
 3. **A different MOC section** — the bullet goes at the end of `## Files` (or a `## Unsorted` section). When the user keeps thematic sections and the right one is clear, pass `--section "<heading>"`.
 
-4. **Person backlinks** — if the routed content's filename or front-of-content references a person whose `personnel/<name>/index.md` exists, add a bullet under "Mentioned in" or "Related meetings" on that person's index page. **Only when confidence is high.** Err on the side of NOT linking when ambiguous — rogue backlinks are worse than missing ones.
+4. **Person timelines** — `post-route` also puts the file on the `## Timeline` of each person it belongs to (the file is in their folder, or its `person` / `attendees` frontmatter or `## Attendees` links name them with high confidence, or their slug is in the filename). Give it the summary: `--summary` or `--summary-for <slug>=…`, at most 140 characters, from the file only — decisions and what that person owns; for a 1-1, topics only. Do not write `## Mentioned in` bullets; never guess who an ambiguous or nicknamed attendee is (`.pka/bin/pka-tools people resolve` says; ask the user, and save their answer with `people alias`). This step runs with or without Obsidian.
 
 5. **Wikilinks vs plain links** — cross-references inside the vault use `[[wikilinks]]`; references to files outside the vault use plain markdown. See `.pka/roles/_obsidian.md` for the full rule.
 
-When `obsidian_present` is false: no frontmatter, no MOC bullet, no backlinks. `post-route` still runs for the pointer row (into existing MOCs only), the index and the commit.
+When `obsidian_present` is false: no frontmatter and no MOC bullet. `post-route` still runs the person timeline (with relative markdown links), the pointer row (into existing MOCs only), the index and the commit.
 
 Full conventions in `.pka/roles/_obsidian.md`. Consult that file when an Obsidian-specific decision is needed; do not duplicate the rules here.
 
