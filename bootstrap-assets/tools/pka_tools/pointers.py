@@ -17,6 +17,7 @@ A topic passed explicitly (`--topic`) is a decision: it skips step 2.
 """
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
@@ -34,7 +35,10 @@ from .markdown import (
     replace_cell,
     section_end,
 )
-from .textio import NotText, detect_newline, line_body, line_end, read_text, split_lines, write_text_atomic
+from .markdown import protected_spans, unclosed_fence
+from .textio import (
+    NotText, detect_newline, has_bare_cr, line_body, line_end, read_text, split_lines, write_text_atomic,
+)
 from .workspace import MOC_NAME, Workspace, tag_key
 
 SIZE_CAP = 8
@@ -56,6 +60,8 @@ STOP_WORDS = {
     "file", "files", "draft", "final", "copy", "index",
 }
 _EMPTY_CELL = {"", "-", "–", "—", "none", "n/a", "na", "tbd"}
+# Characters a wikilink target cannot contain.
+_UNLINKABLE = set("[]|#^")
 _DATE_PREFIX = re.compile(r"^\d{4}-\d{2}-\d{2}[-_ ]?")
 _TOKEN_SPLIT = re.compile(r"[^\w]+|_+", re.UNICODE)
 
@@ -298,7 +304,7 @@ def _section_block(topic: str, entities: List[str], link: str, newline: str) -> 
 
 
 def choose_row(table: Table, facts: FileFacts, explicit_topic: str, coined: str) -> Optional[Row]:
-    rows = [row for row in table.rows if row.ok]
+    rows = [row for row in table.rows if row.ok and slugify(row.topic)]
     wanted = [slugify(explicit_topic)] if explicit_topic else []
     if not explicit_topic and facts.topic:
         wanted.append(slugify(facts.topic))
@@ -334,6 +340,12 @@ def apply_to_lines(
     newline = detect_newline(text)
     link = "[[%s]]" % link_path
     result = {"action": "noop", "topic": "", "files_in_row": 0, "problem": None}
+    if has_bare_cr(text):
+        result.update(action="skipped", problem="the file uses bare carriage returns as line endings")
+        return lines, result
+    if unclosed_fence(lines):
+        result.update(action="skipped", problem="the file has a code fence that is never closed")
+        return lines, result
 
     if not lines:
         block = ["# %s%s" % (title, newline), newline, STUB_COMMENT + newline, newline]
@@ -389,6 +401,7 @@ def apply_to_lines(
     targets = row.targets
     have_file = link_path in targets
     existing = {entity.lower() for entity in row.entities}
+    existing |= {entity_slug(entity) for entity in row.entities}
     new_entities = [entity for entity in facts.entities if entity.lower() not in existing]
     result.update(topic=row.topic, files_in_row=len(targets) + (0 if have_file else 1))
     if have_file and not new_entities:
@@ -437,11 +450,15 @@ def target_mocs(ws: Workspace, path: Path, facts: FileFacts, extra: List[str]) -
             moc = _moc_for_domain(ws, name)
             if moc not in mocs:
                 mocs.append(moc)
+    vault_real = os.path.realpath(str(ws.vault))
     for given in extra:
         moc = ws.resolve(given)
         if moc.name != MOC_NAME:
             raise ToolError("--moc must name a %s file: %s" % (MOC_NAME, given), EXIT_USAGE)
         ws.vault_rel(moc)
+        parent_real = os.path.realpath(str(moc.parent))
+        if parent_real != vault_real and not parent_real.startswith(vault_real.rstrip(os.sep) + os.sep):
+            raise ToolError("--moc leads outside the vault through a link: %s" % given, EXIT_USAGE)
         if moc not in mocs:
             mocs.append(moc)
     return mocs
@@ -476,6 +493,8 @@ def add(
             facts.entities.append(slug)
             facts.tokens |= tokenize(slug)
     if topic:
+        if not slugify(topic):
+            raise ToolError("--topic %r has no letters or digits to make a slug from" % topic, EXIT_USAGE)
         facts.tokens |= tokenize(topic)
     coined = slugify(topic) if topic else coin_slug(path, facts)
     link_path = link_path_for(ws, path)
@@ -483,6 +502,15 @@ def add(
     results = []
     changed: List[str] = []
     over_cap: List[str] = []
+    if _UNLINKABLE & set(link_path):
+        # [[...]] cannot name this file, so a row for it could never be
+        # recognised again and would be added on every run.
+        return {
+            "file": ws.rel(path), "link": None, "coined_slug": coined, "entities": facts.entities,
+            "mocs": [], "changed": [], "over_cap": [], "dry_run": dry_run,
+            "problem": "the path contains a character a wikilink cannot express ([ ] | # ^); "
+                       "no pointer row was written",
+        }
     for moc in target_mocs(ws, path, facts, extra_mocs or []):
         rel = ws.rel(moc)
         entry = {"moc": rel, "action": "noop", "topic": "", "problem": None}
@@ -520,6 +548,7 @@ def add(
         "changed": changed,
         "over_cap": over_cap,
         "dry_run": dry_run,
+        "problem": None,
     }
 
 
@@ -571,6 +600,9 @@ def rename(ws: Workspace, old: str, new: str, prefix: bool = False, dry_run: boo
         except (NotText, OSError):
             skipped.append(ws.rel(moc))
             continue
+        if has_bare_cr(text):
+            skipped.append(ws.rel(moc))
+            continue
         lines = split_lines(text)
         mask = fence_mask(lines)
         count = 0
@@ -579,12 +611,26 @@ def rename(ws: Workspace, old: str, new: str, prefix: bool = False, dry_run: boo
             if mask[idx] or "[[" not in line:
                 out.append(line)
                 continue
-            out.append(WIKILINK_RE.sub(swap, line))
+            guarded = protected_spans(line)
+
+            def swap_prose(match: "re.Match[str]", guarded=guarded, line=line) -> str:
+                start = match.start()
+                if start > 0 and line[start - 1] == "\\":
+                    return match.group(0)           # \[[...]] is literal text
+                if any(a <= start < b for a, b in guarded):
+                    return match.group(0)           # inside `code` or an HTML comment
+                return swap(match)
+
+            out.append(WIKILINK_RE.sub(swap_prose, line))
         if count:
+            if not dry_run:
+                try:
+                    write_text_atomic(moc, "".join(out))
+                except OSError:
+                    skipped.append(ws.rel(moc))
+                    continue
             total += count
             changed.append(ws.rel(moc))
-            if not dry_run:
-                write_text_atomic(moc, "".join(out))
     return {"from": old_ref, "to": new_ref, "prefix": prefix, "rewrites": total,
             "changed": changed, "skipped": skipped, "dry_run": dry_run}
 

@@ -21,7 +21,7 @@ A vault diff with:
 
 1. **No body reading.** Inputs are filename, folder structure, and existing frontmatter only. A note's body is carried through byte for byte: same line endings, same byte-order mark, same missing-or-present final newline.
 2. **Merge, never overwrite.** Existing frontmatter lines are not rewritten, reordered or re-quoted. New keys are inserted as new lines above the closing `---`. The one line that can change is `tags:`, which gains the domain tag.
-3. **Skip what cannot be read safely.** A note whose frontmatter is malformed, or uses YAML the tool does not handle, is listed and left untouched. So are notes that are not UTF-8 or are read-only.
+3. **Skip what cannot be read safely.** A note whose frontmatter is malformed, or uses YAML the tool does not handle, is listed and left untouched. So are notes that are not UTF-8, are read-only, or use bare carriage returns as line endings, and folders it cannot write to.
 4. **Idempotent.** Re-running produces no further changes.
 5. **Existing MOCs and person indexes are never edited** by the retrofit.
 
@@ -83,7 +83,7 @@ Always pass on the skipped list and the notes: those are the files the user may 
 | Meeting homes | Repo Map folders tagged `meeting-home`; without any, `knowledge/leadership/` and `knowledge/ArchCouncil/` if they exist |
 | Daily notes | Repo Map folders tagged `daily-home`; without any, `knowledge/lab-notebook/` |
 
-`.pkaignore` applies. Dot-folders, symbolic links and earshot capture directories are skipped.
+`.pkaignore` applies. Dot-folders, symbolic links and earshot capture directories (any folder holding `meeting.json`, wherever it is) are skipped whole: no MOC, no frontmatter. Stubs do not list files whose names a wikilink cannot express (`[ ] | # ^`).
 
 ### MOC stubs
 

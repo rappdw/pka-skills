@@ -62,6 +62,7 @@ class Workspace:
         self.db_path = self.pka / "knowledge.db"
         self._ignore: Optional[Ignore] = None
         self._repo_map: Optional[List[RepoMapEntry]] = None
+        self.unreadable_names = 0   # entries skipped because their name is not valid UTF-8
 
     # ---- predicates -------------------------------------------------
     @property
@@ -161,8 +162,8 @@ class Workspace:
                             return ""
                         return cells[pos]
                     folder = cell("folder").strip("`").strip().strip("/")
-                    if not folder:
-                        continue
+                    if not folder or os.path.isabs(folder) or ".." in folder.replace("\\", "/").split("/"):
+                        continue        # a Repo Map row cannot point outside the workspace
                     tags = [t.strip().strip("`") for t in re.split(r"[,\s]+", cell("tags")) if t.strip()]
                     entries.append(RepoMapEntry(folder, cell("priority"), cell("status"), tags))
         self._repo_map = entries
@@ -231,11 +232,13 @@ class Workspace:
         return [self.vault / name for name in DEFAULT_DAILY_HOMES if (self.vault / name).is_dir()]
 
     # ---- walking ----------------------------------------------------
-    def walk(self, start: Path, use_ignore: bool = True) -> Iterator[Path]:
+    def walk(self, start: Path, use_ignore: bool = True, captures: bool = True) -> Iterator[Path]:
         """Every file under `start`, in a stable order.
 
         Skipped: dot-directories, `.pkaignore` matches, symbolic links, and
-        the contents of earshot capture directories other than the narrative.
+        the contents of earshot capture directories other than the narrative
+        (with `captures=False`, capture directories are skipped whole).
+        Entries whose names are not valid UTF-8 are skipped and counted.
         """
         start = Path(start)
         if start.is_file():
@@ -252,10 +255,17 @@ class Workspace:
                 continue
             names = {entry.name for entry in children}
             is_capture = CAPTURE_MARKER in names
+            if is_capture and not captures:
+                continue
             subdirs = []
             for entry in children:
                 path = Path(entry.path)
                 if entry.is_symlink():
+                    continue
+                try:
+                    entry.name.encode("utf-8")
+                except UnicodeEncodeError:
+                    self.unreadable_names += 1
                     continue
                 rel = self.rel(path)
                 if entry.is_dir(follow_symlinks=False):

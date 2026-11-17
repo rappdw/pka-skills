@@ -30,7 +30,7 @@ What it reports, and what to do with it:
 | `Not committed: the paths are not inside a git repository.` | Not a hybrid monorepo, or the destination is outside any child repo. Nothing to do. |
 | `Not committed: … is not a child repository.` | The paths are in the root repo. Root is never committed automatically; use `--stage-only` (below). |
 | Exit code 1, `git commit failed …` | A hook, signing or identity problem. The files are still staged and nothing was reset. Put git's message in the routing report and carry on with the next file. |
-| Exit code 64 | The arguments were wrong (no paths, paths in two repositories, a path outside the workspace). Fix the call. |
+| Exit code 64 | The arguments were wrong: no paths, paths in two repositories, a path outside the workspace, a folder instead of files, or a path that neither exists nor is tracked. Fix the call. Paths are literal — wildcards are not expanded, so list each file. |
 
 **Stage and commit by path. Never `git add -A`, `git add .` or `git commit -a`.** The child repo is also the user's working area (and, with Obsidian, a vault being edited live), so at any moment it can hold half-written notes and changes the user staged themselves. Naming the paths on both `git add` and `git commit` puts exactly this routing's files in the commit and leaves everything else as it was — modified files stay modified, the user's staged files stay staged.
 

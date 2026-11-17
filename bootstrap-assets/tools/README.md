@@ -52,15 +52,17 @@ Every command that writes to a user's file follows these. The tests in `tests/to
 
 1. **Change only owned lines.** A pointer-table row, a `tags:` line, a line the tool inserts. Everything else stays byte for byte: line endings, the byte-order mark, trailing whitespace, a missing final newline.
 2. **Never re-render.** Frontmatter is not parsed into a document and written back; tables are not rebuilt. New entries go at the end of a cell or a list. Nothing is sorted, re-spaced or re-quoted.
-3. **When unsure, skip and report.** Frontmatter outside the supported subset, a table with an unexpected header, a file that is not UTF-8 or is read-only: the file is left alone and named in the output.
+3. **When unsure, skip and report.** The file is left alone and named in the output when: its frontmatter is outside the supported subset; a Pointers table has an unexpected header; it is not UTF-8; it is read-only; it uses bare carriage returns as line endings; it has a code fence that is never closed; or its name contains a character a wikilink cannot express (`[ ] | # ^`).
 4. **Idempotent.** Running a command twice changes nothing the second time.
-5. **Atomic writes.** A file is written to a temporary name and renamed into place, so an interrupted run cannot leave half a note. The file keeps its permissions; extended attributes (Finder tags, for example) on an edited file are not carried over.
-6. **Fenced code blocks are examples.** A `## Pointers` heading, a table or a `- [ ]` inside one is ignored.
+5. **Atomic writes.** A file is written to a temporary name and renamed into place, so an interrupted run cannot leave half a note. The file keeps its permissions; extended attributes (Finder tags, for example) on an edited file are not carried over. A file that is a symbolic link is written through the link, not replaced by a regular file.
+6. **Fenced code blocks are examples.** A `## Pointers` heading, a table or a `- [ ]` inside one is ignored. `pointers rename` also leaves links inside `inline code`, HTML comments and escaped `\[[...]]` alone.
 7. **Bodies are not interpreted.** Pointer maintenance and the Obsidian retrofit use filenames, folders and frontmatter. (`index` reads bodies to index them; `actions` reads them for checkboxes.)
 
 ## Git rules
 
 - `commit` stages and commits by path: `git add -- <paths>`, `git commit -- <paths>`. Never `-A`. The user's other modified, staged and untracked files are left as they were.
+- A path is a path. `*`, `?`, `[` and git's `:(magic)` prefixes are taken literally, a folder is refused (it would sweep in everything under it), and a path that neither exists nor is tracked is a usage error.
+- `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE` and the other variables that redirect git are removed from the environment, so a commit made from inside a hook of the root repository still lands in the child repository.
 - Only child repositories (inside the workspace root) are committed. The root repository is the user's review gate; `--stage-only` is the most it gets.
 - The trailer `Co-Authored-By: Claude <noreply@anthropic.com>` is always added.
 - A failed commit exits 1 and leaves the files staged. Nothing is reset, retried or forced. There is no push.
@@ -70,7 +72,7 @@ Every command that writes to a user's file follows these. The tests in `tests/to
 - The schema version is `PRAGMA user_version` (currently 1). `index` and `search` refuse to run against an older schema and say how to migrate.
 - `db migrate` without `--apply` is a dry run. `--apply` takes a verified backup first and runs in one transaction.
 - Only `file_index`, `search_fts`, `project_lifecycle` and `pka_meta` are created or altered. Other tables are left alone.
-- Text that a role stored in `search_fts` for a PDF or Office file is kept across re-indexing until the file changes or is removed.
+- Text that a role stored in `search_fts` for a PDF or Office file is kept across re-indexing until the file is removed. `--prune` removes only rows whose file no longer exists, whatever form the stored path takes.
 
 ## Layout
 

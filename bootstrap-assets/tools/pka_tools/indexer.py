@@ -50,6 +50,8 @@ def _is_sidecar(path: Path) -> bool:
 
 
 def _in_scope(rel: str, scopes: List[Tuple[str, bool]]) -> bool:
+    if not isinstance(rel, str):
+        return False
     for prefix, is_dir in scopes:
         if is_dir:
             if prefix == "" or rel == prefix or rel.startswith(prefix + "/"):
@@ -59,11 +61,17 @@ def _in_scope(rel: str, scopes: List[Tuple[str, bool]]) -> bool:
     return False
 
 
-def _collect(ws: Workspace, targets: List[str]) -> Tuple[List[Path], List[Tuple[str, bool]], List[str]]:
-    """Files to look at, the scopes they came from, and targets not found."""
+def _collect(
+    ws: Workspace, targets: List[str]
+) -> Tuple[List[Path], List[Tuple[str, bool]], List[str], List[str]]:
+    """Files to look at, the scopes they came from, targets not found, and
+    "loose" folders: only the narrative of a capture is taken from them, so a
+    row there is dropped when its file is gone, not merely when it was not
+    walked."""
     files: List[Path] = []
     scopes: List[Tuple[str, bool]] = []
     missing: List[str] = []
+    loose: List[str] = []
     seen: Set[Path] = set()
 
     def take(path: Path) -> None:
@@ -91,7 +99,7 @@ def _collect(ws: Workspace, targets: List[str]) -> Tuple[List[Path], List[Tuple[
             else:
                 scopes.append((rel, False))
                 missing.append(rel)
-        return files, scopes, missing
+        return files, scopes, missing, loose
 
     for root in ws.index_roots():
         scopes.append((ws.rel(root), True))
@@ -99,11 +107,11 @@ def _collect(ws: Workspace, targets: List[str]) -> Tuple[List[Path], List[Tuple[
             take(found)
     captures = ws.root / "meeting-notes"
     if captures.is_dir():
-        scopes.append((ws.rel(captures), True))
+        loose.append(ws.rel(captures))
         for found in ws.walk(captures):
             if found.name in CAPTURE_INDEXED and (found.parent / CAPTURE_MARKER).is_file():
                 take(found)
-    return files, scopes, missing
+    return files, scopes, missing, loose
 
 
 def _moc_parts(text: str) -> Tuple[str, List[str]]:
@@ -141,7 +149,7 @@ def run(
 ) -> dict:
     started = time.time()
     require_current(conn)
-    files, scopes, missing = _collect(ws, targets or [])
+    files, scopes, missing, loose = _collect(ws, targets or [])
 
     known: Dict[str, sqlite3.Row] = {}
     for row in conn.execute(
@@ -157,7 +165,7 @@ def run(
         bucket.setdefault(row["path"], []).append(row["rid"])
 
     report = {
-        "scope": [prefix or "." for prefix, _ in scopes],
+        "scope": [prefix or "." for prefix, _ in scopes] + loose,
         "added": 0, "updated": 0, "unchanged": 0, "removed": 0,
         "pointer_rows": 0,
         "needs_text": [], "stale_text": [], "not_found": missing,
@@ -291,9 +299,13 @@ def run(
                     report["stale_text"].append(rel)
 
         # Rows for files that are gone (or no longer indexable) inside the scope.
-        gone = [rel for rel in known if rel not in seen and _in_scope(rel, scopes)]
+        def vanished(rel: str) -> bool:
+            return any(rel.startswith(prefix + "/") for prefix in loose) and not (ws.root / rel).is_file()
+
+        gone = [rel for rel in known if rel not in seen and (_in_scope(rel, scopes) or vanished(rel))]
         orphans = [rel for rel in list(fts_body) + list(fts_pointer)
                    if rel not in seen and rel not in known and rel is not None and _in_scope(rel, scopes)]
+        gone_set = set(gone)
         for rel in gone:
             report["removed"] += 1
             if not dry_run:
@@ -307,11 +319,18 @@ def run(
         # folders that left the Repo Map). Counted; removed only with --prune.
         stale = []
         for rel in set(list(known) + [p for p in list(fts_body) + list(fts_pointer) if p is not None]):
-            if rel in seen or _in_scope(rel, scopes):
+            if not isinstance(rel, str) or rel in seen or _in_scope(rel, scopes) or rel in gone_set:
                 continue
+            # A row is stale only when its file is gone. A row written in an
+            # older path form (./x, an absolute path) for a file that still
+            # exists is left alone: it may hold text a role extracted.
             candidate = Path(rel)
-            proper = not candidate.is_absolute() and not rel.startswith("./") and ".." not in candidate.parts
-            if not proper or not (ws.root / rel).is_file():
+            target = candidate if candidate.is_absolute() else ws.root / rel
+            try:
+                exists = target.is_file()
+            except OSError:
+                exists = False
+            if not exists:
                 stale.append(rel)
         if prune:
             for rel in stale:
@@ -333,6 +352,7 @@ def run(
                 pass
         raise ToolError("indexing failed and was rolled back: %s" % exc, EXIT_FAIL)
 
+    report["unreadable_names"] = ws.unreadable_names
     report["needs_text"].sort()
     report["stale_text"].sort()
     report["seconds"] = round(time.time() - started, 2)

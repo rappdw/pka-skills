@@ -38,9 +38,15 @@ def read_text_lossy(path: Path) -> str:
 def write_text_atomic(path: Path, text: str) -> None:
     """Write `text` exactly, by way of a temporary file and a rename."""
     path = Path(path)
+    if path.is_symlink():
+        # Write through the link, as an editor would; never replace the link.
+        path = Path(os.path.realpath(str(path)))
     path.parent.mkdir(parents=True, exist_ok=True)
     mode = None
     if path.exists():
+        if not os.access(str(path), os.W_OK):
+            # A rename would get past the file's own permissions. Honour them.
+            raise PermissionError("read-only: %s" % path)
         mode = path.stat().st_mode & 0o7777
     fd, tmp = tempfile.mkstemp(prefix="." + path.name + ".", suffix=".pka-tmp", dir=str(path.parent))
     try:
@@ -93,6 +99,19 @@ def detect_newline(text: str) -> str:
     if idx > 0 and text[idx - 1] == "\r":
         return "\r\n"
     return "\n"
+
+
+def has_bare_cr(text: str) -> bool:
+    """True when the text uses a lone carriage return as a line ending.
+
+    Such a file reads as one long line here, so no line-level edit is safe.
+    """
+    idx = text.find("\r")
+    while idx != -1:
+        if idx + 1 >= len(text) or text[idx + 1] != "\n":
+            return True
+        idx = text.find("\r", idx + 1)
+    return False
 
 
 def sha256_file(path: Path) -> str:

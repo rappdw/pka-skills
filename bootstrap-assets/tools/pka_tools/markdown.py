@@ -48,6 +48,53 @@ def fence_mask(lines: List[str]) -> List[bool]:
     return mask
 
 
+def unclosed_fence(lines: List[str]) -> bool:
+    """True when a fenced block is opened and never closed."""
+    mask = fence_mask(lines)
+    if not mask or not mask[-1]:
+        return False
+    idx = len(lines) - 1
+    while idx >= 0 and mask[idx]:
+        idx -= 1
+    block = lines[idx + 1:]
+    opener = _FENCE_RE.match(line_body(block[0]))
+    if not opener:
+        return False
+    run = opener.group(1)
+    for line in block[1:]:
+        body = line_body(line)
+        match = _FENCE_RE.match(body)
+        if match and match.group(1)[0] == run[0] and len(match.group(1)) >= len(run) \
+                and not body[match.end():].strip():
+            return False
+    return True
+
+
+def protected_spans(body: str) -> List[Tuple[int, int]]:
+    """Spans of a line that are not prose: `inline code` and <!-- comments -->."""
+    spans = []
+    idx = 0
+    while idx < len(body):
+        if body[idx] == "`":
+            run = 1
+            while idx + run < len(body) and body[idx + run] == "`":
+                run += 1
+            close = body.find("`" * run, idx + run)
+            if close == -1:
+                break
+            spans.append((idx, close + run))
+            idx = close + run
+            continue
+        if body.startswith("<!--", idx):
+            close = body.find("-->", idx + 4)
+            end = len(body) if close == -1 else close + 3
+            spans.append((idx, end))
+            idx = end
+            continue
+        idx += 1
+    return spans
+
+
 def heading_of(line: str) -> Optional[Tuple[int, str]]:
     """(level, text) when the line is an ATX heading, else None."""
     match = _HEADING_RE.match(line_body(line))

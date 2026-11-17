@@ -13,6 +13,7 @@ import argparse
 import datetime as _dt
 import json
 import os
+import sqlite3
 import sys
 from contextlib import closing
 from pathlib import Path
@@ -192,6 +193,8 @@ def cmd_index(args: argparse.Namespace) -> int:
     if report["pointer_rows"]:
         text.append("Pointer rows indexed: %d" % report["pointer_rows"])
     text += _listed("Not found", report["not_found"])
+    if report.get("unreadable_names"):
+        text.append("%d file or folder name(s) are not valid UTF-8 and were skipped." % report["unreadable_names"])
     text += _listed("Documents with no searchable text (write an OCR sidecar `<file>.txt`, then re-index)",
                     report["needs_text"])
     text += _listed("Documents that changed since their text was extracted", report["stale_text"])
@@ -272,6 +275,8 @@ def cmd_pointers(args: argparse.Namespace) -> int:
         result = pointers.add(ws, args.file, topic=args.topic or "", entities=entities,
                               context=args.context or "", extra_mocs=args.moc, dry_run=args.dry_run)
         text = ["Pointer rows for %s%s:" % (result["file"], " (dry run)" if args.dry_run else "")]
+        if result.get("problem"):
+            text.append("  SKIPPED — %s" % result["problem"])
         for entry in result["mocs"]:
             if entry["problem"]:
                 text.append("  %s: SKIPPED — %s" % (entry["moc"], entry["problem"]))
@@ -462,6 +467,13 @@ def main(argv: Optional[List[str]] = None) -> int:
         return exc.code
     except BrokenPipeError:
         return EXIT_OK
+    except sqlite3.Error as exc:
+        sys.stderr.write(
+            "pka-tools: the index (.pka/knowledge.db) could not be read or written: %s\n" % exc)
+        return EXIT_FAIL
+    except (OSError, UnicodeError) as exc:
+        sys.stderr.write("pka-tools: %s\n" % exc)
+        return EXIT_FAIL
     except KeyboardInterrupt:
         sys.stderr.write("pka-tools: interrupted\n")
         return 130

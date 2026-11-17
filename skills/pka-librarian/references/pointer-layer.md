@@ -78,7 +78,8 @@ Pointer maintenance never blocks routing. Per `.pka/roles/_obsidian.md`'s error-
 
 - **Unreadable table** (the first table row under `## Pointers` is not a `Topic | Entities | Files` header, or no `|---|` row follows it): that MOC is `skipped` with the reason and left untouched. Report it; do not repair it.
 - **A row with too few cells**: that row is left alone; other rows work normally.
-- **MOC not writable or not UTF-8**: `skipped` with the reason.
+- **MOC that is read-only, not UTF-8, uses bare carriage returns as line endings, or has a code fence that is never closed**: `skipped` with the reason, untouched.
+- **A filename containing `[`, `]`, `|`, `#` or `^`**: a wikilink cannot name the file, so no row is written and the command says so. Report it; renaming the file is the user's call.
 - **No frontmatter and no directive**: the slug comes from the filename. The cluster may be coarse; the user can redirect later files with a topic.
 
 ## Rename / move propagation
