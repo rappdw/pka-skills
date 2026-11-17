@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "pka-skills",
-      "description": "Personal Knowledge Assistance — four skills that turn any folder into a local, AI-powered knowledge system with semantic navigation, SQLite indexing, and meeting documentation",
+      "description": "Personal Knowledge Assistance — six skills that turn any folder into a local, AI-powered knowledge system with semantic navigation, SQLite indexing, and meeting documentation",
       "source": "./",
       "author": {
         "name": "Dan Rapp",

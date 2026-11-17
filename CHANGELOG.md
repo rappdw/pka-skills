@@ -1,5 +1,58 @@
 # Changelog
 
+## v1.6.3 — 2026-11-17
+
+Repair and safety. No new features. Every item below was reproduced against v1.6.2 first, and each script fix has a regression test that fails on the old script and passes on the new one.
+
+**Existing workspaces:** the helper scripts in `.pka/` are copies. Re-run `bootstrap git` or `bootstrap upgrade` to replace them with the fixed versions (both now refresh a helper that differs from the plugin's copy; before this release an existing copy was never updated).
+
+### Fixed — helper scripts could lose data
+
+| ID | What was wrong | Now |
+|---|---|---|
+| A1 | `graduate.sh` deleted the project's `.git` even when the history backup had not been written. `graduate.sh widget/` (a trailing slash) printed "Saved to", removed the history and exited 0 with an empty backup directory. | The `.git` directory is **moved** to `.pka/graduate-backups/<name>-<timestamp>.git/`, never deleted. Names are validated: a trailing slash is accepted, anything that is not a single folder name is a usage error. |
+| A2 | `reinit-project-with-lfs.sh --yes ""` or `--yes .` wiped the workspace root's history and committed the root. | Only `knowledge` or `projects/<name>` is accepted; everything else is a usage error before anything is touched. |
+| A3 | `git init -b main` was unchecked. On git older than 2.28 it failed, and the commands after it committed into the enclosing root repo. | git 2.28+ is required (exit 2 otherwise), each `git init` is checked, and the child is verified to be its own repository before any commit. |
+| A4 | Commit failures (no identity, signing, hooks) were ignored and reported as success; re-runs then said "already initialized". | Identity is checked up front. A failed step is reported and the script exits 1. `graduate.sh` and the reinit script roll back completely; `init_project_repos.sh` removes the half-made `.git` so a re-run retries. |
+| A5 | Reinit destroyed the history without adding LFS when a `.gitattributes` already existed; it also dropped every remote but `origin`, dropped other branches, and took no backup. | LFS filter lines are merged into the existing `.gitattributes`; all remotes (and push URLs) are carried over; the old repository, with every branch, is kept under `.pka/reinit-backups/`. |
+| A6 | Appending to a `.gitignore` that had no final newline fused two patterns (`node_modules.DS_Store`), after which `node_modules/` was committed. | A missing final newline is repaired before appending. |
+| A7 | The graduation backup was a `git bundle`, which contains no LFS objects — so "full history saved" was false for PDFs, images and Office files. | The backup is the whole repository directory, LFS objects included. Projects with LFS files that were never downloaded are refused with a hint to run `git lfs pull`. |
+| A8 | `git add -A` in `knowledge/` swept unrelated uncommitted work into the "Graduate:" commit. | Staged and committed by path: only the graduated project and the `_MOC.md` files the script rewrote. The user's modified, staged and untracked files are left as they were. |
+| A9 | Graduating a symlinked project deleted the external repo's `.git` and moved only the link. | Symbolic links are refused by `graduate.sh` and the reinit script, and skipped (and listed) by `init_project_repos.sh`. |
+| A10 | A child whose `.git` is a file (linked worktree, submodule) got bootstrap commits added to its existing history. | Left alone and listed in the summary. |
+| A11 | `.meta` and the real git remotes disagreed: `push-all.sh` decided what to skip from `.meta` but pushed with the repo's remote, and `build-repo-list.sh` overwrote hand-edited `.meta` URLs. Following the documented "set origin URLs in `.meta`" led to pushes that failed or were skipped forever. | The child repo's own `origin` is the single source of truth. `push-all.sh` uses it and points out a stale `.meta`; `build-repo-list.sh` rebuilds `.meta` from the repos (atomically, preserving other keys, refusing to overwrite invalid JSON). Docs now say `git -C <child> remote add origin <url>`, then `.pka/build-repo-list.sh`. |
+| A13 | `upgrade-roles.py` matched headings inside fenced code blocks (and could insert sections into one), converted CRLF files to LF, appended silently when no anchor heading was found, and crashed when run twice in one second. | Fence-aware; line endings preserved; a missing anchor produces a `WARNING` naming the file; backup directories get unique names; role files are written atomically. |
+
+Also: the scripts no longer use a fixed, shared path under `$TMPDIR` for the empty git template (private `mktemp -d`, removed on exit), and the backup directories under `.pka/` ignore themselves so they never show up in the root repo.
+
+**Behaviour change to note:** the graduation backup is now a directory (`<name>-<timestamp>.git/`) rather than a `.bundle` file. Restore with `git clone <that path>`. Backups made by earlier versions are untouched.
+
+### Fixed — the test suite changed your git identity (A12)
+
+`tests/lib.sh` ran `git config --global user.name "PKA Test Runner"`, overwriting the developer's real identity. The suite now runs against a throwaway `HOME` / `GIT_CONFIG_GLOBAL`, and `run-all.sh` fails if the real global configuration changed during a run.
+
+### Fixed — skills and references
+
+- **Stage by path, everywhere.** `commit-protocol.md` prescribed `git add -A` for every routing commit (while warning against it 44 lines later). Routing, Obsidian-bootstrap and root-scaffolding staging now name their paths, so half-written notes in a live vault are never swept into an automatic commit.
+- **"Transition `<project>` to knowledge"** was a plain `mv`, which in a hybrid monorepo moved a whole child repo, `.git` included, into the `knowledge/` repo. It now runs `.pka/graduate.sh` whenever child repos are involved (C3).
+- **thinkkit detection** looked for `.claude/skills/take-notes/`, which a plugin install never creates, so capture and reconcile were reported unavailable. `pka-meetings` now consults the session's skill list first (C4).
+- **Earshot leftovers from v1.6.2**: `meeting-notes/` is in the root ignore list (raw audio was being staged at the root), and the session-start protocol now looks for unreconciled captures (C5). `.pka/reinit-backups/` and `.pka/upgrade-backups/` are ignored too.
+- **Search queries are quoted.** The documented `MATCH ?` query failed on exactly the hyphenated slugs pointer rows are made of (`no such column: partnership`) and on a trailing `?`. `sqlite-modes.md` now specifies how to build the query string, and the dashboard search does it (B4).
+- **"What action items do I have this week"** searched the full-text index for `- [ ]`, which is a syntax error unquoted and matches nothing quoted. It now scans meeting notes for open checkboxes, by filename date (B5).
+- **Helper scripts are refreshed.** `bootstrap git` and `bootstrap upgrade` replace a `.pka/` helper that differs from the plugin's copy instead of leaving a stale one in place.
+- Corrected: "four skills" → six in the plugin and marketplace descriptions; the `CLAUDE.md` template stamp (`PKA v1.2` → `v1.6`).
+
+### Tests and CI
+
+- New suite `tests/test_script_safety.sh`: 21 tests, one or more per fix A1–A11. `tests/test_upgrade.sh` gains U8–U11 for A13.
+- The suite is portable to macOS (no `md5sum`, no GNU-only `sed -i`).
+- GitHub Actions runs the suite on Linux and macOS for every push and pull request, including a pass under macOS's bash 3.2.
+- `tests/README.md`: examples must use the fictional fixture cast only.
+
+### Skills
+
+- `pka-bootstrap` v1.6.3, `pka-librarian` v1.6.3, `pka-meetings` v1.6.3, `pka-interface` v1.6.3 (reference and procedure corrections above; no new capabilities)
+
 ## v1.6.2 — 2026-07-03
 
 ### Added — earshot capture directory awareness (closes #3)
