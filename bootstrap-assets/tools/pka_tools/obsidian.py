@@ -166,6 +166,8 @@ def ensure_note(ws: Workspace, plan: Plan, path: Path, dry_run: bool) -> Tuple[s
       unchanged  nothing to do
       skipped    the note was left alone; `detail` says why
     """
+    if path.suffix.lower() not in (".md", ".markdown"):
+        return "unchanged", ""          # frontmatter belongs to markdown notes only
     kind, pairs = plan.schema_for(path)
     if not pairs:
         return "unchanged", ""

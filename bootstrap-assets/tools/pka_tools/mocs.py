@@ -12,15 +12,18 @@ code and the Pointers table) counts as already present.
 """
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import unquote
 
 from .errors import EXIT_USAGE, ToolError
 from .markdown import (
     WIKILINK_RE,
-    fence_mask,
+    block_mask,
     find_heading,
+    first_subheading,
     link_target,
     protected_spans,
     section_end,
@@ -36,7 +39,7 @@ DEFAULT_SECTION = "Files"
 FALLBACK_SECTION = "Unsorted"
 STUB_COMMENT = "<!-- MOC stub created by pka-tools. Reorganise freely. -->"
 _UNLINKABLE = set("[]|#^")
-_LIST_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s")
+_MD_LINK = re.compile(r"(?<!!)\[[^\]\n]*\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)")
 
 
 def link_path(ws: Workspace, path: Path) -> str:
@@ -62,20 +65,58 @@ def target_moc(ws: Workspace, path: Path) -> Path:
     return top / MOC_NAME
 
 
-def has_link(lines: List[str], target: str) -> bool:
-    mask = fence_mask(lines)
+def _unique_name(ws: Workspace, name: str, path: Path) -> bool:
+    """Is `path` the only file in the vault Obsidian would find for a bare
+    `[[name]]` (its shortest-path link)?"""
+    wanted = {name.lower() + ".md", name.lower()}
+    hits = 0
+    for found in ws.walk(ws.vault, captures=False):
+        if found.name.lower() in wanted:
+            hits += 1
+            if found != path or hits > 1:
+                return False
+    return hits == 1
+
+
+def has_link(ws: Workspace, moc: Path, lines: List[str], target: str, note: Path) -> bool:
+    """Does the MOC's text already link to the note? A wikilink by full
+    path, a bare `[[name]]` that can only mean this note, and a markdown
+    link `[text](path)` all count. Links inside fenced blocks, HTML
+    comments, inline code and the Pointers table do not."""
+    mask = block_mask(lines)
     pointer_lines = pointer_row_lines(lines)
+    stem = note.name[:-3] if note.name.lower().endswith(".md") else note.name
+    bare_checked: dict = {}
     for idx, line in enumerate(lines):
-        if mask[idx] or idx in pointer_lines or "[[" not in line:
+        if mask[idx] or idx in pointer_lines or ("[[" not in line and "](" not in line):
             continue
         guarded = protected_spans(line)
-        for match in WIKILINK_RE.finditer(line):
-            start = match.start()
+
+        def visible(start: int) -> bool:
             if start > 0 and line[start - 1] == "\\":
+                return False
+            return not any(a <= start < b for a, b in guarded)
+
+        for match in WIKILINK_RE.finditer(line):
+            if not visible(match.start()):
                 continue
-            if any(a <= start < b for a, b in guarded):
+            found = link_target(match.group("target"))
+            if found == target:
+                return True
+            if "/" not in found and found.lower() == stem.lower():
+                if found not in bare_checked:
+                    bare_checked[found] = _unique_name(ws, found, note)
+                if bare_checked[found]:
+                    return True
+        for match in _MD_LINK.finditer(line):
+            if not visible(match.start()):
                 continue
-            if link_target(match.group("target")) == target:
+            href = unquote(match.group(1).split("#", 1)[0])
+            if not href or "://" in href or href.startswith("mailto:"):
+                continue
+            base = ws.vault if href.startswith("/") else moc.parent
+            resolved = os.path.normpath(os.path.join(str(base), href.lstrip("/")))
+            if resolved == os.path.normpath(str(note)):
                 return True
     return False
 
@@ -84,16 +125,18 @@ def insert_link(lines: List[str], bullet: str, section: Optional[str]) -> List[s
     """New lines with `bullet` (no line ending) placed in the right section."""
     text = "".join(lines)
     newline = detect_newline(text)
-    mask = fence_mask(lines)
+    mask = block_mask(lines)
     wanted = section or DEFAULT_SECTION
     head = find_heading(lines, mask, wanted, 2)
     if head is None and section is None:
         head = find_heading(lines, mask, FALLBACK_SECTION, 2)
     out = list(lines)
     if head is not None:
-        end = section_end(lines, mask, head)
+        # The end of the section's own text: before any `###` subsection,
+        # and before a hidden block (a comment or fence) at its end.
+        end = first_subheading(lines, mask, head, section_end(lines, mask, head))
         last = end - 1
-        while last > head and not line_body(lines[last]).strip():
+        while last > head and (not line_body(lines[last]).strip() or mask[last]):
             last -= 1
         if not line_end(out[last]):
             out[last] = out[last] + newline
@@ -171,9 +214,9 @@ def add_link(
     if unclosed_fence(lines):
         result.update(action="skipped", problem="the file has a code fence that is never closed")
         return result
-    if has_link(lines, target):
+    if has_link(ws, moc, lines, target, path):
         return result
-    if section is not None and find_heading(lines, fence_mask(lines), section, 2) is None:
+    if section is not None and find_heading(lines, block_mask(lines), section, 2) is None:
         raise ToolError("--section %r: no `## %s` heading in %s" % (section, section, ws.rel(moc)), EXIT_USAGE)
     new_lines = insert_link(lines, bullet, section)
     if not dry_run:

@@ -59,8 +59,10 @@ The record of shipped versions is `KNOWN_SECTION_HASHES` in `upgrade-roles.py`: 
 python3 .pka/upgrade-roles.py                         # report
 python3 .pka/upgrade-roles.py --diff                  # report, with what changed in each section
 python3 .pka/upgrade-roles.py --refresh               # replace the unedited ones (backup first)
-python3 .pka/upgrade-roles.py --refresh --refresh-section 'librarian.md:## Output Conventions'
+python3 .pka/upgrade-roles.py --refresh --refresh-section 'researcher.md:## Commit/push protocol (gated on `hybrid_monorepo_present`)'
 ```
+
+`--refresh-section` accepts only seeded sections; any other heading is an error that lists the ones it can take.
 
 The skill asks before `--refresh`, and passes `--refresh-section` only for a section the user has said yes to.
 

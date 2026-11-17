@@ -1195,9 +1195,16 @@ def upgrade_workspace(workspace: Path, dry_run: bool = False, refresh: bool = Fa
     forced_by_file: dict = {}
     for item in forced or []:
         filename, _, heading = item.partition(":")
+        heading = heading.strip()
         if not heading.startswith("## "):
-            raise SystemExit("ERROR: --refresh-section takes FILE:## Heading, e.g. librarian.md:## Output Conventions")
-        forced_by_file.setdefault(filename, set()).add(heading.strip())
+            raise SystemExit("ERROR: --refresh-section takes FILE:## Heading, e.g. "
+                             "'researcher.md:## Commit/push protocol (gated on `hybrid_monorepo_present`)'")
+        allowed = [h for h, _ in refreshable_sections(filename)]
+        if heading not in allowed:
+            listing = "\n  ".join(allowed) if allowed else "(none: not a seeded file)"
+            raise SystemExit(f"ERROR: {filename}: {heading!r} is not a seeded section, so it cannot be "
+                             f"refreshed. The seeded sections of {filename} are:\n  {listing}")
+        forced_by_file.setdefault(filename, set()).add(heading)
 
     def refreshed(filename: str, text: str) -> str:
         new_text, findings = plan_refresh(filename, text, forced_by_file.get(filename, set()) if refresh else set())

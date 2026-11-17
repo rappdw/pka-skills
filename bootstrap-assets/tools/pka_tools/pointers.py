@@ -26,8 +26,8 @@ from . import frontmatter
 from .errors import EXIT_USAGE, ToolError
 from .markdown import (
     WIKILINK_RE,
+    block_mask,
     cell_spans,
-    fence_mask,
     find_heading,
     heading_of,
     is_separator_row,
@@ -216,7 +216,7 @@ class Table:
 
 def locate(lines: List[str]) -> Table:
     table = Table()
-    mask = fence_mask(lines)
+    mask = block_mask(lines)
     heading = find_heading(lines, mask, SECTION_TITLE, 2)
     if heading is None:
         return table
@@ -599,6 +599,11 @@ def rename(ws: Workspace, old: str, new: str, prefix: bool = False, dry_run: boo
     total = 0
     changed: List[str] = []
     skipped: List[str] = []
+    reasons: Dict[str, str] = {}
+
+    def skip(path: Path, reason: str) -> None:
+        skipped.append(ws.rel(path))
+        reasons[ws.rel(path)] = reason
 
     def swap(match: "re.Match[str]") -> str:
         nonlocal count
@@ -611,10 +616,18 @@ def rename(ws: Workspace, old: str, new: str, prefix: bool = False, dry_run: boo
             replacement = new_ref + target[len(old_ref):]
         if replacement is None:
             return match.group(0)
-        if raw.strip().lower().endswith(".md"):
-            replacement += raw.strip()[-3:]
+        # Keep the link's own spelling around the target: spacing, `./`, `.md`.
+        core = raw.strip()
+        lead = raw[: len(raw) - len(raw.lstrip())]
+        trail = raw[len(raw.rstrip()):]
+        dot = ""
+        while core.startswith("./"):
+            dot += "./"
+            core = core[2:]
+        suffix = core[-3:] if core.lower().endswith(".md") else ""
         count += 1
-        return "[[%s%s%s]]" % (replacement, match.group("anchor") or "", match.group("alias") or "")
+        return "[[%s%s%s%s%s%s%s]]" % (lead, dot, replacement, suffix, trail,
+                                     match.group("anchor") or "", match.group("alias") or "")
 
     if notes:
         files = [path for path in ws.walk(ws.vault, captures=False)
@@ -624,14 +637,22 @@ def rename(ws: Workspace, old: str, new: str, prefix: bool = False, dry_run: boo
     for moc in files:
         try:
             text = read_text(moc)
-        except (NotText, OSError):
-            skipped.append(ws.rel(moc))
+        except NotText:
+            skip(moc, "not valid UTF-8")
+            continue
+        except OSError as exc:
+            skip(moc, str(exc))
+            continue
+        if "[[" not in text:
             continue
         if has_bare_cr(text):
-            skipped.append(ws.rel(moc))
+            skip(moc, "uses bare carriage returns as line endings")
             continue
         lines = split_lines(text)
-        mask = fence_mask(lines)
+        if unclosed_fence(lines):
+            skip(moc, "has a code fence that is never closed")
+            continue
+        mask = block_mask(lines)
         count = 0
         out = []
         for idx, line in enumerate(lines):
@@ -650,16 +671,19 @@ def rename(ws: Workspace, old: str, new: str, prefix: bool = False, dry_run: boo
 
             out.append(WIKILINK_RE.sub(swap_prose, line))
         if count:
+            if not os.access(str(moc), os.W_OK):
+                skip(moc, "read-only")
+                continue
             if not dry_run:
                 try:
                     write_text_atomic(moc, "".join(out))
-                except OSError:
-                    skipped.append(ws.rel(moc))
+                except OSError as exc:
+                    skip(moc, "could not write: %s" % exc)
                     continue
             total += count
             changed.append(ws.rel(moc))
     return {"from": old_ref, "to": new_ref, "prefix": prefix, "rewrites": total,
-            "changed": changed, "skipped": skipped, "dry_run": dry_run}
+            "changed": changed, "skipped": skipped, "skip_reasons": reasons, "dry_run": dry_run}
 
 
 def resolve_link(ws: Workspace, target: str) -> Optional[Path]:
@@ -740,7 +764,17 @@ def init(ws: Workspace, folders: Optional[List[str]] = None, dry_run: bool = Fal
             folder = ws.resolve(given)
             if not folder.is_dir():
                 raise ToolError("not a folder: %s" % given, EXIT_USAGE)
-            ws.vault_rel(folder / MOC_NAME)
+            rel = ws.vault_rel(folder / MOC_NAME)
+            parts = rel.split("/")[:-1]
+            if any(part.startswith(".") for part in parts):
+                raise ToolError("%s is a hidden folder; it gets no MOC" % given, EXIT_USAGE)
+            probe = folder
+            while probe != ws.vault and ws.vault in probe.parents:
+                if (probe / CAPTURE_MARKER).exists():
+                    raise ToolError("%s is inside an earshot capture directory; it gets no MOC" % given, EXIT_USAGE)
+                probe = probe.parent
+            if ws.ignore.is_ignored(ws.rel(folder), True):
+                raise ToolError("%s is excluded by .pkaignore; it gets no MOC" % given, EXIT_USAGE)
             targets.append(folder)
     else:
         try:
