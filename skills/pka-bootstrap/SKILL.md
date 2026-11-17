@@ -196,6 +196,11 @@ Written in Phase 1 if absent. See `references/pkaignore-defaults.md`.
 
 ```
 .pka/
+├── bin/
+│   ├── pka-tools         (the deterministic helper; see "Installing the toolkit")
+│   └── pka_tools/
+├── manifest.json         (which plugin version the vendored files came from)
+├── upgrade-roles.py
 ├── roles/
 │   ├── roster.md
 │   ├── orchestrator.md
@@ -206,6 +211,20 @@ Written in Phase 1 if absent. See `references/pkaignore-defaults.md`.
 ├── decision-log.md
 └── knowledge.db          (index mode only)
 ```
+
+#### Installing the toolkit
+
+`pka-tools` is a Python 3.9+ standard-library command that does the mechanical work for every skill: the index schema, indexing, search, pointer rows, the Obsidian retrofit, path-scoped commits. It makes no network calls. Install it into the workspace from the plugin's copy:
+
+```
+python3 "<plugin root>/bootstrap-assets/tools/pka-tools" install --workspace .
+```
+
+`<plugin root>` is the folder that holds this plugin's `skills/` and `bootstrap-assets/` — `${CLAUDE_PLUGIN_ROOT}` when the environment provides it, otherwise two directories above this skill's folder. After that, every skill runs the workspace's own copy: `.pka/bin/pka-tools <command>`.
+
+The same command is how a workspace is brought up to date later: it replaces vendored files the user has not changed, keeps ones they have (writing the plugin's version beside them as `<name>.new`), and records the result in `.pka/manifest.json`. It never deletes anything. Add `--git` to include the hybrid-monorepo scripts and templates.
+
+If `python3 --version` reports older than 3.9, stop and tell the user; do not fall back to doing the tool's work by hand.
 
 ### 3c — Inboxes
 
@@ -248,9 +267,14 @@ Seed with bootstrap decisions (storage mode, autonomy level, archive destination
 
 ### 3i — SQLite initialization (index mode)
 
-Schema generated from Repo Map. Documented in `.pka/schema.md` (runtime-generated, not a skill asset). Bootstrap population is metadata-only — full content indexing is the librarian's job. Target: under 30 seconds for any repo size.
+```
+.pka/bin/pka-tools db init
+.pka/bin/pka-tools index
+```
 
-See `references/sqlite-modes.md` for schema details.
+`db init` creates `.pka/knowledge.db` with the current schema; `index` fills it from the Repo Map's Active and Reference folders (markdown and text content, plus metadata and a content hash for every file). Do not write the schema or the inserts by hand. `index` lists documents that have no searchable text yet (PDFs without an OCR sidecar); hand that list to the librarian. Write `.pka/schema.md` from the output of `.pka/bin/pka-tools db schema`.
+
+See `references/sqlite-modes.md` for the schema and the commands.
 
 ### 3j — Confirm and orient
 
@@ -322,17 +346,21 @@ If `knowledge/.obsidian/` is absent, refuse with a clear message: *"No Obsidian 
 
 ### Procedure
 
-Full step-by-step algorithm in `references/obsidian-bootstrap.md`. Summary:
+Full procedure in `references/obsidian-bootstrap.md`. The retrofit is one command; the skill does not edit vault files itself.
 
 1. **Seed `.pka/roles/_obsidian.md`** from `references/obsidian-conventions.md` if absent.
-2. **Walk `knowledge/`** collecting:
-   - Top-level domain folders (each gets a `_MOC.md` stub if absent).
-   - `personnel/<name>/` subfolders (each gets an `index.md` stub if absent).
-   - Files matching known patterns (1on1, meeting, daily) for filename-pattern frontmatter.
-3. **Mechanical retrofits only** — no body reading. Use only filename and folder structure.
-4. **Merge, never overwrite** — files with existing frontmatter get missing schema fields added; existing fields are left alone.
-5. **Skip malformed frontmatter** — list in summary, do not modify.
-6. **Single commit** in `knowledge/` (when `hybrid_monorepo_present`): `Bootstrap (obsidian): N MOCs, N person indexes, N frontmatter additions`. Never commits the root.
+2. **Make sure `.pka/bin/pka-tools` is installed** (see "Installing the toolkit").
+3. **Preview**: `.pka/bin/pka-tools obsidian bootstrap --dry-run`, and show the counts.
+4. **Run**: `.pka/bin/pka-tools obsidian bootstrap --commit` when `hybrid_monorepo_present`, otherwise without `--commit`.
+5. **Relay the summary**, including every skipped file and note.
+
+What the command guarantees:
+
+- **Mechanical only** — filename, folder structure and existing frontmatter are the inputs. Note bodies are carried through byte for byte.
+- **Merge, never overwrite** — existing frontmatter lines are not rewritten; missing keys are inserted as new lines and the domain tag is added to `tags`.
+- **Skips what it cannot read safely** — malformed or unsupported frontmatter, non-UTF-8 and read-only notes are listed and left untouched.
+- **Existing `_MOC.md` and person `index.md` files are never edited.**
+- **One commit by path** in `knowledge/` with `--commit`: `Bootstrap (obsidian): N MOCs, N person indexes, N frontmatter additions`. Never commits the root.
 
 ### Output summary
 
@@ -358,19 +386,19 @@ A one-time, user-triggered setup of a hybrid monorepo: root `.git` coordinating 
 
 - User has explicitly requested the bootstrap.
 - `git` and `git-lfs` binaries are on PATH (else fail with a remediation hint).
-- The skill has access to `bootstrap-assets/` (vendored templates and scripts in this plugin).
+- `python3` is 3.9 or newer.
+- The skill has access to `bootstrap-assets/` (vendored templates, scripts and `tools/pka-tools` in this plugin).
 
 ### Procedure
 
 Full step-by-step algorithm in `references/git-bootstrap.md`. Summary:
 
-1. **Install `.pka/` templates** from `bootstrap-assets/`:
-   - `gitattributes-template` → `.pka/gitattributes-template`
-   - `gitignore-template` → `.pka/gitignore-template`
-2. **Install `.pka/` helper scripts** from `bootstrap-assets/scripts/`:
-   - `graduate.sh`, `init_project_repos.sh`, `reinit-project-with-lfs.sh`, `push-all.sh`, `build-repo-list.sh`
-   - Copy when absent; **replace when the existing copy differs from the plugin's** (these are plugin-owned helpers, and a stale copy keeps fixed bugs alive). Report replaced scripts as "updated".
-   - Set executable bit on each.
+1. **Install the `.pka/` templates and helper scripts** with the installer (see "Installing the toolkit"):
+   ```
+   python3 "<plugin root>/bootstrap-assets/tools/pka-tools" install --workspace . --git
+   ```
+   This installs `pka-tools` itself, `gitattributes-template`, `gitignore-template`, and `graduate.sh`, `init_project_repos.sh`, `reinit-project-with-lfs.sh`, `push-all.sh`, `build-repo-list.sh` (executable). Do not copy them by hand.
+2. **Relay what the installer reports**: installed, updated, kept, and any conflicts. A helper script the user has not edited is replaced when the plugin's copy is newer. One they have edited is kept, with the plugin's version written beside it as `<name>.new`; tell them, because an old helper keeps old bugs. The two templates are meant to be edited and are treated the same way.
 3. **Seed `.pka/roles/_git-protocol.md`** from `references/git-protocol.md` if absent.
 4. **Root `.gitignore`**: create or augment to exclude child-repo content (`knowledge/`, `projects/`), inboxes (`owner-inbox/`, `team-inbox/`), meeting captures (`meeting-notes/`), local artifacts (`.pka/knowledge.db*`, `.pka/*-log.txt`, `.pka/*-backups/`), and secrets (`.gitea-pat*`, `*.token`, `*.secret`). Merge — never replace.
 5. **Root `.git`**: initialize if absent. Stage the scaffolding **by path** (never `git add -A` at the root). **Do not commit.** Root commits are the user's review gate.
@@ -389,8 +417,7 @@ Full step-by-step algorithm in `references/git-bootstrap.md`. Summary:
 ### Output summary
 
 Print before finishing:
-- N templates installed / already present
-- N helper scripts installed / already present
+- Vendored files: N installed, N updated, N current; any kept or conflicting files by name
 - Root repo: initialized (uncommitted, awaiting review) / already present
 - `knowledge/`: initialized with LFS / already present
 - N projects initialized with LFS
@@ -419,14 +446,23 @@ If `.pka/roles/` is absent, refuse with a message pointing to base bootstrap.
 
 Full step-by-step algorithm in `references/upgrade.md`. Summary:
 
-1. **Vendor `.pka/upgrade-roles.py`** from `bootstrap-assets/scripts/upgrade-roles.py`: copy it when absent, and **replace it when the existing copy differs from the plugin's**. An old copy only knows the sections of its own version, reports everything as present, and silently skips whatever was added since. Do the same for any helper scripts already in `.pka/` (`graduate.sh`, `init_project_repos.sh`, `reinit-project-with-lfs.sh`, `push-all.sh`, `build-repo-list.sh`): replace the ones that differ and list them as "updated". (The Python helper does the deterministic merge — no LLM-driven editing of user role files.)
-2. **Run the helper** with `python3 .pka/upgrade-roles.py --workspace <root>`. The helper:
+1. **Refresh the vendored helpers** with the installer (see "Installing the toolkit"):
+   ```
+   python3 "<plugin root>/bootstrap-assets/tools/pka-tools" install --workspace .
+   ```
+   It installs or updates `.pka/bin/pka-tools`, `.pka/upgrade-roles.py` and, where the workspace already has them, the hybrid-monorepo scripts and templates. In a workspace from before v1.7 (no `.pka/manifest.json`) the old helper scripts are replaced and the previous copies are saved under `.pka/upgrade-backups/<timestamp>/vendored/`; relay that path. An old `upgrade-roles.py` only knows the sections of its own version and silently skips whatever was added since, so this step always comes first.
+2. **Migrate the index, if there is one and it is behind.** `.pka/bin/pka-tools status` shows the schema version. When it says the index needs `db migrate`:
+   - run `.pka/bin/pka-tools db migrate` and show the user the plan (it changes nothing);
+   - **ask before applying** — it is a schema change, whatever the autonomy level;
+   - on a yes, run `.pka/bin/pka-tools db migrate --apply` (it backs the database up to `.pka/db-backups/` first and rolls back on any failure), then `.pka/bin/pka-tools index`;
+   - on a no, carry on: the rest of the upgrade does not depend on it, but `index` and `search` stay unavailable until the index is migrated.
+3. **Run the helper** with `python3 .pka/upgrade-roles.py --workspace <root>`. The helper:
    - Backs up `.pka/roles/` to `.pka/upgrade-backups/<timestamp>/`
    - Seeds `.pka/roles/_obsidian.md` and `.pka/roles/_git-protocol.md` if absent
    - Structured-merges new H2 sections into orchestrator/librarian/researcher role files
    - Never modifies the body of existing sections
-3. **Print the helper's summary** to the user.
-4. **Suggest follow-ups** based on what's now present:
+4. **Print the helper's summary** to the user.
+5. **Suggest follow-ups** based on what's now present:
    - If `knowledge/.obsidian/` exists and the user hasn't already, suggest `bootstrap obsidian` for the mechanical retrofit.
    - If no `.meta` file at root, suggest `bootstrap git` if the user wants the hybrid monorepo.
    - Mention the manual bullet-merges into `## Key Competencies` and `## Output Conventions` (the upgrade does not touch these — see `references/upgrade.md` for the rationale).

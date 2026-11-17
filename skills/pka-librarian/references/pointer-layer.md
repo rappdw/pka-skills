@@ -1,128 +1,113 @@
-# Pointer-Layer Maintenance — Per-Route Algorithm
+# Pointer-Layer Maintenance — Per-Route Procedure
 
-Applies to **every** routing operation that lands a file inside a domain that has (or should have) a `_MOC.md`. **Not** gated on `obsidian_present` — pointer-row maintenance runs in plain-markdown workspaces too. The retrieval value comes from FTS, not from rendering.
+Applies to **every** routing operation that lands a file inside the vault (`knowledge/`). **Not** gated on `obsidian_present` — pointer-row maintenance runs in plain-markdown workspaces too. The retrieval value comes from FTS, not from rendering.
 
-Conventions (file location, row schema, retrieval behavior, invariants) live in `.pka/roles/_obsidian.md` (the "Pointer Layer" section). This document is the **operational algorithm**; the conventions document is the **contract**.
+Conventions (file location, row schema, retrieval behavior, invariants) live in `.pka/roles/_obsidian.md` (the "Pointer Layer" section). This document is the **procedure**.
 
-## Inputs
+From v1.7 the edit itself is made by `pka-tools`. The librarian decides *which cluster a file belongs to* when that takes judgment; the tool does the matching it can do mechanically and makes every change to the `_MOC.md` files. Do not edit a Pointers table by hand, and do not re-implement the steps below.
 
-For each route, the librarian has access to:
+## The command
 
-- The routed file's **path** (post-route).
-- The file's **frontmatter** if present (`type`, `topic`, `tags`, `attendees` / `person` / `related`).
-- The **routing context** — the user directive that prompted the route, when available.
-- The destination **domain MOC** (`<domain>/_MOC.md`) and any **secondary MOCs** the file's tags imply.
-
-Body content is NOT an input. The maintenance step never reads the file's body.
-
-## Per-route checklist
-
-### 1. Build the candidate token set
-
-Tokens come from these fields in priority order, lowercased and split on `[-_\s]`:
-
-- `topic` field of the frontmatter (highest signal)
-- All `tags`
-- `type`
-- All values in `attendees`, `person`, `related` (after stripping wikilink brackets)
-- The filename **stem** (after stripping date prefix and `.md`)
-- Any salient nouns from the routing-context directive (best-effort; skip if no directive)
-
-Strip stop-words (`the`, `and`, `for`, `with`, `to`, etc.) and very-short tokens (length < 3).
-
-### 2. Score against existing topic slugs
-
-For each existing row in the destination MOC's Pointers table:
+After the file is at its destination (and its frontmatter is in place):
 
 ```
-slug_tokens   = lowercase split of Topic on '-'
-candidate_tokens = the set from step 1
-jaccard       = |slug_tokens ∩ candidate_tokens| / |slug_tokens ∪ candidate_tokens|
+.pka/bin/pka-tools pointers add <path-to-routed-file> [--topic <slug>] [--entities <a,b>] [--context "<routing directive>"]
 ```
 
-If `max(jaccard) >= 0.5`: the file matches an existing cluster. Use the highest-scoring row.
+It prints, per MOC, what it did: `created-moc`, `created-section`, `created-table`, `appended` (a new row), `extended` (an existing row), `noop` (already recorded) or `skipped` with the reason. `--json` gives the same as data, including `changed` — the `_MOC.md` paths to add to this route's commit and to re-index. `--dry-run` shows the outcome without writing.
 
-If `max(jaccard) < 0.5`: coin a new slug. Construct it from:
+## What the librarian decides
 
-1. `frontmatter.topic` if present (already a slug or close to one).
-2. Else: `<first-tag>-<type>` (e.g., `meeting-leadership` becomes `leadership-meeting` if neither is purely the `meeting` type tag).
-3. Else: a slug derived from the filename stem.
+- **`--topic`** — pass it when you can see which cluster the file belongs to and the file's own `topic` frontmatter would not say so: an existing row's slug (list them with `.pka/bin/pka-tools pointers list <moc>`), or a new slug for an event-bound cluster. Slugs are lowercase and hyphenated; add the year when the cluster is one event (`northwind-partnership-2026`), not when it is ongoing (`ai-adoption-research`). An explicit topic is taken as a decision: the tool uses that row, or creates it, and skips its own matching.
+- **`--entities`** — organisations, products or people that the frontmatter does not already carry. Frontmatter `attendees`, `person` and `related` are picked up automatically.
+- **`--context`** — the user's routing directive, when there was one ("file this with the Northwind partnership material"). Its words join the file's tokens for matching.
 
-Date-suffix the slug only if the cluster is event-bound (the file is dated and `topic`/`type` indicates a specific event). Examples:
-- `northwind-partnership-2026` (event-bound) — slug includes year
-- `ai-adoption-research` (ongoing) — no date
+When none of these applies, run the command with just the path.
 
-### 3. Compute the entity set
+## What the tool does
 
-Entities come from the file's `attendees`, `person`, `related` (after stripping wikilink brackets), plus any explicit organizations/products mentioned in `tags`. All lowercased, hyphenated. Strip duplicates.
+Inputs are the file's path and its frontmatter (`topic`, `type`, `tags`, `attendees` / `person` / `related`). **The body is never read.**
 
-Do NOT include entities derived from filename heuristics — too noisy. Frontmatter only.
+### 1. Tokens
 
-### 4. Apply the update
+Lowercased words of three or more characters, stop-words removed, from: the `topic`, the `type`, every tag, every entity, the filename stem without its date prefix, the folders between the vault root and the file, and the `--context` text.
 
-Two cases:
+### 2. Choosing the row
 
-**Case A — matched an existing cluster** (jaccard ≥ 0.5):
+In the destination MOC's Pointers table:
 
-- Locate the matching row in the MOC's Pointers table.
-- **Append** the file's full-vault-relative wikilink to the Files column if not already present.
-- **Merge** new entities into the Entities column: union with the existing entity set, dedupe, sort alphabetically.
-- Re-render the row with the merged columns. Other rows untouched.
-- If the resulting row's Files column has **8 or more entries**, flag the row in the routing summary for the user to consider splitting. Do NOT auto-split.
+1. **Same topic.** A row whose Topic equals the file's topic slug (`--topic` if given, else frontmatter `topic`) is the file's cluster.
+2. **Tokens.** Otherwise a row matches when its Topic has **at least two distinctive tokens and every one of them is among the file's tokens**. Numbers (years) are not distinctive. Of several matching rows the one with the most distinctive tokens wins; a tie goes to the earlier row. This step is skipped when `--topic` was given.
+3. **New row.** Otherwise a slug is coined — the frontmatter `topic`; else `<first tag that is not the type>-<type>`; else the filename stem without its date — and a new row is added. If a row already carries the coined slug, that row is used instead, so running the command twice never produces two rows.
 
-**Case B — coined a new cluster**:
+Rule 2 is deliberately strict. A row named `lighthouse-research` does not absorb every file with "research" in its name; a one-word slug never matches by tokens at all. When in doubt the tool makes a new row, and the user or the librarian (with `--topic`) can direct the next file.
 
-- Append a new row at the bottom of the Pointers table with the new slug, the entity set, and the single file's wikilink.
-- If the table doesn't exist yet (the MOC is fresh from the obsidian bootstrap), create the `## Pointers` section with its preamble and the header row, then append the new data row.
-- If the MOC itself doesn't exist, create it (using the standard MOC stub) including the empty `## Pointers` section, then append the data row.
+### 3. The edit
 
-Both cases are **idempotent**: re-routing the same file produces no diff (the wikilink and entities are already present).
+Only the lines the tool owns change. Everything else in the MOC is left byte for byte, including line endings.
 
-### 5. Cross-MOC duplication
+- **Extending a row**: the file's wikilink is added at the end of the Files cell and new entities at the end of the Entities cell. Nothing is re-sorted or re-spaced; other cells, extra columns and the cell padding stay as the user left them. A placeholder (`—`, `-`, `none`) in the Entities cell is replaced.
+- **New row**: one line inserted directly after the table's last row.
+- **No table yet**: the header, separator and first row are added inside the existing `## Pointers` section, after any text already there.
+- **No section**: a `## Pointers` section is appended at the end of the file.
+- **No MOC**: a minimal `_MOC.md` (a title and the Pointers section) is created.
+- A `## Pointers` heading or table inside a fenced code block is an example and is ignored.
 
-Inspect the file's tags. For every tag that matches a top-level domain folder under `knowledge/`, the same pointer row is duplicated into that domain's `_MOC.md` (creating the table or MOC if absent).
+Running the same command again changes nothing.
 
-Example: a meeting note routed to `knowledge/AI/northwind/` with `tags: [meeting, ai, leadership]`:
-- Primary: append the row to `knowledge/AI/_MOC.md`'s Pointers table.
-- Cross-MOC: append the same row to `knowledge/leadership/_MOC.md`'s Pointers table.
+### 4. Cross-MOC duplication
 
-The same row in multiple MOCs is intentional — doubles the FTS hit rate. The append-only invariant keeps drift bounded: each MOC's row evolves independently, but neither is ever silently merged or deleted.
+The primary MOC is the destination's top-level domain (`knowledge/<domain>/_MOC.md`). For every tag on the file that names another top-level folder of the vault (compared without case or punctuation: tag `ai` ↔ folder `AI/`), the same file is recorded in that folder's MOC too. The same cluster appearing in two MOCs is intentional — it doubles the FTS hit rate. Add another MOC explicitly with `--moc <path>`.
 
-### 6. Wikilink format
+### 5. Wikilink format
 
-Files-column wikilinks use **full vault-relative paths**: `[[northwind/2026-04-23-joint-partnership-meeting]]`. Bare names (`[[2026-04-23-joint-partnership-meeting]]`) would be ambiguous in Obsidian and fragile under FTS. The path is relative to `knowledge/` (the vault root), without the `.md` extension.
+Files-column links are vault-relative without `.md`: `[[northwind/2026-04-23-joint-partnership-meeting]]`. Non-markdown files keep their extension: `[[reference/report.pdf]]`.
+
+### 6. Soft cap
+
+A row that reaches 8 files is listed under "Rows at or over the 8-file soft cap". Put that in the routing report for the user to split if they wish. Rows are never split automatically.
+
+## After the command
+
+1. Re-index the changed MOCs together with the routed file: `.pka/bin/pka-tools index <routed-file> <changed MOC>...`
+2. Include the changed MOCs in the route's commit (see `commit-protocol.md`).
 
 ## Failure handling
 
-Per `.pka/roles/_obsidian.md`'s error-handling rules: any per-step failure logs a warning and completes the primary route. Pointer-row maintenance is opportunistic — never blocks routing. Failures land in the routing report.
+Pointer maintenance never blocks routing. Per `.pka/roles/_obsidian.md`'s error-handling rules, a problem is reported and the route completes.
 
-Specific cases:
-
-- **Malformed Pointers table** (header missing, columns misaligned): skip maintenance for that MOC; report the malformed table in the summary; do not attempt repair.
-- **MOC file is locked / unwritable**: log; complete the route without the pointer update.
-- **No frontmatter and no routing context**: coin a slug from the filename stem alone. The cluster may be coarse; the user can split it later.
+- **Unreadable table** (the first table row under `## Pointers` is not a `Topic | Entities | Files` header, or no `|---|` row follows it): that MOC is `skipped` with the reason and left untouched. Report it; do not repair it.
+- **A row with too few cells**: that row is left alone; other rows work normally.
+- **MOC not writable or not UTF-8**: `skipped` with the reason.
+- **No frontmatter and no directive**: the slug comes from the filename. The cluster may be coarse; the user can redirect later files with a topic.
 
 ## Rename / move propagation
 
-When the librarian renames or moves a file (separate from routing), it walks every `_MOC.md` in the vault and rewrites pointer-row wikilinks pointing at the old path:
+When a file that may be listed in a MOC is renamed or moved:
 
 ```
-[[old/path/to/file]]   →  [[new/path/to/file]]
+.pka/bin/pka-tools pointers rename <old path> <new path>
+.pka/bin/pka-tools pointers rename <old folder> <new folder> --prefix     # a whole folder moved
 ```
 
-Idempotent (running twice produces no diff). Append-only at row level (never deletes a row even if the file is moved out of a domain — the row's other entries may still be valid).
+Every wikilink to the old path in every `_MOC.md` (pointer rows and `## Files` bullets) gets the new target. An alias (`[[old|Name]]`) or heading (`[[old#Decisions]]`) is kept. Fenced examples are not touched. Running it twice changes nothing. Rows are never deleted, even when a file leaves the domain.
+
+Links in ordinary notes are not rewritten by this command.
 
 ## Graduation propagation
 
-When `graduate.sh` moves a project from `projects/<name>/` to `knowledge/<subdir>/<name>/`, every pointer-row wikilink under `[[projects/<name>/...]]` is rewritten to `[[<subdir>/<name>/...]]`. Implementation lives in `graduate.sh` itself (see `bootstrap-assets/scripts/graduate.sh`). The graduation commit in `knowledge/` includes both the file moves and the pointer-row updates as one semantic unit.
+When `graduate.sh` moves a project from `projects/<name>/` to `knowledge/<subdir>/<name>/`, every pointer-row wikilink under `[[projects/<name>/...]]` is rewritten to `[[<subdir>/<name>/...]]` by `graduate.sh` itself, in the same commit as the move.
 
-## What the librarian does NOT do
+## Checking
 
-- **Does not split overlong rows.** Rows with ≥ 8 files in the Files column are flagged in the summary for the user to split manually if desired.
-- **Does not merge rows.** Two rows with similar topics stay separate; the user merges manually if appropriate.
-- **Does not modify rows that the user has hand-edited.** As long as the librarian only ADDS files/entities and never reorders, user customizations to topic slugs, entity ordering, or surrounding markdown are preserved.
-- **Does not delete rows.** Even when every file the row points at has been deleted, the empty row is preserved (with the broken wikilinks visible) — the lint health check (rule 2) flags those for user attention, and the user removes the row manually.
+```
+.pka/bin/pka-tools pointers check
+```
 
-## Idempotency check
+Lists pointer links whose file no longer exists, tables it cannot read, and rows over the soft cap. The lint health check (rule 2) uses this for Pointers tables. It reports; it never removes a row or a link.
 
-After every route, re-running the same maintenance step produces no diff: the wikilink is already in the Files column, the entities are already in the Entities column. Confirm in the test harness with PR2.
+## What is never done
+
+- **Rows are not split, merged, reordered or deleted.** Two similar rows stay separate until the user merges them.
+- **Hand edits are kept.** Topic slugs, entity order, extra columns and surrounding text survive every route.
+- **A row whose files are all gone stays**, with its broken links visible to `pointers check`, until the user removes it.

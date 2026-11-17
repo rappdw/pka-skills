@@ -58,7 +58,15 @@ broken pointer wikilinks need the user's attention to clean up.
 ```
 
 When a broken link is inside a `_MOC.md` Pointers table, the report annotates
-the row's topic slug to make the cleanup target clear.
+the row's topic slug to make the cleanup target clear. Get the pointer-row part
+of this rule from the tool rather than by reading the tables:
+
+```
+.pka/bin/pka-tools pointers check --json
+```
+
+It returns every pointer link whose file is missing (with MOC, line and topic),
+any Pointers table it could not read, and rows at or over the 8-file soft cap.
 
 **Action hint:** "Fix or remove these references. For broken pointer-row
 wikilinks: edit the MOC manually — the librarian is append-only and will not

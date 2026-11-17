@@ -101,15 +101,15 @@ One session log entry per action item. These appear as open threads in future se
 
 When the user asks "What action items do I have from meetings this week?":
 
-1. Search `session-log.md` for this week's `pka-meetings | Open:` entries.
-2. Scan the meeting notes themselves for open checkboxes. Do **not** use `search_fts` for this: the tokenizer drops `- [ ]`, so the query is a syntax error unquoted and matches nothing quoted. Instead:
-   - Take every folder tagged `meeting-home` in the Repo Map, plus the per-person folders (1-1 notes live there).
-   - Keep the notes whose filename date prefix (`YYYY-MM-DD-`) falls in the week asked about. The filename date is the meeting date; file modification time is not (routing, indexing and sync all touch it).
-   - In those files, collect lines matching an open checkbox:
-     ```
-     grep -n -E '^[[:space:]]*[-*] \[ \]' <file>
-     ```
-   - A line with `- [x]` is done; leave it out.
+1. Run the scan. It reads the notes themselves, because full-text search cannot find `- [ ]` (the tokenizer drops the punctuation):
+   ```
+   .pka/bin/pka-tools actions --since <YYYY-MM-DD> [--until <YYYY-MM-DD>] [--json]
+   ```
+   - `--since` is the first day of the period asked about ("this week" → Monday's date). Without it the window is the last 7 days. `--all-dates` removes the window.
+   - Scope: the folders tagged `meeting-home` in the Repo Map plus the people folder (1-1 notes live there). `--scope all` scans every index root; `--under <folder>` scans just that folder.
+   - A note's date is its filename prefix (`YYYY-MM-DD-`), else its frontmatter `date`. File modification time is never used (routing, indexing and sync all touch it). Notes with no date are left out unless `--include-undated` is given.
+   - Open boxes (`- [ ]`, `* [ ]`) are returned with file, line number, `@owner` mentions and a `by YYYY-MM-DD` due date when present. A ticked box (`- [x]`) is closed and not returned. Boxes inside fenced code blocks are examples and are ignored.
+2. Read `session-log.md` for this period's `pka-meetings | Open:` entries.
 3. Combine and deduplicate. When a session-log `Open:` entry and a checkbox line describe the same item, the note is the truth: if the box is now `- [x]`, the item is closed even though the log entry still says open.
 4. Surface with source file links:
 

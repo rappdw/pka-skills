@@ -242,8 +242,8 @@ LIBRARIAN_SECTIONS_V161 = [
         """\
 After every route into `knowledge/<domain>/` or `projects/<name>/`, append a step to maintain the destination MOC's `## Pointers` table:
 
-1. **Identify the cluster** using Jaccard similarity (≥ 0.5) between the file's frontmatter tokens (`type`, `topic`, `tags`, `attendees`/`person`/`related`) plus any routing-context directive, and the existing topic-slug tokens in the MOC's Pointers table. If no row scores above threshold, coin a new slug from the file's primary `topic` field, first tag, or `type` (in that priority order).
-2. **Update the row.** Existing cluster: append the new file's wikilink to the Files column; merge new entities into the Entities column (deduped, sorted alphabetically). New cluster: append a new row below existing rows.
+1. **Identify the cluster** by running `.pka/bin/pka-tools pointers add <file>`. It uses the file's frontmatter (`type`, `topic`, `tags`, `attendees`/`person`/`related`), filename and folders — never the body. A row with the file's topic slug is its cluster; otherwise a row whose topic has at least two distinctive words, all of them among the file's; otherwise a new row is coined from the `topic`, the first tag plus `type`, or the filename. Pass `--topic <slug>` when you can see which cluster the file belongs to, and `--context` with the routing directive when there was one.
+2. **Update the row.** The tool does this: for an existing cluster the file's wikilink goes at the end of the Files column and new entities at the end of the Entities column (nothing is re-sorted); for a new cluster a row is added below the existing rows. Do not edit the table by hand.
 3. **Cross-MOC duplication.** If the file's tags include multiple top-level domain tags (e.g., `[ai, leadership]`), duplicate the pointer row to each corresponding MOC.
 4. **Append-only.** Existing rows are extended, never deleted, reordered, or merged. User edits to row content are preserved verbatim across librarian routes.
 5. **Soft size cap.** If a row's Files column reaches 8 entries, flag the row in the routing summary for human review rather than auto-splitting.
@@ -257,7 +257,7 @@ Full algorithm in `.pka/roles/_obsidian.md` (Pointer Layer section) and `pka-ski
     (
         "## Indexing pointer rows",
         """\
-When ingesting an `_MOC.md` file into `search_fts`, detect rows in the `## Pointers` table and tag them with `is_pointer = 1`. On retrieval, multiply the BM25 rank of `is_pointer = 1` rows by `3.0` (FTS5 BM25 returns negative values where more negative = better match; the `3.0` multiplier makes pointer matches more negative, ranking them above equivalent body matches). See `pka-skills/skills/pka-bootstrap/references/sqlite-modes.md` for the schema change and retrieval contract.
+`.pka/bin/pka-tools index` does this: each row of a `## Pointers` table becomes its own `search_fts` row tagged `is_pointer = 1`, and `.pka/bin/pka-tools search` ranks those rows 3× above equivalent body matches. Do not insert or query pointer rows by hand. See `references/sqlite-modes.md` in the pka-bootstrap skill for the schema and retrieval contract.
 """,
     ),
     (
@@ -326,8 +326,8 @@ Three columns. All values are plain text; no nested structures; no YAML.
 
 When the librarian routes a file into a domain, after the file is moved and other Obsidian-mode side-effects are applied, it runs the pointer-maintenance step:
 
-1. **Identify the cluster.** Use the file's frontmatter (`type`, `topic`, `tags`, `attendees`/`person`/`related`) plus any routing-context directive. Pick an existing topic slug from the destination MOC's Pointers table by Jaccard similarity ≥ 0.5 against the candidate token set; if no row matches, coin a new slug from the file's primary topic / first tag / type.
-2. **Update the row.** If a cluster matches, append the new file's wikilink to the Files column and merge any new entities from the file's frontmatter into the Entities column (deduped, sorted alphabetically). If no cluster matches, append a new row below existing rows.
+1. **Identify the cluster.** `.pka/bin/pka-tools pointers add <file>` uses the file's frontmatter (`type`, `topic`, `tags`, `attendees`/`person`/`related`), filename and folders, plus any routing-context directive. A row with the file's topic slug is its cluster; otherwise a row whose topic has at least two distinctive words, all of them among the file's; otherwise a new slug is coined from the file's topic / first tag plus type / filename. The librarian passes `--topic` when it can see which cluster the file belongs to.
+2. **Update the row.** If a cluster matches, the new file's wikilink is added at the end of the Files column and any new entities from the file's frontmatter at the end of the Entities column (deduped; nothing is re-sorted). If no cluster matches, a new row is added below existing rows.
 3. **Cross-MOC duplication.** If the file's tags include multiple top-level domain tags (e.g., `[ai, leadership]`), duplicate the pointer row to each corresponding MOC. The same row may appear in multiple `_MOC.md` files — that is correct and intentional.
 4. **Append-only.** Existing rows are extended, never deleted, reordered, or merged. User edits to row content are preserved verbatim across librarian routes.
 5. **Soft size cap.** If a row's Files column reaches 8 entries, the librarian flags the row in the routing summary for human review rather than auto-splitting.

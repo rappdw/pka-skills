@@ -7,13 +7,30 @@ Applies **only when** `hybrid_monorepo_present` is true. Conventions and full pr
 After a routing operation **completes successfully** and lands the file inside a child repo (`knowledge/` or `projects/<name>/`):
 
 ```
-cd <child-repo-path>
-git add -- <routed-file> <each side-effect file this routing touched>
-git commit -m "Librarian: Route <filename> to <destination-folder>/" \
-          -m "" \
-          -m "Co-Authored-By: Claude <noreply@anthropic.com>" \
-          -- <the same paths>
+.pka/bin/pka-tools commit -m "Librarian: Route <filename> to <destination-folder>/" -- \
+    <routed-file> <each side-effect file this routing touched>
 ```
+
+Paths are given relative to the workspace root (`knowledge/leadership/2026-04-22-slt-meeting.md`). The command finds the child repo the paths are in, runs `git add -- <paths>` and `git commit -- <paths>` there, and appends the trailer. It is the equivalent of:
+
+```
+cd <child-repo-path>
+git add -- <paths>
+git commit -m "Librarian: Route <filename> to <destination-folder>/" \
+          -m "Co-Authored-By: Claude <noreply@anthropic.com>" \
+          -- <paths>
+```
+
+What it reports, and what to do with it:
+
+| Output | Meaning |
+|---|---|
+| `Committed <sha> in knowledge: …` | Done. |
+| `Nothing to commit: the paths have no changes.` | A zero-diff routing. No commit, by design. |
+| `Not committed: the paths are not inside a git repository.` | Not a hybrid monorepo, or the destination is outside any child repo. Nothing to do. |
+| `Not committed: … is not a child repository.` | The paths are in the root repo. Root is never committed automatically; use `--stage-only` (below). |
+| Exit code 1, `git commit failed …` | A hook, signing or identity problem. The files are still staged and nothing was reset. Put git's message in the routing report and carry on with the next file. |
+| Exit code 64 | The arguments were wrong (no paths, paths in two repositories, a path outside the workspace). Fix the call. |
 
 **Stage and commit by path. Never `git add -A`, `git add .` or `git commit -a`.** The child repo is also the user's working area (and, with Obsidian, a vault being edited live), so at any moment it can hold half-written notes and changes the user staged themselves. Naming the paths on both `git add` and `git commit` puts exactly this routing's files in the commit and leaves everything else as it was — modified files stay modified, the user's staged files stay staged.
 
@@ -40,7 +57,7 @@ Some routing operations touch root-tracked files:
 
 | Side effect                                                       | Handling                                            |
 |-------------------------------------------------------------------|-----------------------------------------------------|
-| Updating `CLAUDE.md`'s Repo Map (e.g., new domain folder discovered) | Stage with `git add CLAUDE.md` in the **root** repo. **Do not commit.** Surface in the routing report. |
+| Updating `CLAUDE.md`'s Repo Map (e.g., new domain folder discovered) | Stage in the **root** repo with `.pka/bin/pka-tools commit --stage-only CLAUDE.md` (or `git add CLAUDE.md`). **Do not commit.** Surface in the routing report. |
 | Updating `.meta` (rare for routing — usually only for graduation)   | Same: stage, surface, do not commit.                 |
 | Adding a new `.pka/` script or template                              | Same: stage, surface, do not commit.                 |
 | Updating `.pka/session-log.md`                                       | Append; stage in root; **do not commit** (root is human-review only). The session-log entry survives across sessions in the root working tree until the user commits. |
@@ -49,7 +66,7 @@ Some routing operations touch root-tracked files:
 
 A semantic unit that produces no actual change must produce no commit. Specifically:
 
-- If routing a file that's already at its destination (no-op move), and the Obsidian side-effects also produce no diff: **no commit**. Use `git diff --cached --quiet -- <paths>` after staging those paths to detect this.
+- If routing a file that's already at its destination (no-op move), and the Obsidian side-effects also produce no diff: **no commit**. `pka-tools commit` detects this itself and reports "Nothing to commit".
 - If the user re-runs `process my team-inbox` on an already-processed inbox: each routed file produces zero-diff routings, hence zero commits.
 
 ## Failure handling
@@ -69,7 +86,7 @@ The trailer is **mandatory** and **verbatim**:
 Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
-Never omit, never alter the spelling/case. The trailer signals to humans (and tooling) that this commit was machine-generated.
+`pka-tools commit` adds it. Never omit, never alter the spelling/case. The trailer signals to humans (and tooling) that this commit was machine-generated.
 
 ## Examples
 
