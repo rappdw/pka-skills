@@ -28,11 +28,33 @@ The workspace is `--workspace`, else `$WORKSPACE_ROOT`, else the nearest folder 
 | `actions [--since D] [--until D] [--all-dates] [--scope meetings\|all] [--under F]` | Open checkboxes in dated notes | nothing |
 | `commit -m SUBJECT [--body T] -- PATH…` | Commit exactly those paths in their child repo, with the trailer | a git commit |
 | `commit --stage-only PATH…` | `git add` the paths and stop (for root-repo side effects) | the git index |
+| `post-route FILE [--role R] [-m SUBJECT] [--topic S] [--section H] [--also P]… [--no-commit] [--dry-run]` | Everything after filing a note: frontmatter and MOC link (Obsidian), pointer row, index, one commit | the note, `_MOC.md` files, the database, a git commit |
+| `moc add-link FILE [--section H]` | Add a `- [[note]]` bullet to the nearest `_MOC.md` | one `_MOC.md` |
 | `pointers add FILE [--topic S] [--entities A,B] [--context T] [--moc M] [--dry-run]` | Record a routed file in its domain MOC's Pointers table | `_MOC.md` files |
-| `pointers rename OLD NEW [--prefix] [--dry-run]` | Rewrite MOC links after a file or folder moved | `_MOC.md` files |
+| `pointers init [FOLDER…]` | Opt in to the pointer layer without Obsidian: a `_MOC.md` with an empty Pointers table per folder | new `_MOC.md` files |
+| `pointers rename OLD NEW [--prefix] [--notes] [--dry-run]` | Rewrite links after a file or folder moved (MOCs; with `--notes`, every note) | `_MOC.md` files, notes |
 | `pointers check [--strict]` | Broken pointer links, unreadable tables, rows over the soft cap | nothing |
 | `pointers list [MOC]` | Pointer rows as data | nothing |
 | `obsidian bootstrap [--dry-run] [--commit]` | The one-time mechanical retrofit of `knowledge/` | MOC and index stubs, frontmatter |
+| `log add --role R --summary S [--open T] [--next N]` | Append one well-formed session-log entry | `.pka/session-log.md` |
+| `log open [--last N]` | Open threads of recent entries, newest first | nothing |
+| `log check [--strict]` | Entries that do not follow the grammar | nothing |
+
+`pointers add`, `moc add-link` and `post-route` also take `--create-moc` / `--no-create-moc`. By default a missing `_MOC.md` is created only in an Obsidian vault: without Obsidian the pointer layer and MOC links are opt-in (`pointers init`).
+
+### `post-route`
+
+The one command a skill runs after it has put a note in place. Its steps, each reported on its own line:
+
+| Step | Does | Runs when |
+|---|---|---|
+| `frontmatter` | missing schema keys and the domain tag | Obsidian vault, note inside the vault |
+| `moc-link` | a `- [[note]]` bullet in the nearest `_MOC.md` | Obsidian vault (or `--create-moc`) |
+| `pointers` | a pointer row in the domain MOC(s) | note inside the vault; without Obsidian only into existing MOCs |
+| `index` | the note, every MOC changed above, and every `--also` path | index mode |
+| `commit` | the note, every file changed above, and every `--also` path, by path, with the trailer | hybrid monorepo, and not `--no-commit` |
+
+A step that cannot do its work reports why and the later steps still run. The exit code is 1 only when git refused the commit. Running it twice changes nothing and makes no second commit. It refuses MOCs, files under `.pka/`, and anything inside an earshot capture directory.
 
 ## Exit codes
 
@@ -91,7 +113,10 @@ tools/
     ├── search.py          search
     ├── actions.py         actions
     ├── gitops.py          commit
-    ├── pointers.py        pointers add / rename / check / list
+    ├── pointers.py        pointers add / init / rename / check / list
+    ├── mocs.py            moc add-link
+    ├── postroute.py       post-route
+    ├── sessionlog.py      log add / open / check
     ├── obsidian.py        obsidian bootstrap
     └── install.py         install and the manifest
 ```
