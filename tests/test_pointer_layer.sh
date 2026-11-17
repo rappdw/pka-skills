@@ -14,15 +14,19 @@
 #   PR4 — Search: a pointer row outranks body matches (real index, real query).
 #   PR5 — Rename: links are rewritten in every MOC.
 #   PR6 — Check: a pointer link to a missing file is reported.
+#   PR7 — Without Obsidian the layer is opt-in: no MOC is created until
+#         `pointers init`; existing MOCs still get rows.
 
 set -u
 source "$(dirname "$0")/lib.sh"
 configure_test_git_identity
 
+# An Obsidian vault: pointer MOCs are created on demand there. Without
+# Obsidian the pointer layer is opt-in (PR7).
 new_vault() {
   local ws
   ws=$(make_workspace)
-  mkdir -p "$ws/.pka" "$ws/knowledge"
+  mkdir -p "$ws/.pka" "$ws/knowledge/.obsidian"
   install_pka_tools "$ws"
   echo "$ws"
 }
@@ -218,6 +222,26 @@ write_note "$ws/knowledge/AI/northwind/2026-04-23-meeting.md" \
 pka_tools "$ws" pointers add knowledge/AI/northwind/2026-04-23-meeting.md >/dev/null
 assert_file_contains "$ws/knowledge/AI/_MOC.md" "northwind-partnership-2026" "AI MOC has the cluster"
 assert_file_contains "$ws/knowledge/leadership/_MOC.md" "northwind-partnership-2026" "leadership MOC has the cluster (cross-MOC duplication)"
+cleanup_workspace "$ws"
+
+# ----------- PR7 -----------
+start_test "PR7 — Without Obsidian: no MOC is created until the user opts in"
+ws=$(make_workspace)
+mkdir -p "$ws/.pka" "$ws/knowledge/AI" "$ws/knowledge/leadership"
+install_pka_tools "$ws"
+write_note "$ws/knowledge/AI/2026-04-23-meeting.md" \
+  "type: meeting" "topic: northwind-partnership-2026" "tags: [meeting, ai, leadership]"
+cat > "$ws/knowledge/leadership/_MOC.md" <<'EOF'
+# Leadership
+EOF
+out=$(pka_tools "$ws" pointers add knowledge/AI/2026-04-23-meeting.md)
+echo "$out" | sed 's/^/  > /'
+assert_dir_absent "$ws/knowledge/AI/_MOC.md" "no MOC created in a plain-markdown vault"
+assert_file_contains "$ws/knowledge/leadership/_MOC.md" "northwind-partnership-2026" "an existing MOC still gets the row"
+pka_tools "$ws" pointers init >/dev/null
+assert_file_exists "$ws/knowledge/AI/_MOC.md" "pointers init created the MOC"
+pka_tools "$ws" pointers add knowledge/AI/2026-04-23-meeting.md >/dev/null
+assert_file_contains "$ws/knowledge/AI/_MOC.md" "[[AI/2026-04-23-meeting]]" "after opting in, the row is written"
 cleanup_workspace "$ws"
 
 end_run
