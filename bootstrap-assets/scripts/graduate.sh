@@ -8,188 +8,324 @@
 # Pass an explicit subdir to nest under (e.g., "reference" → knowledge/reference/<name>/).
 #
 # What it does:
-#   1. If the project has a .git, save its history as a `git bundle` to
-#      .pka/graduate-backups/ (P4). Bundles are portable: `git clone <bundle>`
-#      restores the project's full history if you ever need it.
-#   2. Remove the project's .git directory and move the content into knowledge/.
-#   3. Auto-commit in the knowledge child repo with the role-prefixed message
-#      and Co-Authored-By: Claude trailer (V1).
-#   4. STAGE (do not commit) the .meta change in the root repo (C1). The user
+#   1. If the project has a .git directory, MOVE it (not copy, not delete) to
+#      .pka/graduate-backups/<name>-<timestamp>.git/. The whole repository is
+#      kept: every branch, the stash, the config and all LFS objects.
+#      `git clone <that path>` restores the history.
+#   2. Move the project content into knowledge/.
+#   3. Rewrite `[[projects/<name>/...]]` wikilinks in knowledge/**/_MOC.md.
+#   4. Commit in the knowledge child repo — only the moved project and the
+#      rewritten MOC files, never unrelated work in progress.
+#   5. STAGE (do not commit) the .meta change in the root repo. The user
 #      reviews and commits root.
-#   5. Print remote-archival instructions only (never call remote APIs).
+#   6. Print remote-archival instructions only (never call remote APIs).
 #
-# Idempotency: re-running after a successful graduation is a no-op (source no
-# longer exists, knowledge/ already has it).
+# Safety: nothing is deleted. If the commit in knowledge/ fails (hook, signing,
+# identity), every step is rolled back and the project is left as it was.
+#
+# Idempotency: re-running after a successful graduation fails cleanly (source
+# no longer exists).
 #
 # Exit codes:
 #   0  success
-#   1  precondition failure (missing source, missing knowledge .git, etc.)
-#   2  required binary (`git` / `git-lfs`) missing on PATH
+#   1  precondition failure, or a failure that was rolled back
+#   2  required binary (`git` / `git-lfs` / `python3`) missing on PATH
 #  64  usage error
 
 set -uo pipefail
 
-# --- preflight (P5) ---
-for cmd in git git-lfs; do
+die() { echo "ERROR: $*" >&2; exit 1; }
+
+usage() {
+  [ -n "${1:-}" ] && echo "ERROR: $1" >&2
+  echo "Usage: $0 <project-name> [knowledge-subdir]" >&2
+  echo "Examples:" >&2
+  echo "  $0 widget                # → knowledge/widget/" >&2
+  echo "  $0 widget reference      # → knowledge/reference/widget/" >&2
+  exit 64
+}
+
+# --- preflight ---
+for cmd in git git-lfs python3; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "ERROR: '$cmd' not found on PATH. Install it and re-run." >&2
     exit 2
   fi
 done
 
-# --- workspace resolution (P1) ---
-WORKSPACE_ROOT="${WORKSPACE_ROOT:-$(pwd)}"
 COAUTHOR_TRAILER="Co-Authored-By: Claude <noreply@anthropic.com>"
 
-if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
-  echo "Usage: $0 <project-name> [knowledge-subdir]" >&2
-  echo "Examples:" >&2
-  echo "  $0 widget                # → knowledge/widget/" >&2
-  echo "  $0 widget reference      # → knowledge/reference/widget/" >&2
-  exit 64
-fi
+# --- arguments ---
+if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then usage; fi
 
 NAME="$1"
 SUBDIR="${2:-}"
 
-PROJECT_DIR="${WORKSPACE_ROOT}/projects/${NAME}"
+# A trailing slash (tab completion) is harmless; anything else that is not a
+# single plain folder name is refused.
+while [ "${NAME%/}" != "$NAME" ]; do NAME="${NAME%/}"; done
+case "$NAME" in
+  ""|.|..)           usage "project name is empty or not a folder name." ;;
+  */*)               usage "project name must be a single folder name under projects/, not a path: '$1'" ;;
+  -*)                usage "project name must not start with '-': '$1'" ;;
+  *[[:cntrl:]]*)     usage "project name contains control characters." ;;
+esac
+
+while [ "${SUBDIR%/}" != "$SUBDIR" ]; do SUBDIR="${SUBDIR%/}"; done
 if [ -n "$SUBDIR" ]; then
-  DEST_PARENT="${WORKSPACE_ROOT}/knowledge/${SUBDIR}"
-else
-  DEST_PARENT="${WORKSPACE_ROOT}/knowledge"
+  case "$SUBDIR" in
+    /*)              usage "knowledge-subdir must be relative to knowledge/: '$2'" ;;
+    -*)              usage "knowledge-subdir must not start with '-': '$2'" ;;
+    *[[:cntrl:]]*)   usage "knowledge-subdir contains control characters." ;;
+  esac
+  case "/$SUBDIR/" in
+    */../*|*/./*|*//*) usage "knowledge-subdir must not contain '.', '..' or empty components: '$2'" ;;
+  esac
 fi
-DEST_DIR="${DEST_PARENT}/${NAME}"
+
+# --- workspace resolution ---
+WORKSPACE_ROOT="${WORKSPACE_ROOT:-$(pwd)}"
+[ -d "$WORKSPACE_ROOT" ] || die "workspace root ${WORKSPACE_ROOT} is not a directory."
+WORKSPACE_ROOT=$(cd "$WORKSPACE_ROOT" && pwd -P) || die "cannot resolve the workspace root."
+
+PROJECT_DIR="${WORKSPACE_ROOT}/projects/${NAME}"
+KNOWLEDGE_DIR="${WORKSPACE_ROOT}/knowledge"
+REL_DEST="${SUBDIR:+${SUBDIR}/}${NAME}"          # relative to knowledge/
+DEST_DIR="${KNOWLEDGE_DIR}/${REL_DEST}"
+DEST_PARENT=$(dirname "$DEST_DIR")
 META_FILE="${WORKSPACE_ROOT}/.meta"
-BACKUP_DIR="${WORKSPACE_ROOT}/.pka/graduate-backups"  # P4
+BACKUP_DIR="${WORKSPACE_ROOT}/.pka/graduate-backups"
 
-if [ ! -d "$PROJECT_DIR" ]; then
-  echo "ERROR: ${PROJECT_DIR} does not exist." >&2
-  exit 1
+# --- preconditions (nothing is modified until all of these pass) ---
+if [ -L "$PROJECT_DIR" ]; then
+  die "projects/${NAME} is a symbolic link. Graduating it would move the link, not the project. Graduate the real directory instead."
 fi
-if [ ! -d "${WORKSPACE_ROOT}/knowledge/.git" ]; then
-  echo "ERROR: knowledge/.git not found. Run bootstrap git first." >&2
-  exit 1
-fi
-if [ -e "$DEST_DIR" ]; then
-  echo "ERROR: destination ${DEST_DIR} already exists. Aborting to avoid clobber." >&2
-  exit 1
+[ -d "$PROJECT_DIR" ] || die "${PROJECT_DIR} does not exist."
+[ -L "$KNOWLEDGE_DIR" ] && die "knowledge/ is a symbolic link; refusing to graduate into it."
+[ -d "${KNOWLEDGE_DIR}/.git" ] || die "knowledge/.git not found. Run bootstrap git first."
+git -C "$KNOWLEDGE_DIR" rev-parse -q --verify HEAD >/dev/null 2>&1 \
+  || die "the knowledge repo has no commits yet. Run bootstrap git first."
+if [ -e "$DEST_DIR" ] || [ -L "$DEST_DIR" ]; then
+  die "destination ${DEST_DIR} already exists. Aborting to avoid clobber."
 fi
 
-# Capture origin for archival instructions
+# The destination must really be inside knowledge/ (no symlink leading out).
+KNOWLEDGE_REAL=$(cd "$KNOWLEDGE_DIR" && pwd -P) || die "cannot resolve knowledge/."
+probe="$DEST_PARENT"
+while [ ! -d "$probe" ]; do probe=$(dirname "$probe"); done
+probe_real=$(cd "$probe" && pwd -P) || die "cannot resolve ${probe}."
+case "${probe_real}/" in
+  "${KNOWLEDGE_REAL}/"*) ;;
+  *) die "destination resolves outside knowledge/ (${probe_real}). Aborting." ;;
+esac
+
+HAS_GIT=0
+if [ -d "${PROJECT_DIR}/.git" ] && [ ! -L "${PROJECT_DIR}/.git" ]; then
+  HAS_GIT=1
+elif [ -e "${PROJECT_DIR}/.git" ] || [ -L "${PROJECT_DIR}/.git" ]; then
+  die "projects/${NAME}/.git is not a plain directory (linked worktree or submodule). Its history lives elsewhere; graduate it by hand."
+fi
+
+# The knowledge commit needs an identity. Check before touching anything.
+git -C "$KNOWLEDGE_DIR" var GIT_COMMITTER_IDENT >/dev/null 2>&1 \
+  || die "git has no usable identity for commits in knowledge/. Set user.name and user.email, then re-run."
+
 PROJECT_ORIGIN=""
-if [ -d "${PROJECT_DIR}/.git" ]; then
+if [ "$HAS_GIT" -eq 1 ]; then
   PROJECT_ORIGIN=$(git -C "$PROJECT_DIR" remote get-url origin 2>/dev/null || echo "")
+  # LFS files that were never downloaded are pointer stubs in the working
+  # tree. Moving them would file the stubs, not the content.
+  missing_lfs=$(git -C "$PROJECT_DIR" lfs ls-files 2>/dev/null | awk '$2 == "-"' | wc -l | tr -d ' ')
+  if [ "${missing_lfs:-0}" -gt 0 ]; then
+    die "projects/${NAME} has ${missing_lfs} LFS file(s) that are not downloaded. Run 'git -C projects/${NAME} lfs pull' first."
+  fi
 fi
 
-# Save git history as a bundle BEFORE deleting .git (P4: lives in
-# .pka/graduate-backups/, NOT inside the knowledge repo where the user's
-# adopted version put it).
-if [ -d "${PROJECT_DIR}/.git" ]; then
-  echo "Saving git history bundle..."
-  mkdir -p "$BACKUP_DIR"
+# --- working state for rollback ---
+WORK_TMP=$(mktemp -d "${TMPDIR:-/tmp}/pka-graduate.XXXXXX") || die "cannot create a temporary directory."
+KEEP_TMP=0
+trap 'if [ "$KEEP_TMP" -eq 0 ]; then rm -rf "$WORK_TMP"; fi' EXIT
+MOC_LIST="${WORK_TMP}/moc-list.tsv"       # <index>\t<path relative to knowledge/>
+: > "$MOC_LIST"
+
+backup_path=""
+MOVED=0
+CREATED_DIRS=()                            # destination parents we created, deepest last
+STAGE_PATHS=("$REL_DEST")
+
+rollback() {
+  echo "Rolling back: restoring projects/${NAME} to its previous state..." >&2
+  git -C "$KNOWLEDGE_DIR" reset -q -- "${STAGE_PATHS[@]}" >/dev/null 2>&1 || true
+  while IFS=$'\t' read -r idx rel; do
+    [ -n "$idx" ] || continue
+    cp -p "${WORK_TMP}/moc-${idx}" "${KNOWLEDGE_DIR}/${rel}" \
+      || { KEEP_TMP=1; echo "WARNING: could not restore ${KNOWLEDGE_DIR}/${rel}; the original is at ${WORK_TMP}/moc-${idx}" >&2; }
+  done < "$MOC_LIST"
+  if [ "$MOVED" -eq 1 ]; then
+    mv "$DEST_DIR" "$PROJECT_DIR" \
+      || echo "ERROR: could not move ${DEST_DIR} back to ${PROJECT_DIR}. Move it by hand." >&2
+  fi
+  if [ -n "$backup_path" ] && [ -d "$backup_path" ] && [ -d "$PROJECT_DIR" ]; then
+    mv "$backup_path" "${PROJECT_DIR}/.git" \
+      || echo "ERROR: could not restore the repository. It is intact at ${backup_path}; move it to ${PROJECT_DIR}/.git by hand." >&2
+  fi
+  local i=${#CREATED_DIRS[@]}
+  while [ "$i" -gt 0 ]; do
+    i=$((i - 1))
+    rmdir "${CREATED_DIRS[$i]}" 2>/dev/null || true
+  done
+}
+
+fail_and_rollback() {
+  echo "ERROR: $*" >&2
+  rollback
+  echo "Nothing was graduated." >&2
+  exit 1
+}
+
+# --- 1. set the repository aside (moved, never deleted) ---
+if [ "$HAS_GIT" -eq 1 ]; then
+  echo "Setting the project's git repository aside..."
+  mkdir -p "$BACKUP_DIR" || die "cannot create ${BACKUP_DIR}."
+  # Keep the backups out of the root repo even on workspaces whose root
+  # .gitignore predates this directory.
+  [ -f "${BACKUP_DIR}/.gitignore" ] || printf '*\n' > "${BACKUP_DIR}/.gitignore"
   ts=$(date +%Y%m%d-%H%M%S)
-  bundle_path="${BACKUP_DIR}/${NAME}-${ts}.bundle"
-  git -C "$PROJECT_DIR" bundle create "$bundle_path" --all 2>/dev/null || {
-    # Empty repo (no refs to bundle) — degrade quietly to a tar so we still
-    # have *something*. Bundles fail on truly empty repos.
-    tar_path="${BACKUP_DIR}/${NAME}-${ts}.tar"
-    (cd "${WORKSPACE_ROOT}/projects" && tar cf "$tar_path" "${NAME}/.git")
-    bundle_path="$tar_path"
-  }
-  echo "  Saved to: $bundle_path"
-  echo "Removing project .git directory..."
-  rm -rf "${PROJECT_DIR}/.git"
+  backup_path="${BACKUP_DIR}/${NAME}-${ts}.git"
+  n=1
+  while [ -e "$backup_path" ]; do
+    n=$((n + 1))
+    backup_path="${BACKUP_DIR}/${NAME}-${ts}-${n}.git"
+  done
+  if ! mv "${PROJECT_DIR}/.git" "$backup_path"; then
+    backup_path=""
+    die "could not move projects/${NAME}/.git to ${BACKUP_DIR}. Nothing was changed."
+  fi
+  if [ ! -f "${backup_path}/HEAD" ] || [ -e "${PROJECT_DIR}/.git" ]; then
+    fail_and_rollback "the repository did not arrive intact at ${backup_path}."
+  fi
+  echo "  Kept at: $backup_path"
 fi
 
-# Move content to destination
+# --- 2. move content ---
 echo "Moving ${NAME} to knowledge/${SUBDIR:+${SUBDIR}/}..."
-mkdir -p "$DEST_PARENT"
-mv "$PROJECT_DIR" "$DEST_DIR"
+missing=()
+probe="$DEST_PARENT"
+while [ ! -d "$probe" ]; do
+  missing+=("$probe")
+  probe=$(dirname "$probe")
+done
+i=${#missing[@]}
+while [ "$i" -gt 0 ]; do
+  i=$((i - 1))
+  mkdir "${missing[$i]}" || fail_and_rollback "cannot create ${missing[$i]}."
+  CREATED_DIRS+=("${missing[$i]}")
+done
+mv "$PROJECT_DIR" "$DEST_DIR" || fail_and_rollback "could not move ${PROJECT_DIR} to ${DEST_DIR}."
+MOVED=1
 
-# Pointer-row propagation (added in v1.6.1):
+# --- 3. pointer-row propagation (added in v1.6.1) ---
 # Rewrite any `[[projects/<NAME>/...]]` wikilinks inside `knowledge/**/_MOC.md`
-# files to point at the new vault-relative path. Idempotent — if no such
-# wikilinks exist (the typical case), the pass is a no-op. The rewrite is
-# anchored to the Pointers table content but operates on the whole MOC for
-# robustness; user-authored wikilinks elsewhere in the MOC pointing at
-# projects/<NAME>/ would also be rewritten, which is the right behavior.
-NEW_PREFIX="${SUBDIR:+${SUBDIR}/}${NAME}"
-POINTER_REWRITES=0
-if [ -d "${WORKSPACE_ROOT}/knowledge" ]; then
-  POINTER_REWRITES=$(python3 - "${WORKSPACE_ROOT}/knowledge" "${NAME}" "${NEW_PREFIX}" <<'PY'
-import os, re, sys
-root, name, new_prefix = sys.argv[1], sys.argv[2], sys.argv[3]
+# to the new vault-relative path. The original of every file changed is saved
+# first so a failed graduation can put it back byte for byte.
+POINTER_REWRITES=$(python3 - "$KNOWLEDGE_DIR" "$NAME" "$REL_DEST" "$WORK_TMP" "$MOC_LIST" <<'PY'
+import os, re, shutil, sys
+root, name, new_prefix, save_dir, list_path = sys.argv[1:6]
 old = re.compile(r"\[\[projects/" + re.escape(name) + r"(/[^\]]+)\]\]")
 total = 0
-for dirpath, _, files in os.walk(root):
+changed = []
+for dirpath, dirnames, files in os.walk(root):
+    dirnames[:] = [d for d in dirnames if d not in (".git", ".obsidian", ".trash")]
     for fn in files:
         if not fn.endswith("_MOC.md"):
             continue
         p = os.path.join(dirpath, fn)
-        with open(p, "r", encoding="utf-8") as f:
+        with open(p, "r", encoding="utf-8", newline="") as f:
             text = f.read()
-        new_text, n = old.subn(lambda m: f"[[{new_prefix}{m.group(1)}]]", text)
-        if n:
-            with open(p, "w", encoding="utf-8") as f:
-                f.write(new_text)
-            total += n
+        new_text, n = old.subn(lambda m: "[[" + new_prefix + m.group(1) + "]]", text)
+        if not n:
+            continue
+        idx = len(changed)
+        shutil.copy2(p, os.path.join(save_dir, "moc-%d" % idx))
+        changed.append((idx, os.path.relpath(p, root)))
+        with open(list_path, "a", encoding="utf-8") as lf:
+            lf.write("%d\t%s\n" % (idx, os.path.relpath(p, root)))
+        with open(p, "w", encoding="utf-8", newline="") as f:
+            f.write(new_text)
+        total += n
 print(total)
 PY
-  )
-fi
+) || fail_and_rollback "rewriting pointer-row wikilinks failed."
 if [ "${POINTER_REWRITES:-0}" -gt 0 ]; then
   echo "Pointer-row wikilinks rewritten: ${POINTER_REWRITES}"
 fi
+while IFS=$'\t' read -r idx rel; do
+  [ -n "$idx" ] && STAGE_PATHS+=("$rel")
+done < "$MOC_LIST"
 
-# Commit in the knowledge child repo (V1 — role prefix + trailer).
-# The pointer-row rewrites (if any) are bundled into the same graduation commit.
+# --- 4. commit in the knowledge child repo ---
+# Stage and commit by path: only the graduated project and the MOC files this
+# run rewrote. Anything else that is modified or staged in knowledge/ stays
+# exactly as the user left it.
 echo "Committing to knowledge/..."
 KNOWLEDGE_PATH_LABEL="knowledge/${SUBDIR:+${SUBDIR}/}"
 COMMIT_SUBJECT="Graduate: ${NAME} → ${KNOWLEDGE_PATH_LABEL}"
-git -C "${WORKSPACE_ROOT}/knowledge" add -A
-git -C "${WORKSPACE_ROOT}/knowledge" commit -q \
-  -m "$(printf '%s\n\n%s\n' "$COMMIT_SUBJECT" "$COAUTHOR_TRAILER")"
+KNOWLEDGE_COMMITTED=0
+git -C "$KNOWLEDGE_DIR" add -- "${STAGE_PATHS[@]}" \
+  || fail_and_rollback "'git add' failed in knowledge/."
+if git -C "$KNOWLEDGE_DIR" diff --cached --quiet -- "${STAGE_PATHS[@]}"; then
+  echo "  Nothing to commit: the project has no files git would track."
+else
+  git -C "$KNOWLEDGE_DIR" commit -q \
+    -m "$(printf '%s\n\n%s\n' "$COMMIT_SUBJECT" "$COAUTHOR_TRAILER")" \
+    -- "${STAGE_PATHS[@]}" \
+    || fail_and_rollback "'git commit' failed in knowledge/ (see the message above)."
+  KNOWLEDGE_COMMITTED=1
+fi
 
-# Update .meta (remove projects/<NAME>); leave the change STAGED in the root,
-# never committed (C1). Done by editing .meta in place + `git add` only.
+# From here on the graduation has happened; later problems are warnings.
+WARNINGS=()
+
+# --- 5. .meta: remove projects/<NAME>; staged in root, never committed ---
 if [ -f "$META_FILE" ]; then
-  python3 - "$META_FILE" "projects/${NAME}" <<'PY'
+  python3 - "$META_FILE" "projects/${NAME}" <<'PY' || WARNINGS+=(".meta could not be updated; remove the 'projects/${NAME}' entry by hand or run .pka/build-repo-list.sh")
 import json, sys
 path, key = sys.argv[1], sys.argv[2]
-with open(path) as f:
+with open(path, encoding="utf-8") as f:
     data = json.load(f)
 projects = data.get("projects") or {}
 if key in projects:
     del projects[key]
     data["projects"] = projects
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
         f.write("\n")
 PY
 fi
 
-# Stage root changes (C1: stage only, NEVER commit)
 ROOT_STAGED=()
 if [ -d "${WORKSPACE_ROOT}/.git" ]; then
   if [ -f "$META_FILE" ]; then
-    git -C "$WORKSPACE_ROOT" add .meta 2>/dev/null && ROOT_STAGED+=(".meta") || true
+    git -C "$WORKSPACE_ROOT" add -- .meta 2>/dev/null && ROOT_STAGED+=(".meta")
   fi
   # If projects/<NAME> was tracked in root (rare — typically excluded by
   # .gitignore) then mark its deletion staged.
   if git -C "$WORKSPACE_ROOT" ls-files --error-unmatch "projects/${NAME}" >/dev/null 2>&1; then
-    git -C "$WORKSPACE_ROOT" add -A "projects/${NAME}" 2>/dev/null \
-      && ROOT_STAGED+=("projects/${NAME}") || true
+    git -C "$WORKSPACE_ROOT" add -A -- "projects/${NAME}" 2>/dev/null \
+      && ROOT_STAGED+=("projects/${NAME}")
   fi
 fi
 
 # --- output ---
-cat <<EOF
-
-Graduated ${NAME} → ${KNOWLEDGE_PATH_LABEL}${NAME}/
-
-Knowledge child repo: COMMITTED (auto).
-                      Subject: '${COMMIT_SUBJECT}'
-EOF
+echo
+echo "Graduated ${NAME} → ${KNOWLEDGE_PATH_LABEL}${NAME}/"
+echo
+if [ "$KNOWLEDGE_COMMITTED" -eq 1 ]; then
+  echo "Knowledge child repo: COMMITTED (auto)."
+  echo "                      Subject: '${COMMIT_SUBJECT}'"
+else
+  echo "Knowledge child repo: no commit (nothing to track)."
+fi
 
 if [ ${#ROOT_STAGED[@]} -gt 0 ]; then
   echo "Root repo:            STAGED (NOT committed — root is human-review only)."
@@ -213,5 +349,17 @@ Remote archival (manual — never automated):
 EOF
 fi
 
-[ -n "${bundle_path:-}" ] && echo "" && echo "History bundle: $bundle_path"
+if [ -n "$backup_path" ]; then
+  cat <<EOF
+
+Previous repository (full history, all branches, LFS objects): ${backup_path}
+  Browse or restore it with: git clone "${backup_path}" <somewhere>
+  It is a complete copy; delete it when you no longer need the history.
+EOF
+fi
+
+if [ ${#WARNINGS[@]} -gt 0 ]; then
+  echo
+  for w in "${WARNINGS[@]}"; do echo "WARNING: $w" >&2; done
+fi
 exit 0

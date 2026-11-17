@@ -89,11 +89,11 @@ echo "robin" > "$ws/knowledge/personnel/robin/2026-04-22-1on1.md"
 run_obsidian_bootstrap "$ws" >/dev/null 2>&1
 
 # Snapshot every file
-snap1=$(find "$ws/knowledge" -type f -exec md5sum {} + | sort)
+snap1=$(find "$ws/knowledge" -type f -exec cksum {} + | sort)
 
 # Re-run
 run_obsidian_bootstrap "$ws" >/dev/null 2>&1
-snap2=$(find "$ws/knowledge" -type f -exec md5sum {} + | sort)
+snap2=$(find "$ws/knowledge" -type f -exec cksum {} + | sort)
 
 if [ "$snap1" = "$snap2" ]; then
   pass_step "vault state unchanged after second bootstrap run"
@@ -119,7 +119,7 @@ cat > "$ws/knowledge/AI/_MOC.md" <<'EOF'
 ## My thematic group
 - [[AI/foo]]
 EOF
-preauth_moc=$(md5sum "$ws/knowledge/AI/_MOC.md" | awk '{print $1}')
+preauth_moc=$(file_hash "$ws/knowledge/AI/_MOC.md")
 
 cat > "$ws/knowledge/personnel/robin/index.md" <<'EOF'
 ---
@@ -135,12 +135,12 @@ tags: [person]
 ## Notes
 - something the user wrote
 EOF
-preauth_robin=$(md5sum "$ws/knowledge/personnel/robin/index.md" | awk '{print $1}')
+preauth_robin=$(file_hash "$ws/knowledge/personnel/robin/index.md")
 
 run_obsidian_bootstrap "$ws" >/dev/null 2>&1
 
-post_moc=$(md5sum "$ws/knowledge/AI/_MOC.md" | awk '{print $1}')
-post_robin=$(md5sum "$ws/knowledge/personnel/robin/index.md" | awk '{print $1}')
+post_moc=$(file_hash "$ws/knowledge/AI/_MOC.md")
+post_robin=$(file_hash "$ws/knowledge/personnel/robin/index.md")
 
 assert_eq "$preauth_moc"  "$post_moc"  "pre-existing AI MOC unchanged"
 assert_eq "$preauth_robin" "$post_robin" "pre-existing robin/index.md unchanged"
@@ -162,7 +162,7 @@ tags: [research, ai]
 
 body content
 EOF
-broken_md5=$(md5sum "$ws/knowledge/AI/broken.md" | awk '{print $1}')
+broken_md5=$(file_hash "$ws/knowledge/AI/broken.md")
 
 # Non-malformed file in same domain
 echo "good" > "$ws/knowledge/AI/good.md"
@@ -170,7 +170,7 @@ echo "good" > "$ws/knowledge/AI/good.md"
 out=$(run_obsidian_bootstrap "$ws" 2>&1)
 
 # Malformed file unchanged
-post_broken_md5=$(md5sum "$ws/knowledge/AI/broken.md" | awk '{print $1}')
+post_broken_md5=$(file_hash "$ws/knowledge/AI/broken.md")
 assert_eq "$broken_md5" "$post_broken_md5" "malformed file unchanged"
 
 # Mentioned in summary

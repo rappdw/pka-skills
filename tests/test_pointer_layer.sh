@@ -97,9 +97,9 @@ row2_after=$(grep "^| lighthouse-research" "$ws/knowledge/northwind/_MOC.md")
 assert_eq "$row2_before" "$row2_after" "second row byte-identical"
 
 # Idempotency: re-route the same file → no diff
-md5_before=$(md5sum "$moc" | awk '{print $1}')
+md5_before=$(file_hash "$moc")
 run_route "$ws" "northwind/2026-04-23-joint-partnership-meeting" "$fm" >/dev/null
-md5_after=$(md5sum "$moc" | awk '{print $1}')
+md5_after=$(file_hash "$moc")
 assert_eq "$md5_before" "$md5_after" "re-routing same file produces no diff (idempotent)"
 
 cleanup_workspace "$ws"
@@ -235,11 +235,11 @@ assert_file_lacks    "$ws/knowledge/AI/_MOC.md" "[[northwind/old_meeting_name]]"
 assert_file_lacks    "$ws/knowledge/leadership/_MOC.md" "[[northwind/old_meeting_name]]" "leadership MOC no longer has old name"
 
 # Idempotency: re-running with the same mapping is a no-op
-md5_a_before=$(md5sum "$ws/knowledge/AI/_MOC.md" | awk '{print $1}')
-md5_l_before=$(md5sum "$ws/knowledge/leadership/_MOC.md" | awk '{print $1}')
+md5_a_before=$(file_hash "$ws/knowledge/AI/_MOC.md")
+md5_l_before=$(file_hash "$ws/knowledge/leadership/_MOC.md")
 python3 "$MAINTAINER" rename --workspace "$ws" --mapping "$mapping" >/dev/null
-assert_eq "$md5_a_before" "$(md5sum "$ws/knowledge/AI/_MOC.md" | awk '{print $1}')"             "AI MOC unchanged on re-run"
-assert_eq "$md5_l_before" "$(md5sum "$ws/knowledge/leadership/_MOC.md" | awk '{print $1}')"     "leadership MOC unchanged on re-run"
+assert_eq "$md5_a_before" "$(file_hash "$ws/knowledge/AI/_MOC.md")"             "AI MOC unchanged on re-run"
+assert_eq "$md5_l_before" "$(file_hash "$ws/knowledge/leadership/_MOC.md")"     "leadership MOC unchanged on re-run"
 
 cleanup_workspace "$ws"
 
