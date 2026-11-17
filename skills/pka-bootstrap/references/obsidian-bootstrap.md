@@ -111,6 +111,7 @@ type: person
 name: <Display Name>
 role: ""
 org: ""
+aliases: []
 tags: [person]
 ---
 

@@ -99,12 +99,19 @@ Present proposed destination. Confirm before moving (except hands-off autonomy).
 
 ### Step 2 — Attendee linking
 
-See `references/attendee-linking.md` for matching logic.
+See `references/attendee-linking.md`.
 
-For each attendee extracted from notes:
-- Fuzzy match against Repo Map personnel folder names (first name, last name, slug)
-- If match: add relative path reference under `## Attendees` at bottom of notes
-- If no match: list name without link
+Resolve every attendee name with the registry, never by eye:
+
+```
+.pka/bin/pka-tools people resolve "<name>" "<name>" …
+```
+
+- **high** → link it under `## Attendees` at the bottom of the notes (`- [Priya](../personnel/priya/)`), and use the slug in the frontmatter `attendees` list.
+- **ambiguous** → ask the user which of the candidates they mean. Never pick.
+- **none** → list the name without a link.
+
+When the user settles a nickname or an ambiguous name ("Rob is Robin Smith"), offer once to remember it: `.pka/bin/pka-tools people alias robin-smith "Rob"`.
 
 ### Step 3 — Action item extraction
 
@@ -139,7 +146,17 @@ Once the note is saved, run the same command the librarian runs after a route, s
 .pka/bin/pka-tools post-route <path to the filed note> --role Meetings [--topic <slug>]
 ```
 
-In order: frontmatter and a `- [[note]]` bullet in its folder's `_MOC.md` (when `obsidian_present`), a pointer row, the index (index mode), and one commit by path in the child repo (when `hybrid_monorepo_present`) with the message `Meetings: Route <filename> to <folder>/` and the trailer. Pass `--topic` when the meeting belongs to a known pointer cluster (an ongoing series, a project). If you linked attendees' person pages in step 2, name each changed `index.md` with `--also` so it rides in the same commit. Relay any step that reports `skipped` with its reason; exit code 1 means the commit was refused (report git's message; the note is filed regardless).
+In order: frontmatter and a `- [[note]]` bullet in its folder's `_MOC.md` (when `obsidian_present`), a pointer row, **a line on each attendee's timeline**, the index (index mode), and one commit by path in the child repo (when `hybrid_monorepo_present`) with the message `Meetings: Route <filename> to <folder>/` and the trailer. Pass `--topic` when the meeting belongs to a known pointer cluster (an ongoing series, a project).
+
+**Timeline summaries.** You have the note in front of you, so write the summary for each person's line: at most 140 characters, drawn only from the note — the decisions, and what *that person* owns. For a 1-1, list the topics only (no judgements about the person). Pass them as `--summary-for <slug>="…"` per person, or `--summary "…"` for one summary for everyone:
+
+```
+.pka/bin/pka-tools post-route knowledge/leadership/2026-11-14-slt-sync.md --role Meetings \
+    --summary-for priya="Owns the adapter spike; vendor decision deferred" \
+    --summary-for robin-smith="Drafts the Q1 hiring plan"
+```
+
+Who goes on a timeline is decided by the tool from the note (the person's folder, `person` / `attendees` frontmatter, `## Attendees` links, the filename) — see `.pka/bin/pka-tools timeline who <note>`. Meetings with more than 8 resolved attendees add none of them unless the user asks (`--include-large`). In "ask before everything" mode, run `post-route … --dry-run` first and show the timeline lines in the confirmation. Relay any step that reports `skipped` with its reason; exit code 1 means the commit was refused (report git's message; the note is filed regardless).
 
 If the meeting has an earshot capture with a `narrative.md`, index the narrative in place as well — it is the richest artifact for the meeting, and its capture directory never moves:
 

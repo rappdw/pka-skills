@@ -155,11 +155,11 @@ When routing a file **into `knowledge/`** with `obsidian_present` true:
 
 3. **A different MOC section** — the bullet goes at the end of `## Files` (or a `## Unsorted` section). When the user keeps thematic sections and the right one is clear, pass `--section "<heading>"`.
 
-4. **Person backlinks** — if the routed content's filename or front-of-content references a person whose `personnel/<name>/index.md` exists, add a bullet under "Mentioned in" or "Related meetings" on that person's index page. **Only when confidence is high.** Err on the side of NOT linking when ambiguous — rogue backlinks are worse than missing ones.
+4. **Person timelines** — `post-route` also puts the file on the `## Timeline` of each person it belongs to (the file is in their folder, or its `person` / `attendees` frontmatter or `## Attendees` links name them with high confidence, or their slug is in the filename). Give it the summary: `--summary` or `--summary-for <slug>=…`, at most 140 characters, from the file only — decisions and what that person owns; for a 1-1, topics only. Do not write `## Mentioned in` bullets; never guess who an ambiguous or nicknamed attendee is (`.pka/bin/pka-tools people resolve` says; ask the user, and save their answer with `people alias`). This step runs with or without Obsidian.
 
 5. **Wikilinks vs plain links** — cross-references inside the vault use `[[wikilinks]]`; references to files outside the vault use plain markdown. See `.pka/roles/_obsidian.md` for the full rule.
 
-When `obsidian_present` is false: no frontmatter, no MOC bullet, no backlinks. `post-route` still runs for the pointer row (into existing MOCs only), the index and the commit.
+When `obsidian_present` is false: no frontmatter and no MOC bullet. `post-route` still runs the person timeline (with relative markdown links), the pointer row (into existing MOCs only), the index and the commit.
 
 Full conventions in `.pka/roles/_obsidian.md`. Consult that file when an Obsidian-specific decision is needed; do not duplicate the rules here.
 """,
@@ -376,8 +376,32 @@ With Obsidian the layer is on by default: MOCs are created as needed, the wikili
     ),
 ]
 
+OBSIDIAN_SECTIONS_V170 = [
+    (
+        "## Person timeline (added in v1.7.0)",
+        """\
+Each person's `index.md` carries a `## Timeline`: one line per note about them, newest first, kept by `pka-tools` inside two markers.
+
+```markdown
+## Timeline
+<!-- pka:timeline v1 — maintained by pka-tools; newest first; edit summaries freely, leave links alone -->
+- 2026-11-14 · meeting · [[leadership/2026-11-14-slt-sync|SLT sync]] — deferred the vendor decision; Priya owns the adapter spike
+- 2026-11-10 · 1on1 · [[personnel/priya/2026-11-10-1-1-priya|1-1]] — Q1 goals, hiring plan
+<!-- /pka:timeline -->
+```
+
+- **Line grammar:** `- <date> · <kind> · <link>[ — <summary>]`; kind is `1on1`, `meeting` or `doc`. The link is a wikilink in an Obsidian vault and a relative markdown link otherwise. This section is **not** gated on `obsidian_present`.
+- **Who writes it:** `.pka/bin/pka-tools post-route` when a note is filed (any role). The role supplies the summary: at most 140 characters, drawn only from the note — decisions and what this person owns; for a 1-1, the topics only.
+- **Who is on a note's timeline:** the person whose folder holds the note; people its `person` / `attendees` frontmatter or `## Attendees` links name with high confidence; a person whose slug is in the filename. A body mention is not enough. Ambiguous names are never added. Meetings with more than 8 resolved attendees add none of them. A note with `no-backref: true` goes on nobody's timeline.
+- **Editing:** the user may rewrite any summary or add text inside the block; the tool never changes an existing line except to follow a renamed note. Do not reorder lines by hand if you want new ones to land in date order.
+- **Rollback:** `.pka/bin/pka-tools timeline strip` removes the blocks.
+- The older `## Mentioned in` back-link sections are no longer written; existing ones stay.
+""",
+    ),
+]
+
 SHARED_REF_SECTIONS = {
-    "_obsidian.md": OBSIDIAN_SECTIONS_V161,
+    "_obsidian.md": OBSIDIAN_SECTIONS_V161 + OBSIDIAN_SECTIONS_V170,
     # _git-protocol.md has no v1.6.1 additions
 }
 
@@ -459,16 +483,19 @@ tags: [research, <domain-tag>]
 ```
 
 ### Person index
-Location: `personnel/<person>/index.md`
+Location: `<people-home>/<person>/index.md` (the people home is the Repo Map folder tagged `people-home`; usually `personnel/`)
 ```yaml
 ---
 type: person
 name: <full name>
 role: <role/title>
 org: <org>
+aliases: [<other names this person goes by>]
 tags: [person]
 ---
 ```
+
+`aliases` holds names the user has confirmed mean this person (a nickname, a maiden name). Roles add to it only when the user says so (`.pka/bin/pka-tools people alias <slug> "<name>"`); they never guess one.
 
 ## Rules for writing frontmatter
 
@@ -619,6 +646,25 @@ With Obsidian the layer is on by default: MOCs are created as needed, the wikili
 - Not a replacement for full-text search. It is a faster path that sits in front of FTS.
 - Not a separate file. It is a section inside existing `_MOC.md` files, never a `_pointers.md` or similar.
 - Not Obsidian-dependent. Plain-markdown workspaces that opt in get the same FTS-side gains; Obsidian only improves the rendering.
+
+## Person timeline (added in v1.7.0)
+
+Each person's `index.md` carries a `## Timeline`: one line per note about them, newest first, kept by `pka-tools` inside two markers.
+
+```markdown
+## Timeline
+<!-- pka:timeline v1 — maintained by pka-tools; newest first; edit summaries freely, leave links alone -->
+- 2026-11-14 · meeting · [[leadership/2026-11-14-slt-sync|SLT sync]] — deferred the vendor decision; Priya owns the adapter spike
+- 2026-11-10 · 1on1 · [[personnel/priya/2026-11-10-1-1-priya|1-1]] — Q1 goals, hiring plan
+<!-- /pka:timeline -->
+```
+
+- **Line grammar:** `- <date> · <kind> · <link>[ — <summary>]`; kind is `1on1`, `meeting` or `doc`. The link is a wikilink in an Obsidian vault and a relative markdown link otherwise. This section is **not** gated on `obsidian_present`.
+- **Who writes it:** `.pka/bin/pka-tools post-route` when a note is filed (any role). The role supplies the summary: at most 140 characters, drawn only from the note — decisions and what this person owns; for a 1-1, the topics only.
+- **Who is on a note's timeline:** the person whose folder holds the note; people its `person` / `attendees` frontmatter or `## Attendees` links name with high confidence; a person whose slug is in the filename. A body mention is not enough. Ambiguous names are never added. Meetings with more than 8 resolved attendees add none of them. A note with `no-backref: true` goes on nobody's timeline.
+- **Editing:** the user may rewrite any summary or add text inside the block; the tool never changes an existing line except to follow a renamed note. Do not reorder lines by hand if you want new ones to land in date order.
+- **Rollback:** `.pka/bin/pka-tools timeline strip` removes the blocks.
+- The older `## Mentioned in` back-link sections are no longer written; existing ones stay.
 
 ## Tag conventions
 
@@ -994,6 +1040,7 @@ KNOWN_SECTION_HASHES = {
     ],
     "_obsidian.md:## Frontmatter schemas": [
         "3867a112ba2567a5",
+        "c8a8541ce5e8a058",
     ],
     "_obsidian.md:## Invariants": [
         "226d78da88f75110",
@@ -1001,6 +1048,9 @@ KNOWN_SECTION_HASHES = {
     "_obsidian.md:## MOC (Map of Content) files": [
         "635438f5814f1445",
         "744712aba83670e6",
+    ],
+    "_obsidian.md:## Person timeline (added in v1.7.0)": [
+        "14e620138389ca80",
     ],
     "_obsidian.md:## Pointer Layer (added in v1.6.1)": [
         "0828652fcbd3498a",
@@ -1032,6 +1082,7 @@ KNOWN_SECTION_HASHES = {
     ],
     "librarian.md:## Obsidian coexistence (gated on `obsidian_present`)": [
         "3a018531223ad484",
+        "e8318781cac59a41",
         "ea5b5c5245088095",
     ],
     "librarian.md:## Pointer-row maintenance (gated only on routing into a domain — NOT on `obsidian_present`)": [

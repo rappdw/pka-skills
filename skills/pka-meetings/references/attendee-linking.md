@@ -13,40 +13,31 @@ Extract attendee names from:
 
 ---
 
-## Matching Against Repo Map
+## Matching Against the People Registry
 
-For each extracted attendee name, attempt to find a matching person folder: a subfolder of the Repo Map folder tagged `people-home` (fallback: `knowledge/personnel/`).
+Do not match names by hand. Ask the registry:
 
-### Match Order (stop at first match)
+```
+.pka/bin/pka-tools people resolve "Priya" "Dr. Nair" "Robin Smith" "@Sam"
+```
 
-1. **Exact slug match:** attendee name lowercased = folder name
-   - "Priya" → `priya/` (match)
+Person folders are the subfolders of the Repo Map folder tagged `people-home` (fallback `knowledge/personnel/`); each may have an `index.md` with a `name` and `aliases`. For each name the command answers:
 
-2. **First name match:** attendee first name lowercased = folder name
-   - "Priya Nair" → `priya/` (match)
+| Answer | When | What to do |
+|---|---|---|
+| **high** → slug | the name is exactly a person's slug, `name` or alias (ignoring case, accents, punctuation, `@` and titles such as Dr.); the slug's words in either order; a link to the person's folder; or a first name only one person has | Link it |
+| **ambiguous** → candidates | the name fits more than one person, or is a last name only | Ask the user which one; never pick |
+| **none** | nothing matches (people sharing the first name are listed as a hint, not a match) | List the name without a link |
 
-3. **Last name match:** attendee last name lowercased = folder name
-   - "Dr. Nair" → check for `nair/`
+**Nicknames are never guessed.** "Rob" does not match a `robin-smith` folder. If the user tells you who "Rob" is, offer to remember it:
 
-4. **Full name slug match:** `firstname-lastname` lowercased = folder name
-   - "Priya Nair" → `priya-nair/` (match)
+```
+.pka/bin/pka-tools people alias robin-smith "Rob"
+```
 
-5. **Reversed slug match:** `lastname-firstname` lowercased = folder name
-   - "Priya Nair" → `nair-priya/` (match)
+From then on "Rob" resolves with high confidence. The command refuses an alias that already means someone else.
 
-6. **Partial match:** folder name starts with or contains the attendee's first name
-   - "Priya" → `priya-engineering/` (match, but lower confidence)
-
-### Match Confidence
-
-| Match type | Confidence | Action |
-|------------|-----------|--------|
-| Exact slug | High | Link automatically |
-| First name | High (if unique) | Link automatically; if multiple matches, ask |
-| Last name | Medium | Link if unique; ask if ambiguous |
-| Full name slug | High | Link automatically |
-| Partial | Low | Include in list but don't auto-link |
-| No match | — | List name without link |
+`people list` shows every person with their name and aliases.
 
 ---
 
@@ -98,7 +89,13 @@ The PKA owner's name (from bootstrap Q1) is always an attendee of meetings they 
 
 ## Edge Cases
 
-- **Nicknames:** If "Mike" doesn't match but "michael" does, don't auto-link — the fuzzy match isn't confident enough. List as unmatched.
-- **Multiple matches:** If "Alex" matches both `alex-chen/` and `alex-kumar/`, ask the user which one.
+- **Nicknames:** an unmatched nickname is listed without a link. If the user says who it is, offer `people alias` (above).
+- **Multiple matches:** `people resolve` answers "ambiguous" with the candidates; ask the user which one.
 - **External attendees:** People who don't work at the same organization typically won't have personnel folders. List them without links. Don't suggest creating folders for every meeting attendee.
-- **Large meetings (10+ attendees):** Link only attendees with existing personnel folders. Don't present a long list of "no match" entries — summarize as "N attendees not in personnel records."
+- **Large meetings:** link only attendees with existing person folders, and don't present a long list of "no match" entries — summarize as "N attendees not in personnel records." Meetings with more than 8 resolved attendees are left off people's timelines (see below).
+
+---
+
+## Timelines
+
+The links written under `## Attendees`, and the note's frontmatter `attendees` and `person`, are what put a note on people's timelines: `post-route` resolves them and adds one line to each person's `## Timeline` block. See "Step 5" of the pka-meetings skill. A note with `no-backref: true` in its frontmatter goes on nobody's timeline.
