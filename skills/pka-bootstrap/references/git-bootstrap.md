@@ -15,6 +15,8 @@ Procedure for the `git` bootstrap target. Invoked when the user explicitly reque
 ├── .gitignore                    (created or augmented; merged, never replaced)
 ├── .meta                         (JSON manifest of child repos)
 ├── .pka/
+│   ├── manifest.json             (what was vendored, from which plugin version)
+│   ├── bin/pka-tools             (executable; with bin/pka_tools/)
 │   ├── gitattributes-template
 │   ├── gitignore-template
 │   ├── graduate.sh               (executable)
@@ -41,7 +43,7 @@ Procedure for the `git` bootstrap target. Invoked when the user explicitly reque
 2. **Root never auto-commits.** Stage only.
 3. **Existing child repos are not reinitialized.** A project with `.git` but no LFS is **flagged** in the summary, not modified. Reinit is a separate, opt-in operation (`reinit-project-with-lfs.sh`) that replaces the history and requires typed confirmation per project; it keeps the old repository as a backup under `.pka/reinit-backups/`. Children that are symbolic links, or whose `.git` is a file (linked worktree, submodule), are never touched: their repository lives elsewhere.
 4. **Idempotent.** Re-running on an already-bootstrapped state must produce no changes.
-5. **Required binaries**: `git` 2.28 or newer and `git-lfs` on PATH (plus `python3` for `.meta` JSON manipulation). If any are missing or git is too old, abort with a remediation hint and exit code 2.
+5. **Required binaries**: `git` 2.28 or newer and `git-lfs` on PATH, plus `python3` 3.9 or newer (the installer, `pka-tools`, and `.meta` JSON manipulation). If any are missing or git is too old, abort with a remediation hint and exit code 2.
 6. **A usable git identity** (`user.name` / `user.email`). The helper checks before creating anything; without one, stop and tell the user to set it.
 
 ## Steps
@@ -52,23 +54,33 @@ Procedure for the `git` bootstrap target. Invoked when the user explicitly reque
 - Resolve `WORKSPACE_ROOT` to absolute path.
 - Create `.pka/` if absent (the base bootstrap may have done this; either way ensure it exists).
 
-### Step 1 — Install templates
+### Step 1 — Install templates and helper scripts
 
-For each:
-- `bootstrap-assets/gitattributes-template` → `.pka/gitattributes-template`
-- `bootstrap-assets/gitignore-template`     → `.pka/gitignore-template`
+One command installs everything `bootstrap git` vendors, and records it in `.pka/manifest.json`:
 
-Logic: if the destination is absent, copy. If it exists, leave it alone (count as "already present" in summary) — the templates are meant to be edited by the user.
+```
+python3 "<plugin root>/bootstrap-assets/tools/pka-tools" install --workspace . --git
+```
 
-### Step 2 — Install helper scripts
+(`<plugin root>` is the folder holding this plugin's `skills/` and `bootstrap-assets/`; see "Installing the toolkit" in `SKILL.md`.)
 
-For each script in `bootstrap-assets/scripts/*.sh`:
-- If `.pka/<basename>` is absent, copy it. Count as "installed".
-- If it exists and is byte-identical to the plugin's copy (`cmp -s`), count as "already present".
-- If it exists and **differs**, replace it with the plugin's copy and count as "updated". The helper scripts are plugin-owned code, not user content: a stale copy keeps old bugs alive (the v1.6.3 data-loss fixes only reach a workspace this way). If the user has knowingly edited a helper, they can say so and the copy is skipped — otherwise replace.
-- Set executable bit (`chmod +x`).
+| Installed to `.pka/` | Kind |
+|---|---|
+| `bin/pka-tools`, `bin/pka_tools/*.py`, `upgrade-roles.py` | code |
+| `graduate.sh`, `init_project_repos.sh`, `reinit-project-with-lfs.sh`, `push-all.sh`, `build-repo-list.sh` | code, executable |
+| `gitattributes-template`, `gitignore-template` | templates, meant to be edited |
 
-List the updated scripts by name in the summary.
+Do not copy these by hand: the manifest is what lets a later upgrade tell an untouched file from one the user edited.
+
+### Step 2 — Report what the installer did
+
+The installer prints five lists. Carry them into the summary:
+
+- **Installed** — was absent.
+- **Updated** — the workspace's copy was untouched since it was installed and the plugin's copy is newer, so it was replaced. In a workspace from before v1.7 (no manifest) the helper scripts are replaced whenever they differ, and the previous copies are saved under `.pka/upgrade-backups/<timestamp>/vendored/`. A stale helper keeps old bugs alive (the v1.6.3 data-loss fixes only reach a workspace this way).
+- **Current** — already identical.
+- **Kept** — the user edited it and the plugin's copy has not changed since. Nothing to do.
+- **Conflicts** — the user edited it *and* the plugin's copy changed. Their file is kept; the plugin's version is beside it as `<name>.new`. Tell the user which files, so they can merge.
 
 ### Step 3 — Seed `_git-protocol.md`
 
@@ -97,6 +109,9 @@ meeting-notes/
 .pka/graduate-backups/
 .pka/reinit-backups/
 .pka/upgrade-backups/
+.pka/db-backups/
+.pka/bin/**/__pycache__/
+.pka/**/*.new
 
 # Secrets
 .gitea-pat
@@ -192,8 +207,10 @@ Print to the user:
 ```
 Hybrid monorepo bootstrap complete.
 
-Templates installed:        N (M already present)
-Helper scripts installed:   N (M already present, K updated to the current version: <names>)
+Vendored files:             N installed, K updated, M current
+                            kept (edited locally): <names>
+                            conflicts (yours kept, plugin's copy beside it as <name>.new): <names>
+                            previous copies saved under: .pka/upgrade-backups/<timestamp>/vendored/
 Shared reference seeded:    .pka/roles/_git-protocol.md (or "already present")
 Root .gitignore:            created / augmented (lines added: K)
 
@@ -246,4 +263,4 @@ All failures land in the summary. Children that initialized successfully stay in
 
 ## Idempotency check
 
-After running the bootstrap, immediately re-running it must produce no further file changes. Confirm this in tests (see `pka-skills/tests/`).
+After running the bootstrap, immediately re-running it must produce no further file changes. `tests/test_git_bootstrap.sh` checks this.

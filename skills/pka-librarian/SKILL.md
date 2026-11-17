@@ -34,7 +34,8 @@ Ingest, OCR, categorize, and index documents for a Personal Knowledge Assistance
 5. **Cache detection predicates** (used by Obsidian and commit-protocol behavior below):
    - `obsidian_present := directory_exists("./knowledge/.obsidian")`
    - `hybrid_monorepo_present := file_exists("./.meta") AND directory_exists("./.git")`
-   These are evaluated once per session and used to gate the additive behaviors at the end of routing.
+   These are evaluated once per session and used to gate the additive behaviors at the end of routing. `.pka/bin/pka-tools status` prints both, with the index roots and the schema version.
+6. **Check the toolkit.** The mechanical steps below run through `.pka/bin/pka-tools` (Python 3.9+, no network). If it is missing, install it from the plugin (`python3 "<plugin root>/bootstrap-assets/tools/pka-tools" install --workspace .`, where the plugin root is two directories above this skill's folder) or ask the user to run `bootstrap upgrade`. If `status` says the index needs `db migrate`, tell the user and offer `bootstrap upgrade`; do not migrate from here without asking.
 
 ## Transcript Awareness
 
@@ -73,21 +74,31 @@ See `references/ocr-patterns.md` for full detection and fallback strategy.
 1. **Inventory** — file type, text layer detection, language, date hints
 2. **Infer routing** — Repo Map first; flag project slugs in filenames; present proposals before moving. See `references/file-routing-rules.md`.
 3. **OCR** — extract text; sidecar `.txt` + SQLite `ocr_text` + `search_fts`; originals never modified
-4. **Move and index** — confirm first (except hands-off); update `file_index`, per-folder table, `search_fts`; append to `session-log.md`
+4. **Move and index** — confirm first (except hands-off). After the move (and after steps 5–6, so the MOCs are included): `.pka/bin/pka-tools index <routed file> <changed _MOC.md files>`. In markdown-only mode (no `.pka/knowledge.db`) skip the index command. Append to `session-log.md`
 5. **Obsidian-aware enhancements** (only when `obsidian_present` and the destination is inside `knowledge/`) — see `references/obsidian-routing.md` for the per-route checklist. Conventions live in `.pka/roles/_obsidian.md`.
-6. **Pointer-row maintenance** (always, when the destination is inside a domain that has — or will have — a `_MOC.md`) — see `references/pointer-layer.md` for the cluster-discovery and append-only contract. Runs whether or not Obsidian is present; the retrieval value comes from FTS.
-7. **Commit per semantic unit** (only when `hybrid_monorepo_present` and the destination is inside a child repo) — see `references/commit-protocol.md` for the trigger and message format. Rules live in `.pka/roles/_git-protocol.md`. The pointer-row update rides along in the same commit as the route.
+6. **Pointer-row maintenance** (always, when the destination is inside `knowledge/`) — `.pka/bin/pka-tools pointers add <routed file>`, with `--topic` when you can see which cluster it belongs to. The tool edits the `_MOC.md` files; do not edit a Pointers table by hand. See `references/pointer-layer.md`. Runs whether or not Obsidian is present; the retrieval value comes from FTS.
+7. **Commit per semantic unit** (only when `hybrid_monorepo_present` and the destination is inside a child repo) — `.pka/bin/pka-tools commit -m "Librarian: Route <filename> to <folder>/" -- <routed file> <every side-effect file>`. It stages and commits exactly those paths and adds the trailer. See `references/commit-protocol.md`. Rules live in `.pka/roles/_git-protocol.md`. The pointer-row update rides along in the same commit as the route.
 8. **Report** — `owner-inbox/librarian-report-<YYYY-MM-DD>.md` with counts, destinations, OCR status, unsorted items, and (when `obsidian_present`) any malformed-frontmatter files surfaced for user review, plus any pointer rows that hit the 8-file soft cap
 
 Unsorted files → `team-inbox/unsorted/`, never silently discarded.
 
 ## Full Content Index Pass
 
-Run on "index my knowledge base" or after a project transition. Reads `.md` content, extracts PDF text, reads OCR sidecars; populates `search_fts.content`. This is what makes full-text search work — bootstrap intentionally defers it.
+Run on "index my knowledge base" or after a project transition:
+
+```
+.pka/bin/pka-tools index
+```
+
+It reads markdown and text files and OCR sidecars, records a content hash for every file, and indexes pointer rows. It does not extract text from PDFs or Office files: it lists the documents that have no searchable text. For each of those, extract the text (see `references/ocr-patterns.md`), write the sidecar (`report.pdf.txt` beside `report.pdf`), and run `.pka/bin/pka-tools index <file>`.
 
 ## Re-index Command
 
-Diff `file_index` by path + modified_at; update changed entries only; report N added/updated/removed.
+The same command. It is incremental: unchanged files are skipped, changed files re-read, rows for deleted files removed. Report its N added / updated / removed line. `--rebuild` re-reads everything; `--prune` also removes rows left over from folders that are no longer indexed.
+
+## Searching
+
+`.pka/bin/pka-tools search <words>` — never a hand-written `MATCH`. Pointer-row hits come first and list their files; read those before falling back to body matches.
 
 ## Lint / Health Check
 

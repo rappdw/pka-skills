@@ -132,9 +132,15 @@ File naming: `<YYYY-MM-DD>-<meeting-slug>.md`
 
 ### Step 5 — Update SQLite index
 
-Insert into `file_index`, per-folder index table (if exists for destination), `search_fts` with full note content.
+In index mode (`.pka/knowledge.db` exists), index the filed note with the workspace's tool rather than writing rows by hand:
 
-If the meeting has an earshot capture with a `narrative.md`, index the narrative into `search_fts` as well — it is the richest artifact for the meeting. Index it at its in-place path inside the capture directory (it does not move).
+```
+.pka/bin/pka-tools index <path to the filed note>
+```
+
+If the meeting has an earshot capture with a `narrative.md`, index the narrative too — it is the richest artifact for the meeting. Pass its in-place path in the same command (`.pka/bin/pka-tools index <note> <capture-dir>/narrative.md`); the capture directory itself never moves. Nothing else in a capture directory is indexed.
+
+In markdown-only mode there is nothing to do. If the tool is missing, or reports that the index needs `db migrate`, say so and suggest `bootstrap upgrade`; do not fall back to manual inserts.
 
 ### Step 6 — Write to session-log.md
 

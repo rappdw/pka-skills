@@ -42,7 +42,7 @@ Procedure for the `upgrade` bootstrap target. Invoked when a user with an alread
 
 ## Implementation
 
-The merge is implemented in `bootstrap-assets/scripts/upgrade-roles.py`, vendored at `.pka/upgrade-roles.py` on first run. The script is deterministic — every line of new content is hardcoded into the helper, so the same input file always produces the same output. No LLM-driven merging.
+The merge is implemented in `bootstrap-assets/scripts/upgrade-roles.py`, vendored at `.pka/upgrade-roles.py` by the installer (see "Vendoring" below). The script is deterministic — every line of new content is hardcoded into the helper, so the same input file always produces the same output. No LLM-driven merging.
 
 Invocation:
 ```
@@ -71,13 +71,42 @@ Note: a fresh backup IS created on every non-dry-run invocation, even if no role
 
 ## Vendoring
 
-`upgrade-roles.py` is installed to `.pka/upgrade-roles.py` as part of:
-- Base bootstrap (so future workspaces have it ready)
-- `bootstrap upgrade` itself (so users on v1.5 who upgrade the plugin can run upgrade without first re-running base bootstrap)
+Every vendored helper is installed and refreshed by one command, run from the plugin's copy:
 
-**Always refresh before running.** If `.pka/upgrade-roles.py` exists and differs from the plugin's copy (`cmp -s`), replace it first. The section list is hardcoded in the helper, so an old copy reports "already present" for everything it knows and never adds what later versions introduced. The same goes for the shell helpers in `.pka/`: replace any that differ from the plugin's copies and list them as "updated" in the summary.
+```
+python3 "<plugin root>/bootstrap-assets/tools/pka-tools" install --workspace .
+```
 
-It's a Python file (the only Python in the asset bundle), kept in sync with the seeds it uses. When the seeds change, the embedded copies in this script must change too — that's the trade-off for not depending on the plugin's reference docs at runtime (the script needs to work even if the plugin's source isn't accessible from the user's workspace).
+It runs as the first step of `bootstrap upgrade` (and of base bootstrap and `bootstrap git`). It maintains `.pka/manifest.json`, which records the plugin version and a SHA-256 for each vendored file as last offered. Comparing the plugin's copy, the file on disk and the manifest tells an untouched file from an edited one:
+
+| File on disk | What happens |
+|---|---|
+| Absent | Installed |
+| Identical to the plugin's copy | Nothing |
+| Unchanged since it was installed | Replaced with the plugin's copy |
+| Edited by the user; plugin's copy unchanged | Kept |
+| Edited by the user; plugin's copy changed too | Kept; the plugin's copy is written beside it as `<name>.new` and reported as a conflict |
+| No manifest entry (workspace from before v1.7), code | Replaced; the previous copy is saved under `.pka/upgrade-backups/<timestamp>/vendored/` |
+| No manifest entry, template | Kept; the plugin's copy is written as `<name>.new` |
+| No longer shipped by the plugin | Moved to the same backup folder if untouched; left in place if edited |
+
+Nothing is deleted. Relay the kept, conflict and backup lines to the user.
+
+**Why first:** the section list is hardcoded in `upgrade-roles.py`, so an old copy reports "already present" for everything it knows and never adds what later versions introduced. The same goes for the shell helpers: an old `graduate.sh` keeps its old bugs.
+
+## Index migration
+
+`bootstrap upgrade` also brings an existing index up to the current schema, with the user's consent:
+
+1. `.pka/bin/pka-tools status` — if it reports the index "needs `db migrate`":
+2. `.pka/bin/pka-tools db migrate` — prints the numbered plan and changes nothing. Show it.
+3. **Ask.** A migration is a schema change; ask regardless of autonomy level.
+4. `.pka/bin/pka-tools db migrate --apply` — copies the database to `.pka/db-backups/` first, migrates in one transaction, verifies, and rolls back on any failure.
+5. `.pka/bin/pka-tools index` — fills in content hashes and picks up anything new.
+
+To undo: replace `.pka/knowledge.db` with the backup file named in the output. Details in `references/sqlite-modes.md`.
+
+`upgrade-roles.py` is kept in sync with the seeds it uses. When the seeds change, the embedded copies in the script must change too — that's the trade-off for not depending on the plugin's reference docs at runtime.
 
 ## Manual follow-up the user may want
 

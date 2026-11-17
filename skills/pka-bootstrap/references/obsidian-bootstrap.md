@@ -1,6 +1,8 @@
-# Obsidian Mechanical Retrofit — Algorithm
+# Obsidian Mechanical Retrofit — Procedure
 
 Procedure for the `obsidian` bootstrap target. Invoked when the user explicitly requests "bootstrap obsidian", "bootstrap the vault", "MOC stubs", "frontmatter retrofit", or similar. Never auto-runs.
+
+From v1.7 the retrofit is carried out by `pka-tools`, not by a role editing files one at a time. The skill checks the preconditions, runs the command, and relays its summary.
 
 ## Inputs
 
@@ -9,76 +11,99 @@ Procedure for the `obsidian` bootstrap target. Invoked when the user explicitly 
 ## Outputs
 
 A vault diff with:
-- One `_MOC.md` per top-level domain folder (created only if absent).
-- One `personnel/<name>/index.md` per personnel subfolder (created only if absent).
-- Filename-pattern frontmatter on files matching known patterns (added only if absent or merged into existing frontmatter; never overwriting user-authored fields).
-- Domain tags on files in known top-level folders (merged into existing `tags:` lists).
-- A summary listing of files with malformed frontmatter that were **skipped** (not modified).
+- One `_MOC.md` in the vault root, in each top-level domain folder and in each folder one level below (created only if absent). Person folders get an index instead of a MOC.
+- One `<people-home>/<name>/index.md` per person folder (created only if absent).
+- A frontmatter block on notes that have none: the schema for the note's kind when its name and folder match a known pattern, and the folder's domain tag in every case.
+- Missing schema keys, and the domain tag, added to notes that already have frontmatter. Existing keys are never changed.
+- A list of notes that were **skipped** because their frontmatter could not be read safely.
 
-## Hard rules (revisit before every step)
+## Hard rules
 
-1. **No body reading.** Inputs are filename, folder structure, and existing frontmatter only. Never parse, summarize, or infer from file content.
-2. **Merge, never overwrite.** Existing frontmatter fields the user authored are preserved verbatim. Add only missing schema fields.
-3. **Skip malformed frontmatter.** If a file's frontmatter doesn't parse as YAML, list the file in the summary and leave it unmodified.
+1. **No body reading.** Inputs are filename, folder structure, and existing frontmatter only. A note's body is carried through byte for byte: same line endings, same byte-order mark, same missing-or-present final newline.
+2. **Merge, never overwrite.** Existing frontmatter lines are not rewritten, reordered or re-quoted. New keys are inserted as new lines above the closing `---`. The one line that can change is `tags:`, which gains the domain tag.
+3. **Skip what cannot be read safely.** A note whose frontmatter is malformed, or uses YAML the tool does not handle, is listed and left untouched. So are notes that are not UTF-8 or are read-only.
 4. **Idempotent.** Re-running produces no further changes.
-5. **Failure soft.** Any per-file error logs and continues; the bootstrap as a whole completes. Errors land in the summary.
+5. **Existing MOCs and person indexes are never edited** by the retrofit.
 
 ## Steps
 
 ### Step 0 — Preflight
 
-- Verify `WORKSPACE_ROOT/knowledge/.obsidian/` exists. If absent, abort with: *"No Obsidian vault detected at `knowledge/.obsidian/`. The Obsidian bootstrap is a no-op outside an Obsidian vault."*
+- Verify `knowledge/.obsidian/` exists. If absent, stop with: *"No Obsidian vault detected at `knowledge/.obsidian/`. The Obsidian bootstrap is a no-op outside an Obsidian vault."* (The command refuses too, with exit code 3.)
 - Verify `.pka/roles/_obsidian.md` exists. If absent, seed it from `references/obsidian-conventions.md` first.
-- Note `hybrid_monorepo_present`. If true, the bootstrap will end with one consolidated commit in `knowledge/`. If false, the diff is left for the user to commit manually (or not).
+- Verify `.pka/bin/pka-tools` exists. If absent, install it (see "Installing the toolkit" in `SKILL.md`).
+- Note `hybrid_monorepo_present`.
 
-### Step 1 — Walk the vault
+### Step 1 — Preview (recommended)
 
-Single pass through `knowledge/`, applying `.pkaignore` for noise filtering. Collect:
+```
+.pka/bin/pka-tools obsidian bootstrap --dry-run
+```
 
-- **Top-level domain folders**: every immediate subdirectory of `knowledge/` (e.g., `AI/`, `personnel/`, `leadership/`, `lab-notebook/`).
-- **Personnel subfolders**: every immediate subdirectory of `knowledge/personnel/` (e.g., `personnel/robin/`, `personnel/jane/`).
-- **Files** matching one of the known patterns:
-  - `personnel/<person>/YYYY-MM-DD-1on1.md` (or `*1-1*.md`, `*1on1*.md`)
-  - `leadership/YYYY-MM-DD-*.md`
-  - `ArchCouncil/YYYY-MM-DD-*.md`
-  - `<any>/YYYY-MM-DD-*.md` (generic dated content in known meeting folders)
-  - `lab-notebook/YYYY-MM-DD.md`
-- **Files in known top-level folders** for domain-tag merging.
+Prints the same summary as a real run and writes nothing. Show the counts to the user; in "ask before everything" mode, wait for a yes.
 
-No content reading. The walk produces only filenames, paths, and the first-line check for frontmatter presence (`---` on line 1).
+### Step 2 — Run
 
-### Step 2 — Create MOC stubs
+```
+.pka/bin/pka-tools obsidian bootstrap --commit      # hybrid monorepo: one commit in knowledge/
+.pka/bin/pka-tools obsidian bootstrap               # otherwise: the diff is left for the user
+```
 
-For each top-level domain folder that **lacks** `_MOC.md`:
+With `--commit`, the files the run created or changed are staged and committed **by path** in the `knowledge/` child repo with the message `Bootstrap (obsidian): N MOCs, M person indexes, K frontmatter additions` and the standard trailer. Notes the user is in the middle of editing are not swept in. The root repo is untouched. Without a child repo at `knowledge/`, `--commit` reports that nothing was committed and why.
 
-- Filename: `<domain>/_MOC.md`
-- Content (template):
+### Step 3 — Summary
+
+Relay the command's summary:
+
+```
+Obsidian bootstrap summary
+------------------------------
+MOC stubs created:        N (M already present)
+Person indexes created:   N (M already present)
+Files given frontmatter:  N
+Frontmatter merged:       K files
+Total notes in vault:     T
+Total files touched:      P
+Files SKIPPED (malformed or unsupported frontmatter, left untouched): J
+  - <path>: <reason>
+Notes (…):
+  - <path>: tags are not a simple list; domain tag not added
+Commit: <sha> in knowledge        OR   No commit …
+```
+
+Always pass on the skipped list and the notes: those are the files the user may want to fix by hand.
+
+## What the command does
+
+### Which folders play which role
+
+| Role | Folder |
+|---|---|
+| People home | The Repo Map folder tagged `people-home`; without the tag, `knowledge/personnel/` |
+| Meeting homes | Repo Map folders tagged `meeting-home`; without any, `knowledge/leadership/` and `knowledge/ArchCouncil/` if they exist |
+| Daily notes | Repo Map folders tagged `daily-home`; without any, `knowledge/lab-notebook/` |
+
+`.pkaignore` applies. Dot-folders, symbolic links and earshot capture directories are skipped.
+
+### MOC stubs
 
 ```markdown
-# <Domain>
+# <folder name>
 
 <!-- MOC stub created by pka-bootstrap (obsidian). User can reorganize freely. -->
 
 ## Files
-- [[<each file in this folder, alphabetical>]]
+- [[<path>|<filename>]]            (each note directly in this folder)
 
 ## Subdomains
-- [[<each immediate subfolder>/_MOC|<Subfolder>]]
+- [[<subfolder>/_MOC|<subfolder>]] (each immediate subfolder)
 ```
 
-The "Files" list and "Subdomains" list are populated from the walk. Subfolder MOC links use the display-text form `[[path/_MOC|Display]]`.
+A section with nothing to list is left out.
 
-If a domain folder has only one of (files, subfolders), include only that section. If both empty, omit the headings entirely (just the `# <Domain>` heading and the comment).
+### Person index stubs
 
-If `_MOC.md` already exists: skip silently. Per-domain idempotency.
-
-### Step 3 — Create person index stubs
-
-For each `personnel/<name>/` subfolder that **lacks** `index.md`:
-
-- De-slugify the folder name to a display name: `robin-smith` → `Robin Smith`, `jane` → `Jane`. Heuristic: split on `-`, capitalize each token.
-- Filename: `personnel/<name>/index.md`
-- Content:
+The folder name becomes the display name: `robin-smith` → `Robin Smith`.
 
 ```markdown
 ---
@@ -92,91 +117,43 @@ tags: [person]
 # <Display Name>
 
 ## Notes
-- [[<each file in this folder, alphabetical, excluding index.md>]]
+- [[<each note in this folder, excluding index.md>]]
 ```
 
-If `index.md` already exists: skip silently.
+### Frontmatter by pattern
 
-### Step 4 — Add filename-pattern frontmatter
+| Note | Keys written when missing |
+|---|---|
+| `<people-home>/<person>/YYYY-MM-DD-1on1*.md`, `…-1-1*.md`, `…-1-on-1*.md` | `type: 1on1`, `date`, `person: "[[<people-home>/<person>/index]]"`, `tags: [1on1, <domain-tag>]` |
+| `<meeting-home>/YYYY-MM-DD-<topic>.md` | `type: meeting`, `date`, `topic: <the rest of the filename>`, `attendees: []`, `tags: [meeting, <domain-tag>]` |
+| `<daily-home>/YYYY-MM-DD.md` | `date`, `tags: [daily, <domain-tag>]` |
+| Any other note in a top-level folder | `tags: [<domain-tag>]` |
 
-For each file matching a known pattern that does **not** already have frontmatter (no `---` on line 1):
+The `topic` comes from the filename only. Values that YAML would misread (a colon, a number, `true`) are quoted.
 
-| Pattern                                                          | Frontmatter to write                              |
-|------------------------------------------------------------------|---------------------------------------------------|
-| `personnel/<person>/YYYY-MM-DD-1on1.md` or `*1-1*.md`/`*1on1*.md` | `type: 1on1`, `date: YYYY-MM-DD`, `person: "[[personnel/<person>/index]]"`, `tags: [1on1]` |
-| `leadership/YYYY-MM-DD-*.md` or `ArchCouncil/YYYY-MM-DD-*.md`     | `type: meeting`, `date: YYYY-MM-DD`, `topic: <slug from filename>`, `attendees: []`, `tags: [meeting, <domain-tag>]` |
-| `lab-notebook/YYYY-MM-DD.md`                                       | `date: YYYY-MM-DD`, `tags: [daily]`                |
+### Domain tag
 
-Insertion: prepend the YAML block (fenced by `---`) to the file. Preserve the original content verbatim after the closing `---`.
+The tag for a top-level folder is its name in lower case with spaces and underscores as hyphens: `AI/` → `ai`, `ArchCouncil/` → `archcouncil`, `Dev Process/` → `dev-process`.
 
-The `topic` field for meetings is derived **only from the filename slug** — never from the file body. `2026-04-22-slt-meeting.md` → `topic: slt-meeting`.
+For a note that already has `tags`:
 
-### Step 5 — Merge domain tags into existing frontmatter
+- `tags: [a, b]` → the tag is added inside the brackets.
+- A block list (`tags:` followed by `- a` lines) → one `- <tag>` line is added after the last item, with the same indentation.
+- `tags:` with no value → becomes `tags: [<tag>]`.
+- Anything else (a plain string, a list spread over several lines, a `Tags:` or `tag:` key) → left alone and reported under "Notes".
 
-For each file in a known top-level folder that **has** existing frontmatter:
+### What counts as unreadable frontmatter
 
-- Parse the frontmatter as YAML.
-- If the `tags:` key is absent: add it with `[<domain-tag>]`.
-- If `tags:` exists but doesn't include the domain tag: append the domain tag.
-- All other fields are preserved verbatim.
-
-If parsing fails (malformed frontmatter): **skip the file**. Add it to the malformed-frontmatter list in the summary.
-
-### Step 6 — Commit (if hybrid monorepo)
-
-If `hybrid_monorepo_present` is true:
-
-```
-cd knowledge
-git add -- <every file Steps 1–5 created or modified>
-git commit -m "Bootstrap (obsidian): N MOCs, M person indexes, K frontmatter additions" \
-          -m "" \
-          -m "Co-Authored-By: Claude <noreply@anthropic.com>" \
-          -- <the same paths>
-```
-
-Stage and commit by path, not with `git add -A`: the vault may hold notes the user is in the middle of editing, and those must not be swept into the bootstrap commit. Keep the list of files as Steps 1–5 write them.
-
-The commit lives in the `knowledge/` child repo. The root repo is untouched.
-
-If `hybrid_monorepo_present` is false: leave the diff in the working tree. The user inspects with their tool of choice and commits (or not).
-
-### Step 7 — Summary
-
-Print to the user:
-
-```
-Obsidian bootstrap complete.
-
-MOC stubs created:        N (M already present, skipped)
-Person indexes created:   N (M already present, skipped)
-Files given frontmatter:  N
-Domain tags merged:       K files
-Files SKIPPED (malformed frontmatter — listed below): J
-  - <path>: <error>
-  ...
-Total files touched:      P
-
-Commit: knowledge/.git  ("Bootstrap (obsidian): ...")
-        OR  No commit (workspace is not a hybrid monorepo — diff is in knowledge/ working tree)
-```
-
-## Failure modes
-
-- **No `.obsidian/`**: abort with the message in Step 0.
-- **Malformed YAML in an existing file**: skip and list. Do not attempt repair.
-- **Filesystem permission error on a single file**: log, continue.
-- **Cannot write a new `_MOC.md`**: log, continue. Skip backlinks/MOC updates that depend on it for the rest of this run.
+No closing `---`; a line that is not `key: value`, a list item or an indented continuation; a tab used for indentation; the same key twice; an unquoted value containing `: ` (for example `topic: budget: second pass`); an unterminated quote or bracket. The note is skipped whole — no keys, no tags.
 
 ## What NOT to do
 
-- Do not read file bodies for any inference. The only reads allowed are: filenames (from the walk), frontmatter parsing (only the YAML between the first two `---` lines).
-- Do not attempt to **fix** malformed frontmatter. Skip the file.
-- Do not reorganize MOC files — only add bullets to bottom or to existing sections.
-- Do not invent attendees, topics (beyond filename slug), or `related` links from content.
-- Do not modify files **outside** `knowledge/`. Even Repo Map updates in `CLAUDE.md` for new domains are out of scope here — that's an orchestrator concern, separate from this bootstrap.
+- Do not edit notes by hand to "finish" what the command skipped. Report them.
+- Do not attempt to fix malformed frontmatter.
+- Do not invent attendees, topics (beyond the filename) or `related` links.
+- Do not modify files outside `knowledge/`. Repo Map updates in `CLAUDE.md` are a separate orchestrator concern.
 - Do not rename existing files.
 
 ## Idempotency check
 
-After running the bootstrap, immediately re-running it must produce no further file changes. Confirm this in tests (see `pka-skills/tests/`).
+Running the command a second time reports zero files touched. `tests/test_obsidian_bootstrap.sh` (S4) and `tests/tools/test_obsidian.py` check this against the shipped tool.

@@ -1,6 +1,8 @@
 # SQLite Modes
 
-Mode selection logic and schema generation for PKA's SQLite layer.
+Mode selection, the index schema, and the commands that create, fill and query it.
+
+From v1.7 the schema, the indexing pass and the search query are owned by `pka-tools` (vendored at `.pka/bin/pka-tools`). Roles run the commands below; they do not write DDL, `INSERT`s or `MATCH` strings themselves.
 
 ---
 
@@ -21,38 +23,44 @@ Present as a recommendation already made, with a one-sentence rationale. User ca
 
 ## Mode 1: Markdown-Only
 
-No database. Claude reads files directly via Repo Map navigation. Practical to ~300–400 indexable files. No `.pka/knowledge.db` created.
+No database. Claude reads files directly via Repo Map navigation. Practical to ~300–400 indexable files. No `.pka/knowledge.db` created. `pka-tools index` and `pka-tools search` exit 3 with "no index" in this mode; `pka-tools actions`, `pointers`, `commit` and `obsidian` work without a database.
 
 ---
 
 ## Mode 2: Index Mode
 
-SQLite database at `.pka/knowledge.db`. Schema derived from the Repo Map — not predefined. Table names are always folder slugs, never generic category names.
+SQLite database at `.pka/knowledge.db`, created by:
 
-### Universal Tables (always created)
+```
+.pka/bin/pka-tools db init
+```
+
+### Schema (version 1)
+
+The schema version is stored in `PRAGMA user_version`. `pka-tools db schema` prints the tables, columns and row counts of the live database.
 
 ```sql
--- Master file index: every indexed file gets a row
+-- Master file index: one row per file under the index roots, any type
 CREATE TABLE file_index (
     id INTEGER PRIMARY KEY,
-    path TEXT NOT NULL,
-    folder TEXT NOT NULL,
+    path TEXT NOT NULL,          -- workspace-relative, forward slashes: knowledge/AI/foo.md
+    folder TEXT NOT NULL,        -- the file's parent folder: knowledge/AI
     filename TEXT NOT NULL,
-    file_type TEXT,
+    file_type TEXT,              -- extension without the dot
     size_bytes INTEGER,
     modified_at TEXT,
-    inferred_topic TEXT,
-    tags TEXT,
-    ocr_text TEXT,
+    inferred_topic TEXT,         -- frontmatter `topic` when present
+    tags TEXT,                   -- frontmatter `tags`, comma-separated
+    ocr_text TEXT,               -- text of the OCR sidecar, when there is one
     indexed_at TEXT,
-    status TEXT
+    status TEXT,
+    content_hash TEXT            -- SHA-256 of the file's bytes
 );
+CREATE UNIQUE INDEX file_index_path_uq ON file_index(path);
+CREATE INDEX file_index_content_hash ON file_index(content_hash);
 
--- Full-text search across all content.
--- The `is_pointer` column is UNINDEXED — it carries the pointer-layer flag
--- (1 if this row was extracted from a `## Pointers` table inside an _MOC.md;
--- 0 otherwise) without participating in FTS tokenization. See "Pointer-row
--- ranking" below.
+-- Full-text search. `is_pointer` is 1 for rows taken from a `## Pointers`
+-- table in an _MOC.md (see "Pointer-row ranking"), 0 otherwise.
 CREATE VIRTUAL TABLE search_fts USING fts5(
     path, filename, folder, content,
     is_pointer UNINDEXED,
@@ -67,78 +75,97 @@ CREATE TABLE project_lifecycle (
     event_date TEXT NOT NULL,
     notes TEXT
 );
+
+CREATE TABLE pka_meta (key TEXT PRIMARY KEY, value TEXT);
 ```
 
-### Per-Folder Tables
+`path` is unique: indexing the same file twice updates its row. `content_hash` lets later tools find byte-identical files without reading them again.
 
-Generated from the Repo Map. One table per Active or Reference priority folder. Table name is always `<folder_slug>_index`.
+### Per-folder tables (optional)
 
-| Inferred content type | Table name example | Generated columns |
-|-----------------------|-------------------|-------------------|
-| Per-person notes | `personnel_index` | `person_slug TEXT, note_type TEXT, last_modified TEXT, excerpt TEXT` |
-| Meeting / strategy notes | `leadership_index` | `topic TEXT, note_date TEXT, note_type TEXT, excerpt TEXT` |
-| Research outputs | `research_index` | `topic_slug TEXT, has_pdf INTEGER, has_source_doc INTEGER, excerpt TEXT` |
-| Journal / lab notes | `lab_notebook_index` | `entry_date TEXT, excerpt TEXT` |
-| Project workspaces | `projects_index` | `project_slug TEXT, has_claude_md INTEGER, last_modified TEXT, excerpt TEXT, status TEXT` |
-| Generic / flat | `<folder>_index` | `note_date TEXT, excerpt TEXT` |
+A role may add a table for a folder when the user has a structured question to ask of it (for example `personnel_index` with `person_slug`, `note_type`). The naming rule is unchanged: the table name is the folder slug plus `_index`, never a generic category name (`personnel/` → `personnel_index`, `lab-notebook/` → `lab_notebook_index`). `pka-tools` neither creates nor alters these tables, and a migration leaves them as they are. Nothing in the skills depends on them.
 
-### Schema Naming Convention
+### Schema documentation
 
-Table names are always folder slugs — never generic category names:
-- `personnel/` → `personnel_index` (not `contacts`)
-- `leadership/` → `leadership_index` (not `meetings`)
-- `lab-notebook/` → `lab_notebook_index` (hyphen → underscore)
+`.pka/schema.md` describes the tables and which Repo Map folder each per-folder table belongs to. The orchestrator writes it at bootstrap and after any schema change, taking the table and column list from the live database rather than from memory:
 
-### Schema Documentation
-
-Bootstrap writes `.pka/schema.md` at runtime documenting all created tables, their columns, and which Repo Map folder each table corresponds to. This file is regenerated on any schema change. It is not a skill asset — it's a runtime artifact.
+```
+.pka/bin/pka-tools db schema
+```
 
 ---
 
-## Bootstrap Population
+## Migrating an existing index
 
-Bootstrap does **metadata-only** population:
-- `file_index`: path, folder, filename, file_type, size_bytes, modified_at
-- Per-folder tables: populated from filesystem metadata
-- `search_fts`: **NOT populated** — content indexing is the librarian's job
-- `project_lifecycle`: initial entries for detected projects
+A database created before v1.7 is at schema version 0. Its layout was written by a role following prose, so `pka-tools` inspects it rather than assuming it.
 
-Target: under 30 seconds for any repo size. No file content reads at bootstrap.
+```
+.pka/bin/pka-tools db migrate            # prints the plan; changes nothing
+.pka/bin/pka-tools db migrate --apply    # backs up, then migrates
+```
 
-### Full Content Index Pass
+**Ask the user before `--apply`.** It is a schema change. Show them the plan first.
 
-Separate from bootstrap. Run by the librarian on "index my knowledge base" or after a project transition:
-1. Read `.md` file content
-2. Extract PDF text (via pdfplumber/pypdf)
-3. Read OCR sidecar `.txt` files
-4. Populate `search_fts.content`
+What `--apply` does, in order:
 
-This is what makes full-text search work.
+1. Copies the database to `.pka/db-backups/knowledge-<timestamp>.db` and checks the copy's integrity. (`pka-tools db backup` does this step on its own.)
+2. In one transaction: adds any missing `file_index` columns (including `content_hash`); removes duplicate `file_index` rows for the same path, keeping the newest; adds the unique index on `path`; rebuilds `search_fts` with the `is_pointer` column if it lacks it, copying every row across; creates missing universal tables; sets the schema version.
+3. Runs SQLite's integrity checks. Any failure rolls the transaction back and leaves the index exactly as it was.
 
-### Re-index (Incremental)
+Per-folder tables and any other tables are not touched. To undo a migration, replace `.pka/knowledge.db` with the backup file.
 
-Diff `file_index` by `path + modified_at`. Update only changed entries. Report: N added, N updated, N removed.
+Until the index is migrated, `index` and `search` refuse to run (exit 3) and say so.
 
 ---
 
-## Pointer-row ranking (added in v1.6.1)
+## Filling and refreshing the index
 
-When a librarian indexes an `_MOC.md` file, rows inside the `## Pointers` table are inserted into `search_fts` as **separate rows** (one FTS row per pointer-table row), distinct from the row carrying the file's body content.
+```
+.pka/bin/pka-tools index                 # everything under the index roots
+.pka/bin/pka-tools index <path>...       # just these files or folders (after routing)
+.pka/bin/pka-tools index --rebuild       # re-read every file in scope
+.pka/bin/pka-tools index --prune         # also drop rows anywhere whose file is gone
+.pka/bin/pka-tools index --dry-run       # report only
+```
 
-Pointer-table FTS rows:
-- `path` is the MOC file path (e.g., `knowledge/AI/_MOC.md`).
-- `content` is the concatenation of the row's `Topic`, `Entities`, and `Files` columns (denormalized for keyword density).
-- `is_pointer = 1`.
+**Index roots** are the Repo Map folders with priority Active or Reference. Without a readable Repo Map the root is `knowledge/`. `.pkaignore` applies; dot-folders and symbolic links are skipped. Earshot capture directories contribute their `narrative.md` and nothing else.
 
-The MOC file's body content is also indexed normally (one additional row with `is_pointer = 0`, `content` = the MOC's narrative paragraphs and headings).
+**What gets indexed**
 
-### Retrieval — 3× rank boost
+| File | `file_index` | `search_fts` |
+|---|---|---|
+| `.md`, `.markdown`, `.txt` | yes | the file's text |
+| `_MOC.md` | yes | its text, plus one `is_pointer = 1` row per pointer-table row |
+| Any other file with an OCR sidecar (`report.pdf` + `report.pdf.txt`) | yes, with `ocr_text` | the sidecar's text, under the source file's path |
+| Any other file without a sidecar | yes (metadata and hash) | nothing new; text a role already stored for it is kept |
 
-On retrieval, queries against `search_fts` apply a multiplicative rank boost to `is_pointer = 1` rows. SQLite FTS5 uses `rank` such that **lower (more negative) values mean better matches** (BM25 sign convention; values lie in `(-Infinity, 0]`). To rank pointer rows higher, multiply their rank by `3.0` (making the value more negative); body rows stay at `1.0`.
+The tool does not extract text from PDFs or Office files. The librarian does that (see `pka-librarian/references/ocr-patterns.md`), writes the sidecar, and re-runs `index` on the file. `index` lists documents that have no searchable text, and documents whose bytes changed after their text was extracted.
 
-### Building the MATCH string — always quote
+**Incremental.** A file whose size and modification time are unchanged is skipped. A changed file is re-read; a file that is gone has its rows removed. The report gives N added, N updated, N removed, N unchanged.
 
-Never pass the user's words (or a slug, a filename, a path) to `MATCH` as they are. FTS5 parses the string as a query language: a hyphen is the NOT/column operator, and `?`, `/`, `[`, `+`, `:` and the words `AND`, `OR`, `NOT`, `NEAR` are syntax. Unquoted, the slugs that pointer rows are made of fail outright:
+**Bootstrap** runs `db init` and then `index`. Reading markdown is fast (a few seconds for thousands of notes), so there is no separate metadata-only pass any more.
+
+---
+
+## Searching
+
+```
+.pka/bin/pka-tools search <words>... [--limit N] [--any] [--json]
+```
+
+Use this instead of writing a query. It quotes every term, applies the pointer boost, and returns pointer hits with their file lists resolved to paths. If no file contains every term, it retries with any term and says so.
+
+### Pointer-row ranking
+
+Rows from a `## Pointers` table are separate `search_fts` rows: `path` is the MOC's path, `content` is the row's Topic, Entities and Files joined together, `is_pointer = 1`. On retrieval their rank is multiplied by 3. FTS5's `rank` is negative, lower is better, so the multiplication moves pointer rows up.
+
+A pointer hit is a shortcut: read the 2–5 files it lists rather than every body match.
+
+### How the MATCH string is built
+
+For anyone writing a query by hand (the dashboard does):
+
+FTS5 parses the string as a query language: a hyphen is the NOT/column operator, and `?`, `/`, `[`, `+`, `:` and the words `AND`, `OR`, `NOT`, `NEAR` are syntax. Unquoted, the slugs that pointer rows are made of fail outright:
 
 | Search text | Unquoted result |
 |---|---|
@@ -146,20 +173,13 @@ Never pass the user's words (or a slug, a filename, a path) to `MATCH` as they a
 | `what did we decide about pricing?` | `fts5: syntax error near "?"` |
 | `AI/ML notes` | `fts5: syntax error near "/"` |
 
-Build the string like this, every time:
-
 1. Split the search text on whitespace.
-2. In each term, double any `"` character (`"` → `""`).
-3. Wrap each term in double quotes.
+2. Drop any term with no letter or digit in it.
+3. In each term, double any `"` character (`"` → `""`), then wrap the term in double quotes.
 4. Join the terms with a single space (FTS5 treats that as AND).
 
 `northwind-partnership-2026 pricing` becomes `"northwind-partnership-2026" "pricing"`. Pass the result as a bound parameter (`MATCH ?`), never by string concatenation into the SQL.
 
-If the quoted query returns nothing, retry with the terms joined by ` OR ` before reporting no results.
-
-FTS finds words, not markup. Do not use it to look for syntax such as `- [ ]` (open checkboxes), `#tag` or `[[wikilink]]` — the tokenizer discards the punctuation, so the query matches nothing. Scan the files instead (see `pka-meetings/references/action-item-patterns.md` for open action items).
-
-Example query (the `?` parameter is the quoted string built above):
 ```sql
 SELECT
   path,
@@ -173,18 +193,11 @@ ORDER BY adjusted_rank
 LIMIT 20;
 ```
 
+FTS finds words, not markup. Do not use it to look for syntax such as `- [ ]` (open checkboxes), `#tag` or `[[wikilink]]`. For open action items use `.pka/bin/pka-tools actions`.
+
 ### Why FTS5 not embeddings
 
 The pointer rows are designed for keyword density — they are dense markdown table rows with topic slugs, entity names, and wikilinks side-by-side. FTS5's BM25 scoring naturally ranks them above sparse body matches without any embedding layer. No vector store, no embeddings, no separate database.
-
-### Maintenance contract
-
-The librarian re-indexes pointer rows on:
-
-1. **MOC file change** — re-extract all rows in the `## Pointers` table; replace the old FTS rows for that MOC.
-2. **File rename / graduation** — the librarian rewrites Pointers wikilinks in MOCs (see `pka-skills/skills/pka-librarian/references/pointer-layer.md`); a re-index of those MOCs follows.
-
-Pointer-row indexing is part of the same incremental re-index pass as body-content indexing — no separate command.
 
 ---
 
