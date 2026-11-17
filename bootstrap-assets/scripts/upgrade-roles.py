@@ -43,10 +43,13 @@ Usage:
 Environment:
     WORKSPACE_ROOT  defaults to $(pwd) if --workspace is not given.
 
+A role file that lacks both anchor headings ("## Output Conventions",
+"## Invocation") still gets the new sections — appended at the end of the
+file — and the summary says so, so the placement can be reviewed.
+
 Exit codes:
     0  success
     1  workspace precondition failure (no .pka/roles/)
-    2  unexpected file shape (e.g., role file lacks the anchor section)
 """
 from __future__ import annotations
 
@@ -124,7 +127,7 @@ In addition to the existing session log entry:
 1. If `hybrid_monorepo_present`, run a consolidated push across child repos with unpushed commits. Implementation: `meta git push` if `meta` is on PATH; otherwise iterate `.meta` entries and run `git push` in each child directory (helper: `.pka/push-all.sh`).
 2. If any child repo's push fails (auth, network, conflict, LFS upload disconnect): record the failure in the session summary with the repo path and error. Do not retry destructively. Session close still proceeds.
 3. **Surface, do not commit, root-repo changes.** If `git status` in the root shows staged or unstaged changes, list them in the session summary and tell the user they're awaiting human review. Never auto-commit root.
-4. Skipped pushes (no origin configured, placeholder `.meta` URL, nothing to push) are reported as **skipped**, not failures.
+4. Skipped pushes (the child repo has no `origin` remote, or there is nothing to push) are reported as **skipped**, not failures.
 """,
     ),
     (
@@ -684,7 +687,7 @@ If the root has uncommitted changes at session end, surface them in the summary.
 
 Any push failure (auth error, conflict, network unreachable, LFS upload disconnect) surfaces explicitly in the session summary with the failing repo and the error message. Do not hide. Do not retry destructively (no `--force`, no rebase).
 
-If a child repo has no remote configured (placeholder `.meta` URL or empty `origin`), report it as a **skipped** push, not a failure.
+If a child repo has no `origin` remote, report it as a **skipped** push, not a failure. The child repo's own remote is what a push uses; the URL in `.meta` is a copy that `.pka/build-repo-list.sh` regenerates, so set remotes with `git -C <child> remote add origin <url>` and then re-run that script.
 
 ## Graduation commit sequence
 
@@ -728,10 +731,35 @@ Things that MUST hold:
 # Merge engine
 # ---------------------------------------------------------------------------
 
+_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+
+
+def _outside_fence_lines(text: str):
+    """Yield (offset, line_without_newline) for every line that is NOT inside
+    a fenced code block (``` or ~~~). Headings shown as examples inside a
+    fence are documentation, not structure, and must never be matched.
+    """
+    offset = 0
+    fence = None  # (char, length) of the fence that is currently open
+    for line in text.splitlines(keepends=True):
+        bare = line.rstrip("\r\n")
+        m = _FENCE_RE.match(bare)
+        if fence is None:
+            if m:
+                fence = (m.group(1)[0], len(m.group(1)))
+            else:
+                yield offset, bare
+        elif m and m.group(1)[0] == fence[0] and len(m.group(1)) >= fence[1] \
+                and not bare[m.end():].strip():
+            fence = None
+        offset += len(line)
+
+
 def section_present(text: str, heading: str) -> bool:
-    """True if the markdown text contains an H2 with this exact heading text."""
+    """True if the markdown text contains an H2 with this exact heading text
+    (outside fenced code blocks)."""
     needle = heading.strip()
-    for line in text.splitlines():
+    for _, line in _outside_fence_lines(text):
         if line.strip() == needle:
             return True
     return False
@@ -740,29 +768,51 @@ def section_present(text: str, heading: str) -> bool:
 def find_anchor_offset(text: str, anchors: tuple[str, ...] = ANCHOR_SECTIONS) -> int | None:
     """Return the character offset where new sections should be inserted.
 
-    Searches for the first occurrence of any anchor heading. Returns None if
-    no anchor is found (caller will append at end of file).
+    Searches for the first occurrence of any anchor heading outside fenced
+    code blocks. Returns None if no anchor is found (caller will append at
+    end of file).
     """
-    lines = text.splitlines(keepends=True)
-    offset = 0
-    for line in lines:
-        stripped = line.rstrip("\n").rstrip()
-        if stripped in anchors:
+    for offset, line in _outside_fence_lines(text):
+        if line.rstrip() in anchors:
             return offset
-        offset += len(line)
     return None
+
+
+def detect_newline(text: str) -> str:
+    """The file's line ending: CRLF if that is what it uses, else LF."""
+    crlf = text.count("\r\n")
+    lf = text.count("\n") - crlf
+    return "\r\n" if crlf > lf else "\n"
+
+
+def read_text_exact(path: Path) -> str:
+    """Read without newline translation, so CRLF files stay CRLF."""
+    with open(path, "r", encoding="utf-8", newline="") as f:
+        return f.read()
+
+
+def write_text_exact(path: Path, text: str) -> None:
+    """Write without newline translation, via a temp file renamed into place
+    so an interrupted run cannot leave a half-written role file."""
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "w", encoding="utf-8", newline="") as f:
+        f.write(text)
+    os.replace(tmp, path)
 
 
 def merge_sections(
     text: str,
     sections: list[tuple[str, str]],
     anchors: tuple[str, ...] = ANCHOR_SECTIONS,
-) -> tuple[str, list[str]]:
+) -> tuple[str, list[str], bool]:
     """Insert any missing sections into `text` before the first anchor.
-    Returns the updated text and the list of headings that were added.
+    Returns the updated text, the list of headings that were added, and
+    whether an anchor was found (False means the sections were appended at
+    the end of the file).
 
     Identical merge logic for both role files and shared-reference files;
-    only the anchor list differs.
+    only the anchor list differs. Inserted text uses the file's own line
+    ending.
     """
     added: list[str] = []
     insertion = ""
@@ -773,19 +823,34 @@ def merge_sections(
         added.append(heading)
 
     if not insertion:
-        return text, []
+        return text, [], True
+
+    nl = detect_newline(text)
+    if nl != "\n":
+        insertion = insertion.replace("\n", nl)
 
     anchor = find_anchor_offset(text, anchors)
     if anchor is None:
-        new_text = text.rstrip() + "\n" + insertion + "\n"
+        new_text = text.rstrip() + nl + insertion + nl
     else:
-        new_text = text[:anchor] + insertion.lstrip("\n") + "\n" + text[anchor:]
-    return new_text, added
+        new_text = text[:anchor] + insertion.lstrip("\r\n") + nl + text[anchor:]
+    return new_text, added, anchor is not None
 
 
-def merge_role(text: str, sections: list[tuple[str, str]]) -> tuple[str, list[str]]:
-    """Backwards-compatible wrapper. Use merge_sections directly for new code."""
+def merge_role(text: str, sections: list[tuple[str, str]]) -> tuple[str, list[str], bool]:
+    """Role-file wrapper around merge_sections."""
     return merge_sections(text, sections, ANCHOR_SECTIONS)
+
+
+def unique_backup_root(parent: Path, stamp: str) -> Path:
+    """A backup directory name that does not exist yet. Two runs within the
+    same second get `<stamp>` and `<stamp>-2` rather than a crash."""
+    candidate = parent / stamp
+    n = 1
+    while candidate.exists():
+        n += 1
+        candidate = parent / f"{stamp}-{n}"
+    return candidate
 
 
 # ---------------------------------------------------------------------------
@@ -810,14 +875,22 @@ def upgrade_workspace(workspace: Path, dry_run: bool = False) -> dict:
         "role_sections_added": {},
         "role_sections_already_present": {},
         "roles_unchanged": [],
+        "appended_at_end": [],
         "dry_run": dry_run,
     }
 
     # 1. Backup .pka/roles/ to .pka/upgrade-backups/<timestamp>/roles/
     if not dry_run:
         ts = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-        backup_root = pka_dir / "upgrade-backups" / ts
-        backup_root.mkdir(parents=True, exist_ok=True)
+        backups_dir = pka_dir / "upgrade-backups"
+        backups_dir.mkdir(parents=True, exist_ok=True)
+        # Keep the backups out of the root repo even on workspaces whose root
+        # .gitignore predates this directory.
+        ignore_file = backups_dir / ".gitignore"
+        if not ignore_file.exists():
+            ignore_file.write_text("*\n", encoding="utf-8")
+        backup_root = unique_backup_root(backups_dir, ts)
+        backup_root.mkdir(parents=True)
         shutil.copytree(roles_dir, backup_root / "roles")
         summary["backup"] = str(backup_root / "roles")
 
@@ -844,13 +917,15 @@ def upgrade_workspace(workspace: Path, dry_run: bool = False) -> dict:
         target = roles_dir / filename
         if not target.exists():
             continue  # Should not happen — step 2 either seeded or skipped only when present
-        original = target.read_text(encoding="utf-8")
-        merged, added = merge_sections(original, sections, SHARED_REF_ANCHORS)
+        original = read_text_exact(target)
+        merged, added, anchored = merge_sections(original, sections, SHARED_REF_ANCHORS)
         already_present = [h for h, _ in sections if h not in added]
         summary["shared_sections_added"][filename] = added
         summary["shared_sections_already_present"][filename] = already_present
+        if added and not anchored:
+            summary["appended_at_end"].append(filename)
         if added and not dry_run:
-            target.write_text(merged, encoding="utf-8")
+            write_text_exact(target, merged)
 
     # 3. Per-role section merge
     for role, sections in ROLE_SECTIONS.items():
@@ -862,8 +937,8 @@ def upgrade_workspace(workspace: Path, dry_run: bool = False) -> dict:
             summary["roles_unchanged"].append(role)
             continue
 
-        original = role_path.read_text(encoding="utf-8")
-        merged, added = merge_role(original, sections)
+        original = read_text_exact(role_path)
+        merged, added, anchored = merge_role(original, sections)
         already_present = [h for h, _ in sections if h not in added]
         summary["role_sections_added"][role] = added
         summary["role_sections_already_present"][role] = already_present
@@ -871,8 +946,10 @@ def upgrade_workspace(workspace: Path, dry_run: bool = False) -> dict:
         if not added:
             summary["roles_unchanged"].append(role)
             continue
+        if not anchored:
+            summary["appended_at_end"].append(f"{role}.md")
         if not dry_run:
-            role_path.write_text(merged, encoding="utf-8")
+            write_text_exact(role_path, merged)
 
     return summary
 
@@ -923,6 +1000,15 @@ def print_summary(s: dict) -> None:
         if not added and not present:
             print("  no changes")
     print()
+    if s.get("appended_at_end"):
+        verb = "would be" if s["dry_run"] else "were"
+        print("WARNING: no anchor heading ('## Output Conventions' / '## Invocation',")
+        print("         or a shared-reference anchor) was found in the file(s) below,")
+        print(f"         so the new sections {verb} appended at the END of the file.")
+        print("         Review the placement:")
+        for f in s["appended_at_end"]:
+            print(f"           - .pka/roles/{f}")
+        print()
     print("NOTE: This upgrade only ADDS new H2 sections. It does NOT modify")
     print("      existing sections (e.g., 'Key Competencies', 'Output Conventions',")
     print("      or 'Invocation'). If you want the v1.6 bullet-level additions")

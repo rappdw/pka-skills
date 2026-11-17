@@ -1,24 +1,33 @@
 #!/usr/bin/env bash
 # push-all.sh — push every child repo with unpushed commits.
 #
-# Reads `.meta` from the workspace root, iterates child repos, and runs
+# Reads the list of child repos from `.meta` at the workspace root and runs
 # `git push` in each. Failures and skips are surfaced in a summary; one
 # failure does not block the others.
 #
+# The remote that is pushed to is always the child repo's own `origin`
+# (`git -C <child> remote get-url origin`). `.meta` only says which child
+# repos exist; the URL recorded there is a copy. To set a remote:
+#     git -C <child> remote add origin <url>
+#     .pka/build-repo-list.sh          # refresh the copy in .meta
+# Editing the URL in `.meta` by hand does nothing; this script says so when
+# the two disagree.
+#
 # A child repo is **skipped** (not failed) when:
-#   - origin URL is empty / missing in `.meta`
-#   - origin URL is the placeholder "TBD"
+#   - the child repo has no `origin` remote
 #   - the child repo has no `.git` (stale .meta entry)
-#   - the working tree is clean and there is nothing to push
+#   - there is nothing to push
+# Child repos found on disk but missing from `.meta` are listed as skipped
+# with a hint to run build-repo-list.sh.
 #
 # Exit codes:
 #   0  all attempted pushes succeeded (or were skipped)
 #   1  one or more pushes failed (details in summary)
-#   2  preconditions missing (no .meta)
+#   2  preconditions missing (no .meta, or a required binary is missing)
 
 set -u
 
-# --- preflight (P5) ---
+# --- preflight ---
 for cmd in git git-lfs python3; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "ERROR: '$cmd' not found on PATH. Install it and re-run." >&2
@@ -37,16 +46,16 @@ fi
 PUSHED=()
 SKIPPED=()
 FAILED=()
+NOTES=()
 
-# Parse .meta (json-ish, simple key:value lines inside "projects": { ... })
-# We grep for lines like:    "knowledge": "git@host:user/knowledge.git",
+# Emit one "<child path>\t<url recorded in .meta>" line per entry.
 parse_meta() {
   python3 - "$META_FILE" <<'PY'
 import json, sys
-with open(sys.argv[1]) as f:
+with open(sys.argv[1], encoding="utf-8") as f:
     data = json.load(f)
 for k, v in (data.get("projects") or {}).items():
-    print(f"{k}\t{v}")
+    print("%s\t%s" % (k, v if isinstance(v, str) else ""))
 PY
 }
 
@@ -55,10 +64,15 @@ ENTRIES=$(parse_meta) || {
   exit 2
 }
 
+in_meta() {
+  local rel="$1"
+  printf '%s\n' "$ENTRIES" | cut -f1 | grep -qxF -- "$rel"
+}
+
 unpushed_count() {
   local repo="$1"
   (
-    cd "$repo"
+    cd "$repo" || exit 0
     # If no upstream is set, count all local commits as unpushed.
     if ! git rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1; then
       git rev-list --count HEAD 2>/dev/null || echo 0
@@ -68,18 +82,30 @@ unpushed_count() {
   )
 }
 
-while IFS=$'\t' read -r rel origin; do
+while IFS=$'\t' read -r rel meta_origin; do
   [ -z "$rel" ] && continue
   repo_abs="${WORKSPACE_ROOT}/${rel}"
 
-  if [ ! -d "${repo_abs}/.git" ]; then
+  if [ ! -e "${repo_abs}/.git" ]; then
     SKIPPED+=("$rel: no .git (stale .meta entry)")
     continue
   fi
 
-  if [ -z "$origin" ] || [ "$origin" = "TBD" ]; then
-    SKIPPED+=("$rel: no origin configured (placeholder in .meta)")
+  # The child repo's own remote is the only thing a push can use.
+  origin=$(git -C "$repo_abs" remote get-url origin 2>/dev/null || echo "")
+  case "$meta_origin" in TBD) meta_origin="" ;; esac
+
+  if [ -z "$origin" ]; then
+    if [ -n "$meta_origin" ]; then
+      SKIPPED+=("$rel: no origin remote in the repo (.meta lists one)")
+      NOTES+=("$rel: .meta lists ${meta_origin} but the repo has no 'origin' remote. Run: git -C ${rel} remote add origin ${meta_origin}")
+    else
+      SKIPPED+=("$rel: no origin configured")
+    fi
     continue
+  fi
+  if [ "$origin" != "$meta_origin" ]; then
+    NOTES+=("$rel: .meta is out of date (repo origin is ${origin}). Run .pka/build-repo-list.sh to refresh it.")
   fi
 
   count=$(unpushed_count "$repo_abs" || echo 0)
@@ -108,6 +134,23 @@ while IFS=$'\t' read -r rel origin; do
   fi
 done <<< "$ENTRIES"
 
+# Child repos on disk that .meta does not know about.
+note_unlisted() {
+  local rel="$1"
+  if [ -d "${WORKSPACE_ROOT}/${rel}/.git" ] && ! in_meta "$rel"; then
+    SKIPPED+=("$rel: not listed in .meta")
+    NOTES+=("$rel: is a child repo but is not in .meta. Run .pka/build-repo-list.sh to add it.")
+  fi
+}
+note_unlisted "knowledge"
+if [ -d "${WORKSPACE_ROOT}/projects" ]; then
+  shopt -s nullglob
+  for proj in "${WORKSPACE_ROOT}"/projects/*/; do
+    note_unlisted "projects/$(basename "$proj")"
+  done
+  shopt -u nullglob
+fi
+
 # Summary
 echo
 echo "push-all.sh summary"
@@ -116,6 +159,10 @@ echo "Pushed:  ${#PUSHED[@]}"
 for r in "${PUSHED[@]:-}"; do [ -n "$r" ] && echo "  + $r"; done
 echo "Skipped: ${#SKIPPED[@]}"
 for r in "${SKIPPED[@]:-}"; do [ -n "$r" ] && echo "  = $r"; done
+if [ ${#NOTES[@]} -gt 0 ]; then
+  echo "Notes:"
+  for r in "${NOTES[@]}"; do echo "  * $r"; done
+fi
 if [ ${#FAILED[@]} -gt 0 ]; then
   echo "Failed:  ${#FAILED[@]}"
   for r in "${FAILED[@]}"; do echo "  ! $r"; done

@@ -142,12 +142,13 @@ cleanup_workspace "$ws"
 start_test "S20 — push-all.sh: one failed push surfaces but doesn't block others"
 ws=$(make_hybrid_ws)
 # Set up a remote that exists for projects/foo and one that DOESN'T for knowledge.
-mkdir -p /tmp/pka-fake-remotes
-foo_bare=$(mktemp -d /tmp/pka-fake-remotes/foo-bare.XXXX)
+remotes_dir=$(make_scratch_dir); register_cleanup "$remotes_dir"
+foo_bare="$remotes_dir/foo-bare"
+mkdir "$foo_bare"
 ( cd "$foo_bare" && git init --bare -b main >/dev/null 2>&1 )
 ( cd "$ws/projects/foo" && git remote add origin "$foo_bare" )
 # unreachable origin for knowledge: a path that doesn't exist
-( cd "$ws/knowledge" && git remote add origin "/tmp/pka-fake-remotes/nonexistent-$(date +%s).bare" )
+( cd "$ws/knowledge" && git remote add origin "$remotes_dir/nonexistent.bare" )
 
 # Make a new commit in each child so there's something to push
 echo "more content for foo" >> "$ws/projects/foo/README.md"
@@ -189,7 +190,6 @@ else
 fi
 
 cleanup_workspace "$ws"
-rm -rf "$foo_bare"
 
 # ----------- S21: mid-session "push now" uses same primitive -----------
 start_test "S21 — mid-session push uses same primitive (push-all.sh runs and returns)"

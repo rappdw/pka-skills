@@ -27,11 +27,27 @@ run_suite() {
 SUITES_PASS=()
 SUITES_FAIL=()
 
+# The suites must never write to the developer's real git configuration (an
+# earlier version did, and a release was committed under the test identity).
+# Fingerprint it before and after; a difference fails the run.
+git_config_fingerprint() {
+  { git config --global --list 2>/dev/null; cat "${HOME}/.gitconfig" 2>/dev/null; } | cksum
+}
+GIT_CONFIG_BEFORE=$(git_config_fingerprint)
+
 run_suite "git-bootstrap"      "$THIS_DIR/test_git_bootstrap.sh"
 run_suite "obsidian-bootstrap" "$THIS_DIR/test_obsidian_bootstrap.sh"
 run_suite "commit-protocol"    "$THIS_DIR/test_commit_protocol.sh"
 run_suite "upgrade"            "$THIS_DIR/test_upgrade.sh"
 run_suite "pointer-layer"      "$THIS_DIR/test_pointer_layer.sh"
+run_suite "script-safety"      "$THIS_DIR/test_script_safety.sh"
+
+if [ "$GIT_CONFIG_BEFORE" = "$(git_config_fingerprint)" ]; then
+  SUITES_PASS+=("global git config untouched")
+else
+  echo "${RED}The test run changed your global git configuration.${RESET}" >&2
+  SUITES_FAIL+=("global git config untouched")
+fi
 
 echo
 echo "=============================="

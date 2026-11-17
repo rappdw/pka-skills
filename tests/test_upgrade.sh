@@ -11,6 +11,10 @@
 #   U5 — Backup created on every non-dry-run invocation
 #   U6 — Dry-run mode: reports changes but doesn't write files
 #   U7 — Refuses on workspace without .pka/roles/: exit 1, no files created
+#   U8 — Headings inside fenced code blocks are not matched or used as anchors
+#   U9 — Line endings preserved (CRLF stays CRLF, LF stays LF)
+#   U10 — A role file with no anchor heading is appended to, and reported
+#   U11 — Runs within the same second do not collide on the backup directory
 
 set -u
 source "$(dirname "$0")/lib.sh"
@@ -176,18 +180,18 @@ start_test "U2 — Idempotent: second run produces no role changes"
 ws=$(make_v15_workspace)
 run_upgrade "$ws" >/dev/null 2>&1
 
-snap_orch=$(md5sum "$ws/.pka/roles/orchestrator.md" | awk '{print $1}')
-snap_lib=$(md5sum "$ws/.pka/roles/librarian.md" | awk '{print $1}')
-snap_res=$(md5sum "$ws/.pka/roles/researcher.md" | awk '{print $1}')
-snap_obs=$(md5sum "$ws/.pka/roles/_obsidian.md" | awk '{print $1}')
+snap_orch=$(file_hash "$ws/.pka/roles/orchestrator.md")
+snap_lib=$(file_hash "$ws/.pka/roles/librarian.md")
+snap_res=$(file_hash "$ws/.pka/roles/researcher.md")
+snap_obs=$(file_hash "$ws/.pka/roles/_obsidian.md")
 
 # Second run
 run_upgrade "$ws" >/dev/null 2>&1
 
-assert_eq "$snap_orch" "$(md5sum "$ws/.pka/roles/orchestrator.md" | awk '{print $1}')" "orchestrator unchanged on second run"
-assert_eq "$snap_lib"  "$(md5sum "$ws/.pka/roles/librarian.md"    | awk '{print $1}')" "librarian unchanged on second run"
-assert_eq "$snap_res"  "$(md5sum "$ws/.pka/roles/researcher.md"   | awk '{print $1}')" "researcher unchanged on second run"
-assert_eq "$snap_obs"  "$(md5sum "$ws/.pka/roles/_obsidian.md"    | awk '{print $1}')" "_obsidian.md unchanged on second run"
+assert_eq "$snap_orch" "$(file_hash "$ws/.pka/roles/orchestrator.md")" "orchestrator unchanged on second run"
+assert_eq "$snap_lib"  "$(file_hash "$ws/.pka/roles/librarian.md")" "librarian unchanged on second run"
+assert_eq "$snap_res"  "$(file_hash "$ws/.pka/roles/researcher.md")" "researcher unchanged on second run"
+assert_eq "$snap_obs"  "$(file_hash "$ws/.pka/roles/_obsidian.md")" "_obsidian.md unchanged on second run"
 
 cleanup_workspace "$ws"
 
@@ -226,7 +230,7 @@ cleanup_workspace "$ws"
 start_test "U4 — Frontmatter preserved (role, model, tools fields untouched)"
 ws=$(make_v15_workspace)
 # Customize frontmatter
-sed -i 's/model: claude-opus-4-5/model: claude-opus-4-7/' "$ws/.pka/roles/orchestrator.md"
+replace_in_file "$ws/.pka/roles/orchestrator.md" "model: claude-opus-4-5" "model: claude-opus-4-7"
 pre_fm=$(sed -n '1,/^---$/p; /^---$/q' "$ws/.pka/roles/orchestrator.md" | head -n -1)
 # (the awk above is approximate; capture a known stable line instead)
 pre_model=$(grep "^model:" "$ws/.pka/roles/orchestrator.md" | head -1)
@@ -269,11 +273,11 @@ cleanup_workspace "$ws"
 # ----------- U6: dry-run mode -----------
 start_test "U6 — --dry-run: reports changes but does not write files"
 ws=$(make_v15_workspace)
-snap_orch=$(md5sum "$ws/.pka/roles/orchestrator.md" | awk '{print $1}')
+snap_orch=$(file_hash "$ws/.pka/roles/orchestrator.md")
 
 out=$(run_upgrade "$ws" --dry-run 2>&1)
 
-post_orch=$(md5sum "$ws/.pka/roles/orchestrator.md" | awk '{print $1}')
+post_orch=$(file_hash "$ws/.pka/roles/orchestrator.md")
 assert_eq "$snap_orch" "$post_orch" "orchestrator.md unchanged in dry-run"
 [ ! -f "$ws/.pka/roles/_obsidian.md" ] && pass_step "_obsidian.md NOT created in dry-run" || fail "_obsidian.md was created in dry-run mode"
 [ ! -d "$ws/.pka/upgrade-backups" ] && pass_step "no backup directory in dry-run" || fail "backup created in dry-run"
@@ -290,6 +294,111 @@ assert_eq "1" "$exit_code" "exit 1 when .pka/roles/ absent"
 [ ! -d "$ws/.pka" ] && pass_step ".pka/ NOT created" || fail ".pka/ was created"
 echo "$out" | grep -qiE "not found|bootstrap" && pass_step "error message mentions bootstrap" || fail "unhelpful error"
 
+cleanup_workspace "$ws"
+
+# ----------- U8: fenced code blocks are not structure -----------
+start_test "U8 — Headings inside a fenced code block are ignored"
+ws=$(make_v15_workspace)
+# Put an example block ABOVE the real sections: it shows both an anchor
+# heading and one of the headings the upgrade adds.
+python3 - "$ws/.pka/roles/orchestrator.md" <<'PY'
+import sys
+p = sys.argv[1]
+text = open(p, encoding="utf-8").read()
+example = (
+    "## Examples\n"
+    "A role file is laid out like this:\n"
+    "```markdown\n"
+    "## Bootstrap dispatch\n"
+    "## Output Conventions\n"
+    "- example bullet\n"
+    "```\n"
+    "\n"
+)
+open(p, "w", encoding="utf-8").write(text.replace("## Purpose\n", example + "## Purpose\n", 1))
+PY
+run_upgrade "$ws" >/dev/null 2>&1
+f="$ws/.pka/roles/orchestrator.md"
+count=$(grep -c "^## Bootstrap dispatch" "$f")
+assert_eq "2" "$count" "section added even though the heading appears in an example block"
+fence_close=$(grep -n '^```$' "$f" | head -1 | cut -d: -f1)
+real_section=$(grep -n "^## Bootstrap dispatch" "$f" | tail -1 | cut -d: -f1)
+real_anchor=$(grep -n "^## Output Conventions" "$f" | tail -1 | cut -d: -f1)
+if [ "$real_section" -gt "$fence_close" ] && [ "$real_section" -lt "$real_anchor" ]; then
+  pass_step "new sections sit before the real anchor, not inside the code block"
+else
+  fail "sections misplaced (fence closes at $fence_close, section at $real_section, real anchor at $real_anchor)"
+fi
+block=$(sed -n '/^```markdown$/,/^```$/p' "$f" | wc -l | tr -d ' ')
+assert_eq "5" "$block" "example block is byte-for-byte the same length"
+cleanup_workspace "$ws"
+
+# ----------- U9: line endings preserved -----------
+start_test "U9 — CRLF role files stay CRLF"
+ws=$(make_v15_workspace)
+f="$ws/.pka/roles/librarian.md"
+python3 - "$f" <<'PY'
+import sys
+p = sys.argv[1]
+data = open(p, "rb").read().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+open(p, "wb").write(data)
+PY
+run_upgrade "$ws" >/dev/null 2>&1
+bare_lf=$(python3 - "$f" <<'PY'
+import sys
+data = open(sys.argv[1], "rb").read()
+print(data.count(b"\n") - data.count(b"\r\n"))
+PY
+)
+assert_eq "0" "$bare_lf" "no bare LF line endings introduced"
+assert_file_contains "$f" "## Obsidian coexistence" "sections were added to the CRLF file"
+# LF files stay LF.
+bare_cr=$(python3 - "$ws/.pka/roles/researcher.md" <<'PY'
+import sys
+print(open(sys.argv[1], "rb").read().count(b"\r"))
+PY
+)
+assert_eq "0" "$bare_cr" "LF file gained no CR characters"
+cleanup_workspace "$ws"
+
+# ----------- U10: missing anchor is reported -----------
+start_test "U10 — Role file without an anchor heading: appended and reported"
+ws=$(make_v15_workspace)
+cat > "$ws/.pka/roles/researcher.md" <<'EOF'
+---
+role: researcher
+---
+
+# @researcher
+
+## Purpose
+A heavily customized role file with neither anchor heading.
+EOF
+out=$(run_upgrade "$ws" 2>&1); rc=$?
+assert_eq "0" "$rc" "upgrade still succeeds"
+if echo "$out" | grep -q "WARNING" && echo "$out" | grep -q "researcher.md"; then
+  pass_step "summary warns that researcher.md had no anchor"
+else
+  fail "no warning about the missing anchor"
+fi
+if echo "$out" | grep "WARNING" -A6 | grep -q "orchestrator.md"; then
+  fail "warning wrongly lists a file that has an anchor"
+else
+  pass_step "files with an anchor are not listed in the warning"
+fi
+assert_file_contains "$ws/.pka/roles/researcher.md" "A heavily customized role file" "existing content kept"
+cleanup_workspace "$ws"
+
+# ----------- U11: two runs in the same second -----------
+start_test "U11 — Two runs in the same second both succeed with separate backups"
+ws=$(make_v15_workspace)
+run_upgrade "$ws" >/dev/null 2>&1; rc1=$?
+run_upgrade "$ws" >/dev/null 2>&1; rc2=$?
+run_upgrade "$ws" >/dev/null 2>&1; rc3=$?
+assert_eq "0 0 0" "$rc1 $rc2 $rc3" "no run crashed"
+backup_count=$(find "$ws/.pka/upgrade-backups" -mindepth 2 -maxdepth 2 -name roles -type d | wc -l | tr -d ' ')
+assert_eq "3" "$backup_count" "each run kept its own backup"
+assert_file_contains "$ws/.pka/upgrade-backups/.gitignore" "*" "backup directory ignores itself"
 cleanup_workspace "$ws"
 
 end_run

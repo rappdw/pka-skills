@@ -40,9 +40,13 @@ knowledge/
 projects/
 owner-inbox/
 team-inbox/
+meeting-notes/
 .pka/knowledge.db
 .pka/knowledge.db-*
 .pka/*-log.txt
+.pka/graduate-backups/
+.pka/reinit-backups/
+.pka/upgrade-backups/
 EOF
 
 # Build .meta
@@ -184,9 +188,9 @@ install_pka_assets "$ws"
 # `/usr/bin/env git`, otherwise PATH (which still has the wrapper first)
 # would re-resolve back to the wrapper -> infinite recursion.
 real_git=$(command -v git)
-trace=$(mktemp)
-trap 'rm -f "$trace"' EXIT
-trace_dir=$(mktemp -d)
+trace_dir=$(make_scratch_dir); register_cleanup "$trace_dir"
+trace="$trace_dir/trace.log"
+: > "$trace"
 cat > "$trace_dir/git" <<EOF
 #!/usr/bin/env bash
 echo "git \$*" >> "$trace"
@@ -257,13 +261,13 @@ assert_last_commit_has_trailer        "$ws/knowledge" "Co-Authored-By: Claude <n
 
 # Root: .meta updated, projects/widget/ removal staged, BUT NO ROOT COMMIT
 assert_no_commit "$ws" "root has no commits after graduation"
-# Backup created — graduate.sh prefers `git bundle` (more portable than tar);
-# falls back to tar only on truly-empty repos. Either format is acceptable.
-backup_count=$(ls -1 "$ws/.pka/graduate-backups"/*.bundle "$ws/.pka/graduate-backups"/*.tar 2>/dev/null | wc -l | tr -d ' ')
-if [ "$backup_count" -ge 1 ]; then
-  pass_step "graduation backup created (bundle or tar)"
+# The project's repository is kept whole (moved, not deleted) so its history
+# can be restored with `git clone`.
+backup_repo=$(ls -1d "$ws/.pka/graduate-backups"/widget-*.git 2>/dev/null | head -1)
+if [ -n "$backup_repo" ] && [ -f "$backup_repo/HEAD" ]; then
+  pass_step "previous repository kept at $backup_repo"
 else
-  fail "no backup bundle or tar in .pka/graduate-backups/"
+  fail "no kept repository in .pka/graduate-backups/"
 fi
 # Archival instructions printed
 if echo "$out" | grep -q "https://gitea.example.com/dan/widget.git"; then
