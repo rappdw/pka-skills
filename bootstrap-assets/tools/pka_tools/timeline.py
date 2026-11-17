@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import os
 import re
+import unicodedata
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import unquote
@@ -38,7 +39,7 @@ from urllib.parse import unquote
 from . import frontmatter
 from .actions import note_date
 from .errors import EXIT_USAGE, ToolError
-from .markdown import WIKILINK_RE, block_mask, fence_mask, heading_of, link_target, unclosed_fence
+from .markdown import WIKILINK_RE, block_mask, heading_of, link_target, unclosed_fence
 from .actions import parse_date
 from .people import INDEX, Person, Registry, registry, require_home, stub_text, words_of
 from .textio import (
@@ -79,7 +80,7 @@ class Block:
 
 def locate(lines: List[str]) -> Block:
     block = Block()
-    mask = fence_mask(lines)
+    mask = block_mask(lines)          # fenced examples and HTML comments are not structure
     opens = [i for i, line in enumerate(lines) if not mask[i] and _OPEN_RE.match(line_body(line))]
     closes = [i for i, line in enumerate(lines) if not mask[i] and _CLOSE_RE.match(line_body(line))]
     if not opens and not closes:
@@ -109,6 +110,44 @@ def _href_key(ws: Workspace, index: Path, href: str) -> Optional[str]:
     except ValueError:
         return None
     return rel[:-3] if rel.lower().endswith(".md") else rel
+
+
+def _encode_href(rel: str) -> str:
+    """A path as a markdown link target: `%` and `#` percent-encoded (so the
+    path survives being read back), angle brackets around spaces."""
+    rel = rel.replace("%", "%25").replace("#", "%23")
+    if any(char in rel for char in " ()<>"):
+        rel = "<%s>" % rel
+    return rel
+
+
+def resolve_bare(ws: Workspace, key: str, cache: Optional[dict] = None) -> str:
+    """Obsidian's shortest form: `[[2026-11-12-sync]]` means the one file in
+    the vault with that name. Return its full key, or the key unchanged."""
+    if "/" in key:
+        return key
+    cache = {} if cache is None else cache
+    if key not in cache:
+        wanted = {key.casefold() + ".md", key.casefold()}
+        hits = [p for p in ws.walk(ws.vault, captures=False) if p.name.casefold() in wanted]
+        cache[key] = note_key(ws, hits[0]) if len(hits) == 1 else key
+    return cache[key]
+
+
+def block_keys(ws: Workspace, index: Path, lines: List[str], block: Block) -> List[str]:
+    """The note each line of the block is about: a grammar line's own link,
+    or the first link of any other line. Links in summaries do not count."""
+    keys = []
+    cache: dict = {}
+    if block.open is None:
+        return keys
+    for idx in range(block.open + 1, block.close):
+        body = line_body(lines[idx])
+        match = _LINE_RE.match(body)
+        found = keys_in(ws, index, match.group("link") if match else body)
+        if found:
+            keys.append(resolve_bare(ws, found[0], cache))
+    return keys
 
 
 def keys_in(ws: Workspace, index: Path, text: str) -> List[str]:
@@ -142,10 +181,22 @@ def note_key(ws: Workspace, path: Path) -> str:
     return rel[:-3] if rel.lower().endswith(".md") else rel
 
 
+def _joins_previous(char: str) -> bool:
+    """Characters that belong to the one before them (accents, emoji
+    modifiers, variation selectors, zero-width joiners)."""
+    code = ord(char)
+    return (unicodedata.combining(char) != 0 or char in "\u200d\ufe0e\ufe0f"
+            or 0x1F3FB <= code <= 0x1F3FF or 0xE0020 <= code <= 0xE007F)
+
+
 def clean_summary(text: str) -> str:
     flat = " ".join((text or "").split())
     if len(flat) > SUMMARY_MAX:
-        flat = flat[: SUMMARY_MAX - 1].rstrip() + "…"
+        cut = SUMMARY_MAX - 1
+        # Never split a character from its accent, or an emoji sequence.
+        while cut > 0 and (_joins_previous(flat[cut]) or flat[cut - 1] == "\u200d"):
+            cut -= 1
+        flat = flat[:cut].rstrip() + "…"
     return flat
 
 
@@ -161,9 +212,7 @@ def format_link(ws: Workspace, index: Path, note: Path, label: str, obsidian: bo
     if obsidian:
         return "[[%s|%s]]" % (note_key(ws, note), label)
     rel = os.path.relpath(str(note), str(index.parent)).replace(os.sep, "/")
-    if any(char in rel for char in " ()<>"):
-        rel = "<%s>" % rel
-    return "[%s](%s)" % (label, rel)
+    return "[%s](%s)" % (label, _encode_href(rel))
 
 
 def format_line(date: str, kind: str, link: str, summary: str) -> str:
@@ -362,6 +411,9 @@ def add_to(
     if obsidian and _UNLINKABLE & set(key):
         result.update(action="skipped", problem="the note's path contains a character a wikilink cannot express")
         return result
+    if person.index.is_symlink():
+        result.update(action="skipped", problem="index.md is a symbolic link; its timeline lives elsewhere")
+        return result
     created = not person.index.exists() and not person.index.is_symlink()
     if created:
         text = stub_text(person.name)      # written together with the first line
@@ -394,8 +446,7 @@ def add_to(
     result["line"] = new_line
 
     if block.open is not None:
-        inside = "".join(lines[block.open + 1:block.close])
-        if key in keys_in(ws, person.index, inside):
+        if key in block_keys(ws, person.index, lines, block):
             return result
         out = _insert(lines, block, entries(ws, person.index, lines, block), new_line, date, newline)
         action = "added"
@@ -454,10 +505,11 @@ def add(
     if not when:
         raise ToolError("%s has no date (no YYYY-MM-DD filename prefix, no frontmatter `date`); pass --date"
                         % file_arg, EXIT_USAGE)
-    summary_for = summary_for or {}
+    summary_for = {reg.get(slug).slug if reg.get(slug) else slug: text for slug, text in (summary_for or {}).items()}
     for slug in list(summary_for) + list(people or []):
-        if slug not in reg.people:
+        if reg.get(slug) is None:
             raise ToolError("no person folder %r" % slug, EXIT_USAGE)
+    people = [reg.get(slug).slug for slug in people] if people else people
     the_kind = kind or note.kind(reg)
     the_label = label or note.label(the_kind)
     if people:
@@ -538,9 +590,8 @@ def rename(ws: Workspace, old_ref: str, new_ref: str, prefix: bool = False, dry_
                     return match.group(0)
                 bare = href[1:-1] if href.startswith("<") else href
                 ext = ".md" if unquote(bare.split("#", 1)[0]).lower().endswith(".md") else ""
-                rel = os.path.relpath(str(ws.vault / (target + ext)), str(person.index.parent)).replace(os.sep, "/")
-                if any(char in rel for char in " ()<>"):
-                    rel = "<%s>" % rel
+                rel = _encode_href(os.path.relpath(str(ws.vault / (target + ext)),
+                                                   str(person.index.parent)).replace(os.sep, "/"))
                 count += 1
                 whole = match.group(0)
                 return whole.replace("(" + href, "(" + rel, 1)
@@ -566,12 +617,17 @@ def rename(ws: Workspace, old_ref: str, new_ref: str, prefix: bool = False, dry_
 def listing(ws: Workspace, slug: str) -> dict:
     reg = registry(ws)
     require_home(reg)
-    person = reg.people.get(slug)
+    person = reg.get(slug)
     if person is None:
         raise ToolError("no person folder %r" % slug, EXIT_USAGE)
     if not person.index.is_file():
         return {"slug": slug, "entries": [], "problem": None}
-    lines = split_lines(read_text(person.index))
+    try:
+        lines = split_lines(read_text(person.index))
+    except NotText:
+        return {"slug": slug, "entries": [], "problem": "index.md is not valid UTF-8"}
+    except OSError as exc:
+        return {"slug": slug, "entries": [], "problem": str(exc)}
     block = locate(lines)
     items = [{k: v for k, v in e.items() if k != "line"} for e in entries(ws, person.index, lines, block)]
     return {"slug": slug, "entries": items, "problem": block.problem}
@@ -600,8 +656,10 @@ def check(ws: Workspace) -> dict:
         for idx in range(block.open + 1, block.close):
             if idx not in managed and line_body(lines[idx]).strip():
                 problems.append({"index": rel, "line": idx + 1, "problem": "line is not in the timeline grammar"})
+        cache: dict = {}
         for entry in found:
-            if entry["key"] is None or resolve_link(ws, entry["key"]) is None:
+            key = resolve_bare(ws, entry["key"], cache) if entry["key"] else None
+            if key is None or resolve_link(ws, key) is None:
                 problems.append({"index": rel, "line": entry["line"] + 1,
                                  "problem": "links to a note that does not exist: %s" % entry["key"]})
         for first, second in zip(found, found[1:]):
@@ -615,10 +673,10 @@ def strip(ws: Workspace, slug: Optional[str] = None, dry_run: bool = False) -> d
     `## Timeline` heading goes too when nothing else is under it."""
     reg = registry(ws)
     require_home(reg)
-    if slug is not None and slug not in reg.people:
+    if slug is not None and reg.get(slug) is None:
         raise ToolError("no person folder %r" % slug, EXIT_USAGE)
-    targets = [reg.people[slug]] if slug else person_indexes(ws, reg)
-    changed, skipped = [], []
+    targets = [reg.get(slug)] if slug else person_indexes(ws, reg)
+    changed, skipped, removed = [], [], []
     for person in targets:
         if not person.index.is_file():
             continue
@@ -635,19 +693,27 @@ def strip(ws: Workspace, slug: Optional[str] = None, dry_run: bool = False) -> d
         if block.open is None:
             continue
         start, stop = block.open, block.close + 1
-        after = stop
         heading_above = start > 0 and line_body(lines[start - 1]).strip() == HEADING
-        nothing_else = after >= len(lines) or not line_body(lines[after]).strip() or heading_of(lines[after])
-        if heading_above and nothing_else:
-            start -= 1
-            if after >= len(lines) and start > 0 and not line_body(lines[start - 1]).strip():
-                start -= 1
+        follow = stop
+        while follow < len(lines) and not line_body(lines[follow]).strip():
+            follow += 1
+        section_empty = follow >= len(lines) or heading_of(lines[follow]) is not None
+        if heading_above and section_empty:
+            start -= 1          # the heading has nothing else under it
+            if stop >= len(lines) and start > 0 and not line_body(lines[start - 1]).strip():
+                start -= 1      # the blank line added before it
         out = lines[:start] + lines[stop:]
+        remove_file = "".join(out) == stub_text(person.name)     # a stub the tool created for the timeline
         if not dry_run:
             try:
-                write_text_atomic(person.index, "".join(out))
+                if remove_file:
+                    os.remove(str(person.index))
+                else:
+                    write_text_atomic(person.index, "".join(out))
             except OSError:
                 skipped.append(rel)
                 continue
         changed.append(rel)
-    return {"changed": changed, "skipped": skipped, "dry_run": dry_run}
+        if remove_file:
+            removed.append(rel)
+    return {"changed": changed, "removed": removed, "skipped": skipped, "dry_run": dry_run}

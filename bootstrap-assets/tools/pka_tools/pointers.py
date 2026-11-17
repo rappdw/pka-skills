@@ -632,15 +632,12 @@ def rename(ws: Workspace, old: str, new: str, prefix: bool = False, dry_run: boo
     # Timeline blocks are tool-owned like pointer rows: always kept in step.
     from . import timeline as timeline_mod
     timeline_result = timeline_mod.rename(ws, old_ref, new_ref, prefix=prefix, dry_run=dry_run)
-    timeline_files = set(timeline_result["changed"])
     if notes:
         files = [path for path in ws.walk(ws.vault, captures=False)
                  if path.suffix.lower() in (".md", ".markdown")]
     else:
         files = ws.moc_files()
     for moc in files:
-        if ws.rel(moc) in timeline_files and dry_run:
-            continue        # counted by the timeline pass; the file on disk is not updated in a dry run
         try:
             text = read_text(moc)
         except NotText:
@@ -659,6 +656,13 @@ def rename(ws: Workspace, old: str, new: str, prefix: bool = False, dry_run: boo
             skip(moc, "has a code fence that is never closed")
             continue
         mask = block_mask(lines)
+        # Timeline blocks were handled by the timeline pass above (which also
+        # knows their markdown links). Passing over them again would rewrite
+        # a link twice when the new path is inside the old one.
+        block = timeline_mod.locate(lines)
+        if block.open is not None:
+            for idx in range(block.open, block.close + 1):
+                mask[idx] = True
         count = 0
         out = []
         for idx, line in enumerate(lines):

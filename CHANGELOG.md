@@ -37,7 +37,8 @@ Decided with Dan on 2026-11-17: newest first, the 8-attendee cutoff, topics-only
 
 ### Tests
 
-- `tests/tools/test_timeline.py`, including the Phase 4 acceptance tests: filing a note twice changes nothing; a hand-edited summary (and text the user typed inside the block) survives ten further routes; a rename updates every timeline that cites the note. 257 tests in `tests/tools/`.
+- `tests/tools/test_timeline.py`, including the Phase 4 acceptance tests: filing a note twice changes nothing; a hand-edited summary (and text the user typed inside the block) survives ten further routes; a rename updates every timeline that cites the note. 273 tests in `tests/tools/`.
+- An independent review of the first build reproduced 1 high and 10 medium issues, all fixed with regression tests (`ReviewFindings` in `test_timeline.py`, each failing on the first build). The high one: `pointers rename --prefix --notes` into a subfolder of the old folder rewrote timeline links twice (`archive/archive/…`). The others: a link inside a summary made its note count as present; a symlinked person folder was written through; a `## Timeline` heading inside an HTML comment was used; a one-word slug won over someone else's identical first name; without Obsidian a `#` in a filename added a duplicate line on every run; a short `[[name]]` the user wrote was not recognised; `strip` deleted a heading the user wrote; a timeline line left by an earlier `--person` run was not committed; `timeline list` crashed on a non-UTF-8 index; `people alias` accepted a name that could mean someone else. Also: summary truncation split characters, decomposed Unicode slugs did not resolve, and a `people-home` tag on the vault root made every folder a person.
 
 ## v1.7.0-beta.1 — unreleased
 

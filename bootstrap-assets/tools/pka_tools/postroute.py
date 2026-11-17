@@ -105,9 +105,10 @@ def run(
     if section is not None and in_vault:
         _check_section(ws, path, section)
     reg = people.registry(ws) if (in_vault and do_timeline) else None
-    for slug in list(timeline_people or []) + list((summary_for or {}).keys()):
-        if reg is None or slug not in reg.people:
-            raise ToolError("no person folder %r for the timeline" % slug, EXIT_USAGE)
+    if do_timeline and in_vault:
+        for slug in list(timeline_people or []) + list((summary_for or {}).keys()):
+            if reg is None or reg.get(slug) is None:
+                raise ToolError("no person folder %r for the timeline" % slug, EXIT_USAGE)
 
     # Validate every --also path now: once step 1 has run, a usage error
     # would leave the note edited and uncommitted.
@@ -208,7 +209,7 @@ def run(
     elif not do_timeline:
         record("timeline", "not-requested")
     elif reg is None or reg.home is None:
-        record("timeline", "not-applicable", "no people folder")
+        record("timeline", "not-applicable", (reg.problem if reg is not None and reg.problem else "no people folder"))
     elif reg.person_of_path(path) is not None and path.name == people.INDEX:
         record("timeline", "not-applicable", "a person's own index")
     else:
@@ -230,7 +231,13 @@ def run(
                 bits.append("large meeting (%d attendees): attendees not added" % result["attendees"])
             if result.get("opted_out"):
                 bits.append("the note has `no-backref: true`")
-            action = "written" if written else ("noop" if result["people"] else "nobody")
+            failed = [e for e in result["people"] if e["action"] == "skipped"]
+            if written:
+                action = "written"
+            elif failed:
+                action = "skipped"
+            else:
+                action = "noop" if result["people"] else "nobody"
             record("timeline", action, "; ".join(bits), list(result["changed"]))
             steps[-1]["people"] = result["people"]
             steps[-1]["ambiguous"] = result["ambiguous"]
@@ -249,17 +256,20 @@ def run(
                 leftovers.append(moc_rel)
         except (NotText, OSError):
             continue
-    if in_vault:
+    if in_vault and reg is not None and reg.home is not None:
+        # Any person's timeline that lists the note, whoever put it there
+        # (an earlier run with --person, a run whose commit was refused).
         key = timeline.note_key(ws, path)
-        for index_rel in person_files:
-            if index_rel in touched or index_rel in leftovers:
+        for person in timeline.person_indexes(ws, reg):
+            index_rel = ws.rel(person.index)
+            if index_rel in touched or index_rel in leftovers or person.index.is_symlink():
                 continue
             try:
-                index = ws.root / index_rel
-                if key in timeline.keys_in(ws, index, read_text(index)):
-                    leftovers.append(index_rel)
+                lines = split_lines(read_text(person.index))
             except (NotText, OSError):
                 continue
+            if key in timeline.block_keys(ws, person.index, lines, timeline.locate(lines)):
+                leftovers.append(index_rel)
 
     # 5. index
     if not ws.db_path.is_file():
