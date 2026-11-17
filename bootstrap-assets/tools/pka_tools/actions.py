@@ -26,6 +26,8 @@ _DUE = re.compile(r"\b(?:by|due)\s+(\d{4}-\d{2}-\d{2})\b", re.IGNORECASE)
 
 def parse_date(text: str, option: str) -> _dt.date:
     try:
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", text):
+            raise ValueError(text)
         return _dt.date.fromisoformat(text)
     except ValueError:
         raise ToolError("%s needs a date as YYYY-MM-DD, got %r" % (option, text), EXIT_USAGE)
@@ -85,7 +87,7 @@ def run(
     closed = 0
     seen = set()
     for folder in folders:
-        for path in ws.walk(folder):
+        for path in ws.walk(folder, captures=False):
             if path in seen or path.suffix.lower() not in (".md", ".markdown") or path.name == MOC_NAME:
                 continue
             seen.add(path)

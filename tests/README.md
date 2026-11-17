@@ -45,6 +45,7 @@ Python `unittest` modules, standard library only. Run them alone with `./tests/t
 | `tools/test_obsidian.py` | The retrofit, and the **round trip**: every mutating command over the fixture vault, asserting that no line changed that the tools do not own and that a second pass changes nothing |
 | `tools/test_commit_actions.py` | `commit` (exact paths, root never committed, failures reported) and `actions` |
 | `tools/test_install.py` | The installer and manifest; the tool's version matches the plugin's; Python 3.9 syntax; standard library only |
+| `tools/test_hardening.py` | One regression test per bug found in review: `GIT_DIR` in the environment, pathspec patterns, read-only and symlinked files, capture directories, unlinkable filenames, bare carriage returns, corrupt database, manifest keys that leave `.pka/` |
 
 `tools/support.py` holds the shared test case. `fixtures/build_vault.py` generates the fixture workspace. It is generated rather than stored so that the awkward bytes survive git: CRLF line endings, a byte-order mark, a missing final newline, a non-UTF-8 file, and names with spaces, commas and non-ASCII letters.
 

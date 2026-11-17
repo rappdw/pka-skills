@@ -52,9 +52,10 @@ Vendored into each workspace at `.pka/bin/pka-tools`. Full reference in `bootstr
 ### Tests and CI
 
 - `tests/pointer_maintainer.py` and `tests/bootstrap_obsidian.py` are removed. `test_pointer_layer.sh` and `test_obsidian_bootstrap.sh` now run the shipped tool; PR4 runs a real index and a real search instead of an in-memory table.
-- New suite `tests/test_tools.sh` (`tests/tools/`, 149 tests) drives the vendored `.pka/bin/pka-tools`. It includes a round trip over a fixture vault (`tests/fixtures/build_vault.py`: CRLF, byte-order mark, no final newline, non-UTF-8, spaces, commas and non-ASCII names) asserting that no line changed that the tools do not own and that a second pass changes nothing.
+- New suite `tests/test_tools.sh` (`tests/tools/`, 182 tests) drives the vendored `.pka/bin/pka-tools`. It includes a round trip over a fixture vault (`tests/fixtures/build_vault.py`: CRLF, byte-order mark, no final newline, non-UTF-8, spaces, commas and non-ASCII names) asserting that no line changed that the tools do not own and that a second pass changes nothing.
 - Every shell suite installs its workspace through `pka-tools install`.
-- CI adds a job that runs the toolkit tests on Python 3.9.
+- CI adds a job that runs the toolkit tests on Python 3.9 (in the official container) and a macOS step that runs them under `/usr/bin/python3`.
+- An independent review of the first build found 3 high-severity and 11 medium issues (a commit redirected by `GIT_DIR`, git pathspec patterns in `commit`, invalid YAML after a trailing comma in `tags`, read-only and symlinked MOCs overwritten, capture directories edited by the retrofit, tracebacks on a corrupt database or a non-UTF-8 filename, and others). All are fixed; `tests/tools/test_hardening.py` has one regression test per finding, 29 of which fail on the first build.
 
 ### Known gaps (later v1.7 phases)
 

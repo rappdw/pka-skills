@@ -242,6 +242,18 @@ def plan_migration(conn: sqlite3.Connection) -> List[Step]:
                     "add column file_index.%s" % name,
                     ['ALTER TABLE file_index ADD COLUMN %s %s' % (name, plain)],
                 ))
+        canonical = {name for name, _ in FILE_INDEX_COLUMNS}
+        required = [
+            row["name"] for row in conn.execute('PRAGMA table_info("file_index")')
+            if row["name"] not in canonical and row["notnull"] and row["dflt_value"] is None
+        ]
+        if required:
+            steps.append(Step(
+                "NOTE: file_index has extra required column(s) %s that pka-tools does not fill; "
+                "`index` cannot add rows until they are made optional or given a default "
+                "(no change is made to them here)" % ", ".join(required),
+                [],
+            ))
         duplicates = conn.execute(
             "SELECT COUNT(*) FROM file_index WHERE rowid NOT IN "
             "(SELECT MAX(rowid) FROM file_index GROUP BY path) AND path IS NOT NULL"

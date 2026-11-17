@@ -93,7 +93,17 @@ def _load_manifest(path: Path) -> Dict[str, dict]:
             "%s is not valid JSON. Nothing was changed; fix or remove it and re-run." % path, EXIT_FAIL
         )
     files = data.get("files") if isinstance(data, dict) else None
-    return files if isinstance(files, dict) else {}
+    if not isinstance(files, dict):
+        return {}
+    # A manifest key names a file under .pka/. Anything that could point
+    # elsewhere (an absolute path, a `..` component) is not ours: drop it.
+    safe = {}
+    for name, entry in files.items():
+        parts = str(name).replace("\\", "/").split("/")
+        if not name or os.path.isabs(str(name)) or ".." in parts or "" in parts:
+            continue
+        safe[str(name)] = entry
+    return safe
 
 
 def _copy(source: Path, dest: Path, executable: bool) -> None:
@@ -257,5 +267,8 @@ def status(root: Path) -> Tuple[Optional[str], int]:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None, 0
-    files = data.get("files") if isinstance(data, dict) else {}
-    return data.get("plugin_version"), len(files or {})
+    if not isinstance(data, dict):
+        return None, 0
+    files = data.get("files")
+    version = data.get("plugin_version")
+    return (version if isinstance(version, str) else None), (len(files) if isinstance(files, dict) else 0)

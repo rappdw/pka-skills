@@ -23,9 +23,22 @@ from .workspace import Workspace
 TRAILER = "Co-Authored-By: Claude <noreply@anthropic.com>"
 
 
+# Variables that redirect git to another repository or index. When the tool
+# is run from a git hook (or any shell that exports them), they would send a
+# child-repo commit to the wrong place.
+_REDIRECTING = (
+    "GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE", "GIT_PREFIX", "GIT_CEILING_DIRECTORIES",
+)
+
+
 def _git(repo: Path, *args: str) -> Tuple[int, str, str]:
     env = dict(os.environ)
+    for name in _REDIRECTING:
+        env.pop(name, None)
     env["GIT_TERMINAL_PROMPT"] = "0"
+    # A path is a path: `*`, `?`, `[` and `:(magic)` are never patterns here.
+    env["GIT_LITERAL_PATHSPECS"] = "1"
     proc = subprocess.run(
         ["git", "-C", str(repo)] + list(args),
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env,
@@ -76,6 +89,13 @@ def commit(
         raise ToolError("no paths given; name every file this commit should contain", EXIT_USAGE)
 
     absolute = [ws.resolve(path) for path in paths]
+    for given, path in zip(paths, absolute):
+        if path.is_dir() and not path.is_symlink():
+            raise ToolError(
+                "%s is a folder. Name the files this commit should contain; a folder would "
+                "sweep in everything under it." % given,
+                EXIT_USAGE,
+            )
     # Git reports a repository by its physical path. Compare like with like,
     # so that a knowledge/ reached through a symbolic link still resolves.
     physical = []
@@ -115,6 +135,12 @@ def commit(
     if not is_child and not stage_only:
         result["reason"] = "root-repo"
         return result
+
+    for given, path, rel in zip(paths, physical, relative):
+        if not os.path.lexists(str(path)):
+            code, _, _ = _git(repo, "ls-files", "--error-unmatch", "--", rel)
+            if code != 0:
+                raise ToolError("no such file, and git does not track it: %s" % given, EXIT_USAGE)
 
     code, _, err = _git(repo, "add", "--", *relative)
     if code != 0:

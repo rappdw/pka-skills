@@ -136,12 +136,20 @@ def _value_problem(value: str, has_continuation: bool) -> Optional[str]:
         if body[pos + 1:].strip():
             return "text after a closing quote"
         return None
-    if first in "[{":
-        closer = "]" if first == "[" else "}"
-        if not value.endswith(closer):
+    if first == "[":
+        close = _flow_close(value, 0)
+        if close == -1:
             if has_continuation:
                 return None  # multi-line flow value: opaque, but not an error
-            return "unclosed %s" % first
+            return "unclosed ["
+        if close != len(value) - 1:
+            return "text after the closing ]"
+        return None
+    if first == "{":
+        if not value.endswith("}"):
+            if has_continuation:
+                return None
+            return "unclosed {"
         return None
     if first in "|>":
         return None  # block scalar; the indented lines that follow are opaque
@@ -317,6 +325,11 @@ def scalar(text: str) -> str:
     return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
+def quoted(text: str) -> str:
+    """Always double-quoted (for values such as "[[a/b]]" that must be strings)."""
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
 def flow_list(items: List[str]) -> str:
     return "[" + ", ".join(scalar(item) for item in items) + "]"
 
@@ -390,8 +403,13 @@ def merge_tag(lines: List[str], fm: Frontmatter, tag: str, newline: str) -> Tupl
         close = _flow_close(body, opener)
         if opener == -1 or close == -1:
             return lines, "uneditable"
-        inner = body[opener + 1: close]
-        addition = scalar(tag) if not inner.strip() else ", " + scalar(tag)
+        inner = body[opener + 1: close].strip()
+        if not inner:
+            addition = scalar(tag)
+        elif inner.endswith(","):
+            addition = " " + scalar(tag)        # `[a, b,]`: reuse the trailing comma
+        else:
+            addition = ", " + scalar(tag)
         new_body = body[:close].rstrip() + addition + body[close:]
         out = list(lines)
         out[key.line] = new_body + end
@@ -405,8 +423,9 @@ def merge_tag(lines: List[str], fm: Frontmatter, tag: str, newline: str) -> Tupl
             if key.end != key.line + 1:
                 return lines, "uneditable"
             colon = body.find(":")
+            rest = body[colon + 1:].strip()          # a trailing comment, if any
             out = list(lines)
-            out[key.line] = body[: colon + 1] + " " + flow_list([tag]) + end
+            out[key.line] = body[: colon + 1] + " " + flow_list([tag]) + ("  " + rest if rest else "") + end
             return out, "added"
         last_idx, indent, _ = items[-1]
         item_end = line_end(lines[last_idx]) or newline

@@ -22,7 +22,7 @@ from typing import Dict, List, Optional, Tuple
 from . import frontmatter
 from .errors import EXIT_NOT_READY, ToolError
 from .gitops import commit as git_commit
-from .textio import NotText, detect_newline, read_text, split_lines, write_text_atomic
+from .textio import NotText, detect_newline, has_bare_cr, read_text, split_lines, write_text_atomic
 from .workspace import CAPTURE_MARKER, MOC_NAME, Workspace, domain_tag
 
 _DATE = r"(?P<date>\d{4}-\d{2}-\d{2})"
@@ -43,6 +43,14 @@ def display_name(folder: str) -> str:
         else:
             words.append(" ".join(part[:1].upper() + part[1:] for part in token.split(" ")))
     return " ".join(words) or folder
+
+
+_UNLINKABLE = set("[]|#^")
+
+
+def _linkable(ws: Workspace, path: Path) -> bool:
+    """Can a wikilink name this file? ([ ] | # ^ cannot appear in a target.)"""
+    return not (_UNLINKABLE & set(ws.vault_rel(path)))
 
 
 def _link(ws: Workspace, path: Path, label: Optional[str] = None) -> str:
@@ -89,7 +97,7 @@ class Plan:
             return "1on1", [
                 ("type", "1on1"),
                 ("date", match.group("date")),
-                ("person", '"[[%s]]"' % target),
+                ("person", frontmatter.quoted("[[%s]]" % target)),
                 ("tags", tags("1on1")),
             ]
         match = _DATED_TOPIC.match(stem)
@@ -112,13 +120,14 @@ class Plan:
 def _moc_stub(ws: Workspace, folder: Path, plan: Plan, files: List[Path], subdirs: List[Path]) -> str:
     title = folder.name if folder != ws.vault else (ws.vault.name or "Knowledge")
     lines = ["# %s" % title, "", STUB_COMMENT, ""]
-    notes = [f for f in files if f.suffix.lower() == ".md" and f.name != MOC_NAME]
+    notes = [f for f in files if f.suffix.lower() == ".md" and f.name != MOC_NAME and _linkable(ws, f)]
     if notes:
         lines.append("## Files")
         for note in notes:
             lines.append("- " + _link(ws, note, note.name[:-3]))
         lines.append("")
-    listed = [sub for sub in subdirs if plan.people_home is None or sub.parent != plan.people_home]
+    listed = [sub for sub in subdirs
+              if (plan.people_home is None or sub.parent != plan.people_home) and _linkable(ws, sub)]
     if listed:
         lines.append("## Subdomains")
         for sub in listed:
@@ -143,7 +152,8 @@ def _person_stub(ws: Workspace, folder: Path, notes: List[Path]) -> str:
         "## Notes",
     ]
     for note in notes:
-        lines.append("- " + _link(ws, note, note.name[:-3]))
+        if _linkable(ws, note):
+            lines.append("- " + _link(ws, note, note.name[:-3]))
     return "\n".join(lines) + "\n"
 
 
@@ -167,6 +177,8 @@ def ensure_note(ws: Workspace, plan: Plan, path: Path, dry_run: bool) -> Tuple[s
         return "skipped", str(exc)
     if not os.access(str(path), os.W_OK):
         return "skipped", "read-only"
+    if has_bare_cr(text):
+        return "skipped", "uses bare carriage returns as line endings"
     lines = split_lines(text)
     newline = detect_newline(text)
     fm = frontmatter.parse(lines)
@@ -174,7 +186,10 @@ def ensure_note(ws: Workspace, plan: Plan, path: Path, dry_run: bool) -> Tuple[s
     if not fm.present:
         new_lines = frontmatter.prepend_block(lines, pairs, newline)
         if not dry_run:
-            write_text_atomic(path, "".join(new_lines))
+            try:
+                write_text_atomic(path, "".join(new_lines))
+            except OSError as exc:
+                return "skipped", "could not write: %s" % exc
         return "created", kind
     if fm.error:
         return "skipped", fm.error
@@ -195,8 +210,13 @@ def ensure_note(ws: Workspace, plan: Plan, path: Path, dry_run: bool) -> Tuple[s
             detail = "tags are not a simple list; domain tag not added"
     if new_lines == lines:
         return ("unchanged", detail)
+    if frontmatter.parse(new_lines).error:
+        return "skipped", "the edit would not leave readable frontmatter"
     if not dry_run:
-        write_text_atomic(path, "".join(new_lines))
+        try:
+            write_text_atomic(path, "".join(new_lines))
+        except OSError as exc:
+            return "skipped", "could not write: %s" % exc
     return "merged", detail
 
 
@@ -230,7 +250,7 @@ def bootstrap(ws: Workspace, dry_run: bool = False, do_commit: bool = False) -> 
             folders[folder.parent][1].append(folder)
 
     ensure(vault)
-    for path in ws.walk(vault):
+    for path in ws.walk(vault, captures=False):
         ensure(path.parent)
         folders[path.parent][0].append(path)
     # Empty folders are not seen by the walk; include top-level ones.
@@ -265,7 +285,11 @@ def bootstrap(ws: Workspace, dry_run: bool = False, do_commit: bool = False) -> 
             continue
         files, subdirs = folders[folder]
         if not dry_run:
-            write_text_atomic(moc, _moc_stub(ws, folder, plan, files, subdirs))
+            try:
+                write_text_atomic(moc, _moc_stub(ws, folder, plan, files, subdirs))
+            except OSError as exc:
+                summary["skipped"].append("%s: could not write: %s" % (ws.vault_rel(moc), exc))
+                continue
         summary["moc_created"].append(label)
         touched.append(ws.rel(moc))
 
@@ -279,7 +303,11 @@ def bootstrap(ws: Workspace, dry_run: bool = False, do_commit: bool = False) -> 
                 continue
             person_notes = [f for f in folders[folder][0] if f.suffix.lower() == ".md" and f.name != "index.md"]
             if not dry_run:
-                write_text_atomic(index, _person_stub(ws, folder, person_notes))
+                try:
+                    write_text_atomic(index, _person_stub(ws, folder, person_notes))
+                except OSError as exc:
+                    summary["skipped"].append("%s: could not write: %s" % (ws.vault_rel(index), exc))
+                    continue
             summary["person_indexes_created"].append(label)
             touched.append(ws.rel(index))
 
@@ -301,6 +329,7 @@ def bootstrap(ws: Workspace, dry_run: bool = False, do_commit: bool = False) -> 
             summary["warnings"].append("%s: %s" % (rel, detail))
 
     summary["touched"] = touched
+    summary["unreadable_names"] = ws.unreadable_names
     if do_commit and touched and not dry_run:
         subject = "Bootstrap (obsidian): %d MOCs, %d person indexes, %d frontmatter additions" % (
             len(summary["moc_created"]),

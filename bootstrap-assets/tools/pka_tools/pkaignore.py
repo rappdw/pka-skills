@@ -105,10 +105,13 @@ def _compile(line: str, section: str) -> Optional[Rule]:
     anchored = pattern.startswith("/") or "/" in pattern
     pattern = pattern.lstrip("/")
     body = _glob_to_regex(pattern)
-    if anchored:
-        regex = re.compile("^" + body + "$")
-    else:
-        regex = re.compile("^(?:.*/)?" + body + "$")
+    try:
+        if anchored:
+            regex = re.compile("^" + body + "$")
+        else:
+            regex = re.compile("^(?:.*/)?" + body + "$")
+    except re.error:
+        return None  # a pattern git would also fail to make sense of: ignore the line
     return Rule(regex, negated, dir_only, section)
 
 
