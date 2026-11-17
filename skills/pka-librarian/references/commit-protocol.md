@@ -10,7 +10,7 @@ After a routing operation **completes successfully** and lands the file inside a
 .pka/bin/pka-tools post-route <routed-file> [--also <old path or other side-effect file>]...
 ```
 
-It commits the routed file together with every file its own steps changed (frontmatter, MOC bullet, pointer rows) and every `--also` path, with the message `Librarian: Route <filename> to <folder>/` (`--role` and `-m` change it). It only commits when `hybrid_monorepo_present`; otherwise its commit step says "not a hybrid monorepo". `post-route` reports the commit outcome in its last line, using the same reasons as the table below; exit code 1 means the commit was refused.
+It commits the routed file together with every file its own steps changed (frontmatter, MOC bullet, pointer rows), every MOC that already links to the file (so changes left by an earlier, uncommitted run are not stranded), and every `--also` path, with the message `Librarian: Route <filename> to <folder>/` (`--role` and `-m` change it). It only commits when `hybrid_monorepo_present`; otherwise its commit step says "not a hybrid monorepo". `post-route` reports the commit outcome in its last line, using the same reasons as the table below; exit code 1 means the commit was refused.
 
 For a commit that is not a route (a correction, a batch of person back-links), use the commit command directly:
 

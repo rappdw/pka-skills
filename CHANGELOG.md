@@ -43,7 +43,8 @@ One grammar for every role: `## YYYY-MM-DD HH:MM | role | summary | open threads
 
 ### Tests
 
-- `tests/tools/test_postroute.py` and `tests/tools/test_upgrade_refresh.py`; the round trip over the fixture vault now includes `post-route` and `moc add-link`. 220 tests in `tests/tools/`.
+- `tests/tools/test_postroute.py` and `tests/tools/test_upgrade_refresh.py`; the round trip over the fixture vault now includes `post-route` and `moc add-link`. 232 tests in `tests/tools/`.
+- An independent review of the first Phase 3 build reproduced 1 high and 7 medium issues: `post-route` wrote frontmatter into non-markdown files (CSV, `.canvas`, OCR sidecars); a bad `--section`, `--topic` or `--also` failed only after the note was edited; a second run did not commit what a failed first run had changed; re-running after a move failed; `moc add-link` put the bullet inside an HTML comment, under a trailing `###` subsection or after a setext heading, and added a duplicate when the MOC used Obsidian's short `[[name]]` links; `pointers init <folder>` wrote into capture directories and dot-folders. Also fixed: `rename --notes` edits inside multi-line comments and in files with an unclosed fence; a session log with a byte-order mark; `--at` accepting impossible dates; `--refresh-section` silently ignoring a heading it cannot refresh. Each has a regression test (`ReviewFindings` in `test_postroute.py`), all of which fail on the first build.
 - The pointer-layer shell suite runs in an Obsidian vault and adds PR7 for the plain-markdown case.
 
 ### Not changed

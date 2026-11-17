@@ -20,6 +20,7 @@ command fail (exit 1), as `commit` does.
 """
 from __future__ import annotations
 
+import os
 from contextlib import closing
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -27,7 +28,11 @@ from typing import Dict, List, Optional
 from . import db as db_mod
 from . import gitops, indexer, mocs, obsidian, pointers
 from .errors import EXIT_USAGE, ToolError
+from .markdown import block_mask, find_heading
+from .textio import NotText, read_text, split_lines
 from .workspace import CAPTURE_MARKER, MOC_NAME, Workspace
+
+MARKDOWN = (".md", ".markdown")
 
 
 def _in_capture(ws: Workspace, path: Path) -> bool:
@@ -87,7 +92,36 @@ def run(
         )
     if message is not None and (not message.strip() or "\n" in message):
         raise ToolError("the commit subject must be one non-empty line", EXIT_USAGE)
-    extra = [ws.rel(ws.resolve(item)) for item in (also or [])]
+    if topic and not pointers.slugify(topic):
+        raise ToolError("--topic %r has no letters or digits to make a slug from" % topic, EXIT_USAGE)
+    in_vault = _in_vault(ws, path)
+    rel = ws.rel(path)
+    if section is not None and in_vault:
+        _check_section(ws, path, section)
+
+    # Validate every --also path now: once step 1 has run, a usage error
+    # would leave the note edited and uncommitted.
+    committing = do_commit and ws.hybrid_monorepo_present
+    note_repo = gitops.toplevel(path.parent) if committing else None
+    extra: List[str] = []
+    notes: List[str] = []
+    for given in also or []:
+        other = ws.resolve(given)
+        if other.is_dir() and not other.is_symlink():
+            raise ToolError("--also %s is a folder; name the files" % given, EXIT_USAGE)
+        other_rel = ws.rel(other)
+        if committing and note_repo is not None:
+            repo = gitops.toplevel(other.parent)
+            if repo != note_repo:
+                raise ToolError("--also %s is not in the same repository as the note" % given, EXIT_USAGE)
+            if not os.path.lexists(str(other)) and not gitops.is_tracked(repo, other):
+                if gitops.in_history(repo, other):
+                    notes.append("%s: already committed as removed" % other_rel)
+                    extra.append(other_rel)       # still re-indexed, not committed
+                    continue
+                raise ToolError("--also %s: no such file, and git has never tracked it" % given, EXIT_USAGE)
+        extra.append(other_rel)
+    skip_commit = {item.split(":", 1)[0] for item in notes}
 
     steps: List[Dict[str, object]] = []
     touched: List[str] = []
@@ -99,12 +133,13 @@ def run(
             if rel not in touched:
                 touched.append(rel)
 
-    in_vault = _in_vault(ws, path)
-    rel = ws.rel(path)
+    related: List[str] = []       # MOCs that point at the note (for leftovers of earlier runs)
 
     # 1. frontmatter
     if not in_vault:
         record("frontmatter", "not-applicable", "outside the vault")
+    elif path.suffix.lower() not in MARKDOWN:
+        record("frontmatter", "not-applicable", "not a markdown note")
     elif not ws.obsidian_present:
         record("frontmatter", "not-applicable", "not an Obsidian vault")
     else:
@@ -124,6 +159,7 @@ def run(
             result = mocs.add_link(ws, rel, section=section, create=create_mocs, dry_run=dry_run)
             record("moc-link", str(result["action"]), result["problem"] or str(result["moc"]),
                    list(result["changed"]))
+            related.append(str(result["moc"]))
         except ToolError as exc:
             if exc.code == EXIT_USAGE and section is not None:
                 raise
@@ -147,6 +183,7 @@ def run(
                     if result["mocs"] and all(entry["action"] == "no-moc" for entry in result["mocs"])
                     else "noop")
                 record("pointers", summary, actions, list(result["changed"]))
+                related.extend(str(entry["moc"]) for entry in result["mocs"])
                 if result["over_cap"]:
                     steps[-1]["over_cap"] = result["over_cap"]
         except ToolError as exc:
@@ -155,6 +192,20 @@ def run(
             record("pointers", "skipped", exc.message)
 
     # 4. timeline: reserved (v1.7.0).
+
+    # MOCs this note is recorded in, changed or not this time: a change left
+    # uncommitted by an earlier run (a refused commit, --no-commit) belongs
+    # to this note's unit too.
+    link = "[[" + (pointers.link_path_for(ws, path) if in_vault else rel)
+    leftovers = []
+    for moc_rel in related:
+        if moc_rel in touched or moc_rel in leftovers:
+            continue
+        try:
+            if link in read_text(ws.root / moc_rel):
+                leftovers.append(moc_rel)
+        except (NotText, OSError):
+            continue
 
     # 5. index
     if not ws.db_path.is_file():
@@ -173,7 +224,9 @@ def run(
     # 6. commit
     commit_result = None
     failed = False
-    paths = [rel] + [p for p in touched if p != rel] + [p for p in extra if p not in touched and p != rel]
+    paths = [rel] + [p for p in touched if p != rel]
+    paths += [p for p in leftovers if p not in paths]
+    paths += [p for p in extra if p not in paths and p not in skip_commit]
     if not do_commit:
         record("commit", "not-requested")
     elif not ws.hybrid_monorepo_present:
@@ -196,6 +249,7 @@ def run(
 
     return {
         "file": rel,
+        "notes": notes,
         "steps": steps,
         "touched": touched,
         "commit": commit_result,
@@ -203,3 +257,15 @@ def run(
         "dry_run": dry_run,
     }
 
+
+def _check_section(ws: Workspace, path: Path, section: str) -> None:
+    """--section must name a `## ` heading of the MOC the link goes to."""
+    moc = mocs.target_moc(ws, path)
+    if not moc.is_file():
+        raise ToolError("--section %r: %s does not exist yet" % (section, ws.rel(moc)), EXIT_USAGE)
+    try:
+        lines = split_lines(read_text(moc))
+    except (NotText, OSError):
+        return          # the moc-link step will report it
+    if find_heading(lines, block_mask(lines), section, 2) is None:
+        raise ToolError("--section %r: no `## %s` heading in %s" % (section, section, ws.rel(moc)), EXIT_USAGE)

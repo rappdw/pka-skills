@@ -308,7 +308,8 @@ def cmd_pointers(args: argparse.Namespace) -> int:
             result["from"], result["to"],
             " (dry run)" if args.dry_run else "")]
         text += ["  %s" % rel for rel in result["changed"]]
-        text += _listed("Could not read", result["skipped"])
+        text += _listed("Skipped (left unchanged)",
+                        ["%s: %s" % (rel, result["skip_reasons"].get(rel, "")) for rel in result["skipped"]])
         _emit(args, result, text)
         return EXIT_OK
     if args.pointers_command == "check":

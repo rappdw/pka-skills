@@ -95,9 +95,60 @@ def protected_spans(body: str) -> List[Tuple[int, int]]:
     return spans
 
 
+def comment_mask(lines: List[str]) -> List[bool]:
+    """True for every line that is part of an HTML comment spanning lines
+    (`<!--` on one line, `-->` on a later one), outside fenced blocks."""
+    fences = fence_mask(lines)
+    mask = [False] * len(lines)
+    inside = False
+    for idx, line in enumerate(lines):
+        if fences[idx]:
+            continue
+        body = line_body(line)
+        if inside:
+            mask[idx] = True
+            if "-->" in body:
+                inside = False
+            continue
+        start = body.rfind("<!--")
+        if start != -1 and "-->" not in body[start + 4:]:
+            mask[idx] = True
+            inside = True
+    return mask
+
+
+def block_mask(lines: List[str]) -> List[bool]:
+    """Lines that are not document structure: fenced blocks and multi-line
+    HTML comments. Headings, links and table rows there are examples or
+    hidden text."""
+    return [a or b for a, b in zip(fence_mask(lines), comment_mask(lines))]
+
+
+_SETEXT_RE = re.compile(r"^ {0,3}(=+|-+)[ \t]*$")
+_LIST_OR_QUOTE = re.compile(r"^\s*(?:[-*+>]|\d+[.)])(?:\s|$)")
+
+
+def setext_level(lines: List[str], idx: int, mask: List[bool]) -> Optional[int]:
+    """1 or 2 when line `idx` is the text line of a setext heading (the next
+    line is `===` or `---` and this line is paragraph text), else None."""
+    if idx + 1 >= len(lines) or mask[idx] or mask[idx + 1]:
+        return None
+    text = line_body(lines[idx])
+    if not text.strip() or heading_of(lines[idx]) or _LIST_OR_QUOTE.match(text) or text.lstrip().startswith("|"):
+        return None
+    if idx > 0 and line_body(lines[idx - 1]).strip() and not mask[idx - 1] \
+            and not heading_of(lines[idx - 1]):
+        return None     # a multi-line paragraph: too ambiguous to call a heading
+    match = _SETEXT_RE.match(line_body(lines[idx + 1]))
+    if not match:
+        return None
+    return 1 if match.group(1)[0] == "=" else 2
+
+
 def heading_of(line: str) -> Optional[Tuple[int, str]]:
-    """(level, text) when the line is an ATX heading, else None."""
-    match = _HEADING_RE.match(line_body(line))
+    """(level, text) when the line is an ATX heading, else None. A byte-order
+    mark in front of the first line is ignored."""
+    match = _HEADING_RE.match(line_body(line).lstrip("\ufeff"))
     if not match:
         return None
     return len(match.group(1)), match.group(2).strip()
@@ -136,7 +187,26 @@ def section_end(lines: List[str], mask: List[bool], heading_idx: int) -> int:
         other = heading_of(lines[idx])
         if other and other[0] <= level:
             return idx
+        setext = setext_level(lines, idx, mask)
+        if setext is not None and setext <= level:
+            return idx
     return len(lines)
+
+
+def first_subheading(lines: List[str], mask: List[bool], heading_idx: int, end: int) -> int:
+    """Index of the first deeper heading inside a section, or `end`."""
+    found = heading_of(lines[heading_idx])
+    level = found[0] if found else 6
+    for idx in range(heading_idx + 1, end):
+        if mask[idx]:
+            continue
+        other = heading_of(lines[idx])
+        if other and other[0] > level:
+            return idx
+        setext = setext_level(lines, idx, mask)
+        if setext is not None and setext > level:
+            return idx
+    return end
 
 
 def cell_spans(body: str) -> Optional[List[Tuple[int, int]]]:

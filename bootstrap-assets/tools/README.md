@@ -48,11 +48,15 @@ The one command a skill runs after it has put a note in place. Its steps, each r
 
 | Step | Does | Runs when |
 |---|---|---|
-| `frontmatter` | missing schema keys and the domain tag | Obsidian vault, note inside the vault |
+| `frontmatter` | missing schema keys and the domain tag | Obsidian vault, a markdown note (`.md`, `.markdown`) inside the vault |
 | `moc-link` | a `- [[note]]` bullet in the nearest `_MOC.md` | Obsidian vault (or `--create-moc`) |
 | `pointers` | a pointer row in the domain MOC(s) | note inside the vault; without Obsidian only into existing MOCs |
 | `index` | the note, every MOC changed above, and every `--also` path | index mode |
-| `commit` | the note, every file changed above, and every `--also` path, by path, with the trailer | hybrid monorepo, and not `--no-commit` |
+| `commit` | the note, every file changed above, every MOC that already links to the note, and every `--also` path, by path, with the trailer | hybrid monorepo, and not `--no-commit` |
+
+Arguments are checked before anything is written: a bad `--section`, `--topic` or `--also` exits 64 with every file as it was. An `--also` path must be a file, in the same repository as the note, and either exist or be known to git; one that git already has as removed (the old location of a note that was moved and committed) is noted and left out of the commit, so re-running after a move is a no-op.
+
+The commit includes the MOCs the note is recorded in even when this run did not change them, so a change left uncommitted by an earlier run (a refused commit, `--no-commit`) is committed with the note. If the user had their own uncommitted edits in one of those MOCs, they go into the same commit.
 
 A step that cannot do its work reports why and the later steps still run. The exit code is 1 only when git refused the commit. Running it twice changes nothing and makes no second commit. It refuses MOCs, files under `.pka/`, and anything inside an earshot capture directory.
 
@@ -77,7 +81,7 @@ Every command that writes to a user's file follows these. The tests in `tests/to
 3. **When unsure, skip and report.** The file is left alone and named in the output when: its frontmatter is outside the supported subset; a Pointers table has an unexpected header; it is not UTF-8; it is read-only; it uses bare carriage returns as line endings; it has a code fence that is never closed; or its name contains a character a wikilink cannot express (`[ ] | # ^`).
 4. **Idempotent.** Running a command twice changes nothing the second time.
 5. **Atomic writes.** A file is written to a temporary name and renamed into place, so an interrupted run cannot leave half a note. The file keeps its permissions; extended attributes (Finder tags, for example) on an edited file are not carried over. A file that is a symbolic link is written through the link, not replaced by a regular file.
-6. **Fenced code blocks are examples.** A `## Pointers` heading, a table or a `- [ ]` inside one is ignored. `pointers rename` also leaves links inside `inline code`, HTML comments and escaped `\[[...]]` alone.
+6. **Fenced code blocks and HTML comments are not structure.** A `## Pointers` heading, a table, a `## Files` heading or a link inside a fenced block or a multi-line `<!-- … -->` comment is ignored. `pointers rename` and `moc add-link` also ignore links inside `inline code` and escaped `\[[...]]`. Setext headings (`Title` over `-----`) end a section like `## Title` does.
 7. **Bodies are not interpreted.** Pointer maintenance and the Obsidian retrofit use filenames, folders and frontmatter. (`index` reads bodies to index them; `actions` reads them for checkboxes.)
 
 ## Git rules

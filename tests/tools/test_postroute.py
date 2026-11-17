@@ -351,5 +351,159 @@ class SessionLog(support.ToolsCase):
             self.assertEqual(self.tool(*args)[0], 64, args)
 
 
+
+class ReviewFindings(support.ToolsCase):
+    """Regression tests for the review of the first Phase 3 build."""
+
+    def hybrid(self):
+        self.git(self.ws, "init", "-q", "-b", "main")
+        self.write(".gitignore", "knowledge/\nprojects/\n")
+        self.write(".meta", '{"projects": {}}\n')
+        self.repo = self.init_child_repo("knowledge")
+
+    def status(self):
+        return self.git(self.repo, "status", "--porcelain").strip()
+
+    # high: frontmatter written into non-markdown files
+    def test_frontmatter_only_for_markdown(self):
+        for rel, data in (("knowledge/AI/scores.csv", "name,score\nPriya,3\n"),
+                          ("knowledge/AI/board.canvas", '{"nodes": []}\n'),
+                          ("knowledge/reference/report.pdf.txt", None)):
+            if data is not None:
+                self.write(rel, data)
+            before = self.read(rel)
+            result = self.json("post-route", rel)
+            steps = {step["step"]: step["action"] for step in result["steps"]}
+            self.assertEqual(steps["frontmatter"], "not-applicable", rel)
+            self.assertEqual(self.read(rel), before, rel)
+
+    # medium: exit 64 after files were already edited
+    def test_bad_section_or_topic_touches_nothing(self):
+        self.write("knowledge/reference/orion.md", "x\n")
+        self.write("knowledge/AI/orion2.md", "x\n")
+        before = self.snapshot()
+        for args in (("post-route", "knowledge/reference/orion.md", "--section", "Links"),
+                     ("post-route", "knowledge/AI/orion2.md", "--section", "Links"),
+                     ("post-route", "knowledge/AI/orion2.md", "--topic", "!!!")):
+            code, _out, err = self.tool(*args)
+            self.assertEqual(code, 64, (args, err))
+        self.assertEqual(self.snapshot(), before)
+
+    def test_bad_also_touches_nothing(self):
+        self.hybrid()
+        self.write("knowledge/AI/northwind-a.md", "x\n")
+        before = self.snapshot()
+        for also in ("knowledge/reference", "knowledge/AI/gone.md", ".meta"):
+            code, _out, err = self.tool("post-route", "knowledge/AI/northwind-a.md", "--also", also)
+            self.assertEqual(code, 64, (also, err))
+        self.assertEqual(self.snapshot(), before)
+
+    def test_a_later_run_commits_what_an_earlier_run_left(self):
+        self.hybrid()
+        self.write("knowledge/AI/northwind-a.md", "x\n")
+        self.ok("post-route", "knowledge/AI/northwind-a.md", "--no-commit")
+        self.assertIn("M AI/_MOC.md", self.status().splitlines()[0] + "\n" + self.status())
+        self.ok("post-route", "knowledge/AI/northwind-a.md")
+        self.assertEqual(self.status(), "")
+        names = sorted(self.git(self.repo, "show", "--name-only", "--format=", "HEAD").split())
+        self.assertEqual(names, ["AI/_MOC.md", "AI/northwind-a.md"])
+
+    def test_rerun_after_a_move_is_a_no_op(self):
+        self.hybrid()
+        os.rename(str(self.path("knowledge/AI/ai-adoption-research.md")), str(self.path("knowledge/AI/moved.md")))
+        args = ("post-route", "knowledge/AI/moved.md", "--also", "knowledge/AI/ai-adoption-research.md")
+        self.ok(*args)
+        head = self.git(self.repo, "rev-parse", "HEAD")
+        result = self.json(*args)
+        self.assertEqual(result["notes"], ["knowledge/AI/ai-adoption-research.md: already committed as removed"])
+        self.assertEqual(self.git(self.repo, "rev-parse", "HEAD"), head)
+
+    # medium: moc add-link
+    def test_bullet_not_hidden_in_a_comment_or_under_a_subsection(self):
+        self.write("knowledge/planning/_MOC.md", "## Files\n- [[planning/a]]\n<!--\n## Old\n-->\n")
+        self.write("knowledge/planning/b.md", "x\n")
+        self.ok("moc", "add-link", "knowledge/planning/b.md")
+        self.assertEqual(self.text("knowledge/planning/_MOC.md"),
+                         "## Files\n- [[planning/a]]\n- [[planning/b]]\n<!--\n## Old\n-->\n")
+        self.write("knowledge/planning/_MOC.md", "## Files\n- [[planning/a]]\n\n### Archived\n- [[planning/z]]\n")
+        self.write("knowledge/planning/c.md", "x\n")
+        self.ok("moc", "add-link", "knowledge/planning/c.md")
+        self.assertEqual(self.text("knowledge/planning/_MOC.md"),
+                         "## Files\n- [[planning/a]]\n- [[planning/c]]\n\n### Archived\n- [[planning/z]]\n")
+
+    def test_setext_heading_and_bom(self):
+        self.write("knowledge/planning/_MOC.md", "## Files\n- [[planning/a]]\n\nOther\n-----\ntext\n")
+        self.write("knowledge/planning/b.md", "x\n")
+        self.ok("moc", "add-link", "knowledge/planning/b.md")
+        self.assertEqual(self.text("knowledge/planning/_MOC.md"),
+                         "## Files\n- [[planning/a]]\n- [[planning/b]]\n\nOther\n-----\ntext\n")
+        self.write("knowledge/planning/_MOC.md", "﻿## Files\n- [[planning/a]]\n")
+        self.write("knowledge/planning/c.md", "x\n")
+        self.ok("moc", "add-link", "knowledge/planning/c.md")
+        self.assertEqual(self.text("knowledge/planning/_MOC.md"), "﻿## Files\n- [[planning/a]]\n- [[planning/c]]\n")
+
+    def test_short_name_and_markdown_links_count(self):
+        self.write("knowledge/Orion/plan.md", "x\n")
+        self.write("knowledge/Orion/_MOC.md", "## Files\n- [[plan]]\n")
+        self.assertEqual(self.json("moc", "add-link", "knowledge/Orion/plan.md")["action"], "noop")
+        self.write("knowledge/Orion/_MOC.md", "## Files\n- [Plan](plan.md)\n")
+        self.assertEqual(self.json("moc", "add-link", "knowledge/Orion/plan.md")["action"], "noop")
+        # a bare name that two files share is ambiguous: it does not count
+        self.write("knowledge/AI/plan.md", "y\n")
+        self.write("knowledge/Orion/_MOC.md", "## Files\n- [[plan]]\n")
+        self.assertEqual(self.json("moc", "add-link", "knowledge/Orion/plan.md")["action"], "added")
+        # a link only inside a comment does not count
+        self.write("knowledge/Orion/_MOC.md", "## Files\n<!--\n- [[Orion/plan]]\n-->\n")
+        self.assertEqual(self.json("moc", "add-link", "knowledge/Orion/plan.md")["action"], "added")
+
+    def test_init_refuses_captures_dot_folders_and_ignored(self):
+        self.write("knowledge/leadership/2026-05-01-orion-sync/meeting.json", "{}\n")
+        os.makedirs(str(self.path("knowledge/.trash")))
+        for folder in ("knowledge/leadership/2026-05-01-orion-sync", "knowledge/.trash"):
+            code, _out, _err = self.tool("pointers", "init", folder)
+            self.assertEqual(code, 64, folder)
+        self.assertFalse(self.path("knowledge/leadership/2026-05-01-orion-sync/_MOC.md").exists())
+        self.assertFalse(self.path("knowledge/.trash/_MOC.md").exists())
+
+    # low: rename --notes
+    def test_rename_notes_edge_cases(self):
+        self.write("knowledge/AI/a.md", "<!--\n[[AI/foo]]\n-->\n[[ AI/foo ]] [[./AI/foo|F]] [[AI/foo-bar]]\n")
+        self.write("knowledge/AI/b.md", "```\nopen fence [[AI/foo]]\n")
+        self.write("knowledge/AI/c.md", "[[AI/foo]]\n")
+        os.chmod(str(self.path("knowledge/AI/c.md")), 0o444)
+        result = self.json("pointers", "rename", "AI/foo", "AI/bar", "--notes")
+        self.assertEqual(self.text("knowledge/AI/a.md"),
+                         "<!--\n[[AI/foo]]\n-->\n[[ AI/bar ]] [[./AI/bar|F]] [[AI/foo-bar]]\n")
+        self.assertEqual(self.text("knowledge/AI/b.md"), "```\nopen fence [[AI/foo]]\n")
+        reasons = result["skip_reasons"]
+        self.assertIn("never closed", reasons["knowledge/AI/b.md"])
+        if not (hasattr(os, "geteuid") and os.geteuid() == 0):
+            self.assertEqual(reasons["knowledge/AI/c.md"], "read-only")
+            self.assertEqual(self.text("knowledge/AI/c.md"), "[[AI/foo]]\n")
+
+    # low: session log
+    def test_log_bom_and_strict_at(self):
+        self.write(".pka/session-log.md", "﻿## 2026-11-01 09:00 | r | s | Orion open | —\n")
+        self.assertEqual([item["open"] for item in self.json("log", "open")["open"]], ["Orion open"])
+        self.assertEqual(self.json("log", "check")["entries"], 1)
+        for at in ("2026-99-99 77:77", "2026-11-17"):
+            self.assertEqual(self.tool("log", "add", "--role", "r", "--summary", "s", "--at", at)[0], 64, at)
+
+
+class RefreshSectionValidation(support.ToolsCase):
+    fixture = False
+
+    def test_unknown_section_is_an_error_listing_the_choices(self):
+        import subprocess
+        import sys
+        (self.ws / ".pka" / "roles").mkdir(parents=True)
+        self.write(".pka/roles/librarian.md", "# @librarian\n\n## Output Conventions\n- x\n")
+        proc = subprocess.run([sys.executable, str(self.path(".pka/upgrade-roles.py")), "--workspace", str(self.ws),
+                               "--refresh", "--refresh-section", "librarian.md:## Output Conventions"],
+                              env=self.env, capture_output=True, text=True)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("is not a seeded section", proc.stdout + proc.stderr)
+        self.assertIn("## Pointer-row maintenance", proc.stdout + proc.stderr)
+
 if __name__ == "__main__":
     unittest.main()

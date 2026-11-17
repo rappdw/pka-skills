@@ -98,6 +98,8 @@ def entries(ws: Workspace) -> List[Entry]:
     out = []
     for number, line in enumerate(text.split("\n"), 1):
         body = line_body(line + "\n")
+        if number == 1:
+            body = body.lstrip("\ufeff")
         if not body.startswith("## "):
             continue
         out.append(Entry(number, _split(body[3:])))
@@ -107,8 +109,12 @@ def entries(ws: Workspace) -> List[Entry]:
 def format_entry(role: str, summary: str, open_threads: str = "", next_action: str = "",
                  at: Optional[str] = None) -> str:
     stamp = at or _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
-    if not _STAMP.match(stamp):
-        raise ToolError("--at needs `YYYY-MM-DD HH:MM`, got %r" % stamp, EXIT_USAGE)
+    try:
+        if not re.match(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$", stamp):
+            raise ValueError(stamp)
+        _dt.datetime.strptime(stamp, "%Y-%m-%d %H:%M")
+    except ValueError:
+        raise ToolError("--at needs a real date and time as `YYYY-MM-DD HH:MM`, got %r" % stamp, EXIT_USAGE)
     role = _clean(role)
     summary = _clean(summary)
     if not role or not summary:

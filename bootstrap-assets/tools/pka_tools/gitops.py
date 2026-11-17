@@ -64,6 +64,26 @@ def toplevel(folder: Path) -> Optional[Path]:
     return Path(os.path.realpath(out.strip()))
 
 
+def physical(path: Path) -> Path:
+    """The path with its folder resolved through links (as git reports it)."""
+    parent, name = os.path.split(str(path))
+    return Path(os.path.realpath(parent)) / name
+
+
+def is_tracked(repo: Path, path: Path) -> bool:
+    """Is the path in the repository's index (so a deletion can be staged)?"""
+    rel = os.path.relpath(str(physical(path)), str(repo))
+    code, _, _ = _git(repo, "ls-files", "--error-unmatch", "--", rel)
+    return code == 0
+
+
+def in_history(repo: Path, path: Path) -> bool:
+    """Has the path ever been committed in the repository?"""
+    rel = os.path.relpath(str(physical(path)), str(repo))
+    code, out, _ = _git(repo, "log", "-1", "--format=%H", "--", rel)
+    return code == 0 and bool(out.strip())
+
+
 def commit(
     ws: Workspace,
     subject: str,

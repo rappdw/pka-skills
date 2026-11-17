@@ -102,7 +102,7 @@ When a file that may be listed in a MOC is renamed or moved:
 
 Every wikilink to the old path in every `_MOC.md` (pointer rows and `## Files` bullets) gets the new target. An alias (`[[old|Name]]`) or heading (`[[old#Decisions]]`) is kept. Fenced examples are not touched. Running it twice changes nothing. Rows are never deleted, even when a file leaves the domain.
 
-Add `--notes` to rewrite links in every markdown note of the vault as well (the same rules: target only, fenced examples and inline code untouched, unreadable files listed and skipped). That edits the user's notes, so run it with `--dry-run` first and, unless the autonomy level is hands-off, show the list and ask. Pass every changed file to `post-route` with `--also` so the move and its link updates are one commit.
+Add `--notes` to rewrite links in every markdown note of the vault as well (the same rules: target only, keeping the link's own spacing, `./` and `.md`; fenced examples, HTML comments and inline code untouched; files that are read-only, not UTF-8, use bare carriage returns or have an unclosed fence are skipped with the reason). Links in a note's frontmatter (`related: ["[[AI/foo]]"]`) are rewritten too, since they would otherwise break. That edits the user's notes, so run it with `--dry-run` first and, unless the autonomy level is hands-off, show the list and ask. Pass every changed file to `post-route` with `--also` so the move and its link updates are one commit.
 
 ## Graduation propagation
 
