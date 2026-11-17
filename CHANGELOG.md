@@ -1,5 +1,67 @@
 # Changelog
 
+## v1.7.0-alpha.1 — unreleased
+
+Toolkit foundation: the first step of v1.7. No change to what the skills are for; a change to how the mechanical parts get done.
+
+Until now the mechanics (the SQLite schema, indexing, search queries, pointer-table edits, the Obsidian retrofit, commits) were written as prose for a model to re-derive each session, and two of the test suites exercised reference code that never shipped. This release moves those mechanics into one command, `pka-tools`, that the skills call and the tests run.
+
+**Requires Python 3.9 or newer** (`python3` on PATH). Standard library only; no network calls.
+
+**Existing workspaces:** run `bootstrap upgrade`. It installs `.pka/bin/pka-tools`, refreshes the helper scripts, and offers to migrate the index. Nothing is migrated without a yes, and the database is backed up first. Until a workspace is upgraded, its skills will ask for the tool rather than fall back to hand-written SQL or table edits.
+
+### Added — `pka-tools`
+
+Vendored into each workspace at `.pka/bin/pka-tools`. Full reference in `bootstrap-assets/tools/README.md`.
+
+| Command | Replaces |
+|---|---|
+| `install` | Copying helper scripts by hand "if absent". Writes `.pka/manifest.json` (plugin version and a hash per file), so an untouched file is updated, an edited file is kept, and a file edited on both sides gets the plugin's copy beside it as `<name>.new`. In a pre-v1.7 workspace the old scripts are replaced and saved under `.pka/upgrade-backups/`. |
+| `db init`, `db migrate`, `db backup`, `db schema` | Schema DDL written from a description. The schema now has a version (`PRAGMA user_version = 1`), a unique `file_index.path` and a `content_hash` column. `migrate` prints its plan by default; `--apply` backs up, migrates in one transaction, verifies and rolls back on failure. |
+| `index` | Hand-written `INSERT`s. Incremental by size and mtime; SHA-256 per file; OCR sidecars indexed under their source file; pointer rows as separate boosted rows; rows for deleted files removed; text a role stored for a PDF kept. |
+| `search` | Hand-built `MATCH` strings. Terms are always quoted; pointer rows rank 3× higher and come back with their file lists resolved. |
+| `actions` | A `grep` recipe. Open checkboxes in dated notes, by filename or frontmatter date, skipping fenced examples. |
+| `commit` | `git add` / `git commit` typed out per route. Stages and commits exactly the named paths in their child repo, adds the trailer, never commits the root, exits 1 when git refuses. |
+| `pointers add / rename / check / list` | The per-route pointer algorithm followed from prose. |
+| `obsidian bootstrap` | The retrofit carried out file by file by a role. |
+| `status` | Detection predicates worked out per session. |
+
+### Changed — pointer rows: the cluster rule, and how rows are edited
+
+- **The rule the spec stated did not pass its own example.** "Jaccard similarity ≥ 0.5 against the candidate tokens" scores 0.33 on the documented scenario and coined a duplicate row. The reference code had quietly switched to a looser measure that merged unrelated clusters (any file tagged with one word of a two-word topic). The rule is now: a row with the file's topic slug; else a row whose topic has at least two distinctive words, all present in the file's frontmatter, filename and folders; else a new row. The librarian passes `--topic` when it can see the cluster. Spec, seeds and code say the same thing.
+- **Rows are edited in place.** A new file or entity is added at the end of its cell. Entities are no longer re-sorted, the section is no longer re-rendered, and text the user wrote around or inside the table is untouched. Padded tables, extra columns, `| --- |`-style separators, CRLF files and `[[target\|alias]]` links are handled; a table with an unexpected header is skipped and reported.
+- Entities come from frontmatter people fields and `--entities` only. `[[personnel/priya/index]]` becomes `priya` (it used to become `index`).
+- `pointers rename` also updates `## Files` bullets in MOCs and keeps aliases and `#heading` anchors.
+
+### Changed — Obsidian retrofit
+
+- Runs as `pka-tools obsidian bootstrap` (`--dry-run` to preview, `--commit` for the single path-scoped commit).
+- Frontmatter is edited line by line, never parsed and re-rendered: comments, key order, quoting and block-style lists survive. Bodies are byte-identical, including CRLF endings, a byte-order mark and a missing final newline.
+- Meeting, people and daily folders come from Repo Map tags (`meeting-home`, `people-home`, `daily-home`) when present; the previous folder names remain as the fallback.
+- Notes that are not UTF-8 or are read-only are skipped and listed, alongside malformed frontmatter.
+- The domain tag for `ArchCouncil/` is `archcouncil`, as the conventions document always said (the reference code produced `arch-council`).
+
+### Changed — skills and references
+
+- `pka-bootstrap`: installs the toolkit; `db init` + `index` at bootstrap (markdown content is indexed immediately; there is no separate metadata-only pass); `bootstrap git` and `bootstrap upgrade` vendor through `install`; `bootstrap upgrade` offers the index migration and asks first.
+- `pka-librarian`: index, pointer and commit steps call the tool; search goes through `pka-tools search`.
+- `pka-meetings`: indexing and the action-item query call the tool.
+- `sqlite-modes.md`, `pointer-layer.md`, `obsidian-bootstrap.md`, `commit-protocol.md`, `upgrade.md`, `git-bootstrap.md` rewritten to describe the commands. Per-folder index tables are documented as optional; the tool neither creates nor alters them.
+- Root `.gitignore` list gains `.pka/db-backups/`, `.pka/bin/**/__pycache__/` and `.pka/**/*.new`.
+
+### Tests and CI
+
+- `tests/pointer_maintainer.py` and `tests/bootstrap_obsidian.py` are removed. `test_pointer_layer.sh` and `test_obsidian_bootstrap.sh` now run the shipped tool; PR4 runs a real index and a real search instead of an in-memory table.
+- New suite `tests/test_tools.sh` (`tests/tools/`, 149 tests) drives the vendored `.pka/bin/pka-tools`. It includes a round trip over a fixture vault (`tests/fixtures/build_vault.py`: CRLF, byte-order mark, no final newline, non-UTF-8, spaces, commas and non-ASCII names) asserting that no line changed that the tools do not own and that a second pass changes nothing.
+- Every shell suite installs its workspace through `pka-tools install`.
+- CI adds a job that runs the toolkit tests on Python 3.9.
+
+### Known gaps (later v1.7 phases)
+
+- Role files and `.pka/roles/_obsidian.md` in an existing workspace keep their earlier wording about pointer rows; `bootstrap upgrade` only adds missing sections. The skills' own references are current.
+- Per-route frontmatter, MOC `## Files` bullets and person back-links are still done by the librarian from `obsidian-routing.md`. `pka-meetings` and `pka-wiki` do not yet run the pointer or commit steps.
+- `pointers rename` rewrites links in MOCs only, not in ordinary notes.
+
 ## v1.6.3 — 2026-11-17
 
 Repair and safety. No new features. Every item below was reproduced against v1.6.2 first, and each script fix has a regression test that fails on the old script and passes on the new one.

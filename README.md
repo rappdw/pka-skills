@@ -36,6 +36,11 @@ If the repo isn't published yet, install from a local path:
 claude --plugin-dir /path/to/pka-skills
 ```
 
+### Requirements
+
+- `python3` 3.9 or newer on PATH. The skills run a small bundled helper, `pka-tools`, for every mechanical step. It uses the Python standard library only (nothing to `pip install`) and makes no network calls.
+- For the optional hybrid monorepo (`bootstrap git`): `git` 2.28 or newer and `git-lfs`.
+
 ### Optional: Install thinkkit for meeting capture
 
 ```bash
@@ -79,6 +84,8 @@ A user with no Obsidian vault and no hybrid monorepo sees identical behavior to 
 
 **v1.6.1 — Pointer layer for MOC files.** The librarian maintains a `## Pointers` section inside each `_MOC.md` (one row per concept cluster, three columns: Topic, Entities, Files). FTS5 indexes pointer-row content with a 3× rank boost over body matches, turning a 1,500-file haystack query into a 30-cluster summary followed by 3–5 targeted file reads. No vector store, no embeddings. See `skills/pka-librarian/references/pointer-layer.md`.
 
+**v1.7.0-alpha — `pka-tools`.** The mechanical half of every skill now lives in one small Python command, vendored into each workspace at `.pka/bin/pka-tools`: the index schema and its migration, indexing, search, pointer rows, the Obsidian retrofit, open action items and path-scoped commits. Skills decide what a note is about and where it belongs; the tool makes the edit, changing only the lines it owns. It needs Python 3.9+, uses the standard library only and makes no network calls. See [`bootstrap-assets/tools/README.md`](bootstrap-assets/tools/README.md). An existing workspace gets it through `bootstrap upgrade`, which asks before migrating the index.
+
 **v1.6.3 — Repair and safety.** No new features. The vendored helper scripts no longer lose data: `graduate.sh` and `reinit-project-with-lfs.sh` keep the previous repository as a backup, validate their targets, check every git step and roll back on failure; `init_project_repos.sh` reports failures instead of success; `push-all.sh` and `.meta` agree about remotes. Re-run `bootstrap git` (or `bootstrap upgrade`) in an existing workspace to pick up the fixed scripts. See [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Documentation
@@ -86,7 +93,8 @@ A user with no Obsidian vault and no hybrid monorepo sees identical behavior to 
 - [Tutorial](docs/TUTORIAL.md) — A practical walkthrough of the system after setup
 - Individual skill documentation in `skills/<name>/SKILL.md`
 - Addendum spec: [`specification-addendum.md`](docs/specification-addendum.md) — Obsidian coexistence, hybrid monorepo bootstrap, commit/push protocol
-- Test harness: [`tests/README.md`](tests/README.md) — shell tests for mechanical bootstrap operations; JSON evals for role-level behavior
+- Toolkit: [`bootstrap-assets/tools/README.md`](bootstrap-assets/tools/README.md) — the `pka-tools` commands, exit codes and editing rules
+- Test harness: [`tests/README.md`](tests/README.md) — tests for the helper scripts and `pka-tools`; JSON evals for role-level behavior
 
 ## Repository Structure
 
@@ -114,11 +122,12 @@ pka-skills/
 │   └── pka-tutorial/
 │       ├── SKILL.md
 │       └── references/
-├── bootstrap-assets/           # vendored templates + helper scripts installed by `bootstrap git`
+├── bootstrap-assets/           # everything vendored into a workspace's .pka/
 │   ├── gitattributes-template
 │   ├── gitignore-template
-│   └── scripts/                # graduate.sh, init_project_repos.sh, push-all.sh, build-repo-list.sh, reinit-project-with-lfs.sh, upgrade-roles.py
-├── tests/                      # shell-based mechanical tests for bootstrap operations
+│   ├── scripts/                # graduate.sh, init_project_repos.sh, push-all.sh, build-repo-list.sh, reinit-project-with-lfs.sh, upgrade-roles.py
+│   └── tools/                  # pka-tools (launcher) and the pka_tools package; installs to .pka/bin/
+├── tests/                      # tests for the helper scripts and for pka-tools
 │   ├── run-all.sh
 │   ├── lib.sh
 │   ├── test_git_bootstrap.sh
@@ -127,8 +136,9 @@ pka-skills/
 │   ├── test_upgrade.sh
 │   ├── test_pointer_layer.sh
 │   ├── test_script_safety.sh   # one regression test per helper-script safety fix
-│   ├── bootstrap_obsidian.py   # reference implementation companion for Obsidian-bootstrap tests
-│   └── pointer_maintainer.py   # reference implementation companion for pointer-layer tests
+│   ├── test_tools.sh           # runs tests/tools/test_*.py against the shipped tool
+│   ├── tools/                  # unittest modules for pka-tools
+│   └── fixtures/               # build_vault.py: the fixture workspace (CRLF, BOM, non-ASCII names, …)
 ├── evals/
 │   ├── pka-bootstrap.evals.json
 │   ├── pka-librarian.evals.json

@@ -1,21 +1,48 @@
 # bootstrap-assets
 
-Templates and scripts that `pka-bootstrap` installs into a target workspace's `.pka/` directory when the user runs `bootstrap git` (or `bootstrap all`).
+Everything `pka-bootstrap` vendors into a target workspace's `.pka/` directory: the `pka-tools` helper (every bootstrap), `upgrade-roles.py` (every bootstrap), and the hybrid-monorepo templates and scripts (`bootstrap git` / `bootstrap all`).
 
 These are **vendored** here so the bootstrap works for any user without reading from anyone's personal workspace at runtime. The scripts started as user-proven versions from a real PKA workspace and have been adjusted to remove user-specific topology (no hardcoded Gitea hosts, no embedded `/home/<user>/...` paths) and to enforce the contract below.
 
 ## What gets installed where
 
-| Source (in this repo)                    | Destination in user workspace      |
-|------------------------------------------|------------------------------------|
-| `gitattributes-template`                 | `.pka/gitattributes-template`      |
-| `gitignore-template`                     | `.pka/gitignore-template`          |
-| `scripts/graduate.sh`                    | `.pka/graduate.sh`                 |
-| `scripts/init_project_repos.sh`          | `.pka/init_project_repos.sh`       |
-| `scripts/reinit-project-with-lfs.sh`     | `.pka/reinit-project-with-lfs.sh`  |
-| `scripts/push-all.sh`                    | `.pka/push-all.sh`                 |
-| `scripts/build-repo-list.sh`             | `.pka/build-repo-list.sh`          |
-| `scripts/upgrade-roles.py`               | `.pka/upgrade-roles.py`            |
+| Source (in this repo)                    | Destination in user workspace      | Component |
+|------------------------------------------|------------------------------------|-----------|
+| `tools/pka-tools`                        | `.pka/bin/pka-tools`               | core      |
+| `tools/pka_tools/*.py`                   | `.pka/bin/pka_tools/*.py`          | core      |
+| `scripts/upgrade-roles.py`               | `.pka/upgrade-roles.py`            | core      |
+| `gitattributes-template`                 | `.pka/gitattributes-template`      | git       |
+| `gitignore-template`                     | `.pka/gitignore-template`          | git       |
+| `scripts/graduate.sh`                    | `.pka/graduate.sh`                 | git       |
+| `scripts/init_project_repos.sh`          | `.pka/init_project_repos.sh`       | git       |
+| `scripts/reinit-project-with-lfs.sh`     | `.pka/reinit-project-with-lfs.sh`  | git       |
+| `scripts/push-all.sh`                    | `.pka/push-all.sh`                 | git       |
+| `scripts/build-repo-list.sh`             | `.pka/build-repo-list.sh`          | git       |
+
+## How it gets there
+
+```
+python3 <plugin root>/bootstrap-assets/tools/pka-tools install --workspace <workspace> [--git]
+```
+
+`install` copies the files above and writes `.pka/manifest.json`: the plugin version and a SHA-256 of each file as last offered. The `git` component is installed with `--git`, and from then on whenever the workspace already has it (or has a `.meta`).
+
+On a later run the three hashes (plugin's copy, file on disk, manifest) decide what happens to each file:
+
+| File on disk | Result |
+|---|---|
+| Absent | installed |
+| Same as the plugin's copy | nothing |
+| Same as the manifest (untouched since install) | replaced |
+| Differs from both; the plugin's copy has not changed | kept |
+| Differs from both; the plugin's copy has changed | kept, and the plugin's copy is written beside it as `<name>.new` |
+| No manifest entry (a workspace from before v1.7): scripts and tools | replaced; the previous copy is saved under `.pka/upgrade-backups/<timestamp>/vendored/` |
+| No manifest entry: the two templates | kept; `<name>.new` written |
+| In the manifest but no longer shipped | moved to the backup folder if untouched, left in place if edited |
+
+Nothing is deleted. Running it twice changes nothing the second time. `--dry-run` reports without writing.
+
+`pka-tools` itself is documented in [`tools/README.md`](tools/README.md).
 
 ## Hard guarantees
 
