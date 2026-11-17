@@ -59,17 +59,30 @@ jobs:
           ln -s /bin/bash "$RUNNER_TEMP/system-bash/bash"
           PATH="$RUNNER_TEMP/system-bash:$PATH" ./tests/run-all.sh
 
-  # pka-tools promises Python 3.9. The runners' default python3 is much newer,
-  # so run the toolkit's own tests on the oldest version it supports.
+      # The Python a Mac user has without installing anything.
+      - name: Run the pka-tools tests under macOS system Python
+        if: runner.os == 'macOS'
+        run: |
+          if [ -x /usr/bin/python3 ] && /usr/bin/python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)'; then
+            /usr/bin/python3 --version
+            PKA_TEST_PYTHON=/usr/bin/python3 ./tests/test_tools.sh
+          else
+            echo "no usable /usr/bin/python3 on this runner; skipping"
+          fi
+
+  # pka-tools promises Python 3.9 (what /usr/bin/python3 is on a Mac with the
+  # Xcode command line tools). The runners' default python3 is much newer and
+  # setup-python no longer builds 3.9 for the current Ubuntu image, so run the
+  # toolkit's own tests in the official 3.9 container.
   tools-python-39:
     name: pka-tools on Python 3.9
     runs-on: ubuntu-latest
+    container: python:3.9-slim-bookworm
     steps:
-      - uses: actions/checkout@v4
+      - name: Install git
+        run: apt-get update && apt-get install -y --no-install-recommends git ca-certificates
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.9"
+      - uses: actions/checkout@v4
 
       - name: Tool versions
         run: |
@@ -78,4 +91,4 @@ jobs:
           git --version
 
       - name: Run the pka-tools tests
-        run: ./tests/test_tools.sh
+        run: bash ./tests/test_tools.sh
