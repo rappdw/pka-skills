@@ -44,7 +44,7 @@ jobs:
           done
           python3 -m py_compile bootstrap-assets/scripts/upgrade-roles.py \
             bootstrap-assets/tools/pka-tools bootstrap-assets/tools/pka_tools/*.py \
-            tests/tools/*.py tests/fixtures/*.py
+            tests/tools/*.py tests/fixtures/*.py scripts/*.py
 
       - name: Run the suite
         run: ./tests/run-all.sh

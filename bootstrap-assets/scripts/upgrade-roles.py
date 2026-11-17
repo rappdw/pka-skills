@@ -90,6 +90,8 @@ If `obsidian_present` is true, surface one greeting line:
 Conventions for Obsidian-mode behavior live in `.pka/roles/_obsidian.md`. Do not duplicate them here; consult that file when an Obsidian-specific decision is needed.
 
 Conventions for the commit/push protocol live in `.pka/roles/_git-protocol.md`. Apply only when `hybrid_monorepo_present`.
+
+For the greeting's open threads, run `.pka/bin/pka-tools log open` (the open-threads field of the last 20 session-log entries, newest first) rather than reading the log by eye. `.pka/bin/pka-tools status` reports both predicates, the index state and whether the index needs migrating.
 """,
     ),
     (
@@ -114,9 +116,9 @@ If the user invokes a "bootstrap" request — natural phrasings include "let's b
 
 If the target is still ambiguous after this, ask:
 
-> "Which bootstrap should I run? Options: `obsidian` (vault retrofit), `git` (hybrid monorepo), `all` (both), `upgrade` (refresh role files in an already-bootstrapped workspace)."
+> "Which bootstrap should I run? Options: `obsidian` (vault retrofit), `git` (hybrid monorepo), `all` (both), `upgrade` (refresh role files and helpers in an already-bootstrapped workspace)."
 
-Then hand off to the relevant procedure in `pka-bootstrap`. All bootstraps are idempotent and user-triggered. Never run on detection alone.
+Then hand off to the relevant procedure in the pka-bootstrap skill. All bootstraps are idempotent and user-triggered. Never run on detection alone.
 """,
     ),
     (
@@ -149,15 +151,15 @@ When routing a file **into `knowledge/`** with `obsidian_present` true:
    - Preserve spaces where they exist — Obsidian handles them and existing content uses them.
    - Do not rename existing files unless explicitly asked.
 
-2. **Frontmatter** — if the file matches a known type (meeting, 1on1, brief, daily, person), ensure frontmatter is present with the schema fields from `.pka/roles/_obsidian.md`. Use filename-derived values (date, person from `personnel/<name>/`, domain tags from folder). Leave body-derived fields (attendees, topic beyond filename slug, related notes) **empty** when confidence is low — empty is better than wrong. If existing frontmatter is malformed, skip augmentation and flag the file in the routing report.
+2. **Frontmatter and MOC update** — run `.pka/bin/pka-tools post-route <routed file>` once the file is in place. It adds the schema fields from `.pka/roles/_obsidian.md` that are missing (filename-derived values only: date, person, topic from the filename, domain tag from the folder), adds a `- [[file]]` bullet to the folder's `_MOC.md` (creating a stub if there is none), and then does the pointer row, index and commit steps below. Existing frontmatter lines and MOC entries are never changed or reordered. Files it cannot edit safely (malformed frontmatter, read-only, unusual line endings) are skipped and named in its output: put them in the routing report. Body-derived fields (attendees, a topic beyond the filename, related notes) are yours to fill, and only when confidence is high — empty is better than wrong.
 
-3. **MOC update** — append a bullet linking to the routed file in the destination domain's `_MOC.md`. If the MOC is absent, create a stub matching the structure in `.pka/roles/_obsidian.md`. Never reorder or remove existing MOC entries.
+3. **A different MOC section** — the bullet goes at the end of `## Files` (or a `## Unsorted` section). When the user keeps thematic sections and the right one is clear, pass `--section "<heading>"`.
 
 4. **Person backlinks** — if the routed content's filename or front-of-content references a person whose `personnel/<name>/index.md` exists, add a bullet under "Mentioned in" or "Related meetings" on that person's index page. **Only when confidence is high.** Err on the side of NOT linking when ambiguous — rogue backlinks are worse than missing ones.
 
 5. **Wikilinks vs plain links** — cross-references inside the vault use `[[wikilinks]]`; references to files outside the vault use plain markdown. See `.pka/roles/_obsidian.md` for the full rule.
 
-When `obsidian_present` is false: current behavior only — no frontmatter, no MOC update, no backlinks.
+When `obsidian_present` is false: no frontmatter, no MOC bullet, no backlinks. `post-route` still runs for the pointer row (into existing MOCs only), the index and the commit.
 
 Full conventions in `.pka/roles/_obsidian.md`. Consult that file when an Obsidian-specific decision is needed; do not duplicate the rules here.
 """,
@@ -167,13 +169,13 @@ Full conventions in `.pka/roles/_obsidian.md`. Consult that file when an Obsidia
         """\
 When the orchestrator's session-start detection reports `hybrid_monorepo_present` true:
 
-- After completing a routing operation that lands in `knowledge/` or any `projects/<name>/`, auto-commit that semantic unit in **the destination child repo** with message:
+- After completing a routing operation that lands in `knowledge/` or any `projects/<name>/`, auto-commit that semantic unit in **the destination child repo**. `.pka/bin/pka-tools post-route <file>` makes this commit as its last step, by path, with the message:
   ```
   Librarian: Route <filename> to <destination-folder>/
 
   Co-Authored-By: Claude <noreply@anthropic.com>
   ```
-- One commit per routing unit. Side-effects of the route (MOC update, frontmatter, person-index backlink) belong to the same semantic unit and ride along in the same commit.
+- One commit per routing unit. Side-effects of the route (MOC update, frontmatter, person-index backlink, **pointer-row maintenance**) belong to the same semantic unit and ride along in the same commit.
 - Never auto-commit in the **root repo**. If routing produces root-tracked side effects (e.g., updates to `CLAUDE.md`'s Repo Map when a new domain folder is added), stage those changes and surface them in the routing report for user review.
 - A bulk re-routing pass should produce **one commit per logical unit**, not one giant commit — this preserves reviewability and enables targeted reverts.
 
@@ -215,13 +217,13 @@ Full conventions (frontmatter rules, wikilink rules, malformed-frontmatter handl
         """\
 When the orchestrator's session-start detection reports `hybrid_monorepo_present` true:
 
-- After saving a brief inside a child repo (`knowledge/` or any `projects/<name>/`), auto-commit that semantic unit in **the destination child repo** with message:
+- After saving a brief inside a child repo (`knowledge/` or any `projects/<name>/`), run `.pka/bin/pka-tools post-route <brief> --role Researcher -m "Researcher: <short description of brief>"`. It adds the frontmatter, MOC link and pointer row, indexes the brief, and commits all of it as one unit in **the destination child repo** with the trailer:
   ```
   Researcher: <short description of brief>
 
   Co-Authored-By: Claude <noreply@anthropic.com>
   ```
-- One commit per brief. If a brief includes side-effect updates to the same vault (MOC entries, related-list updates), include them in the same commit.
+- One commit per brief. If a brief includes other side-effect updates to the same vault (related-list updates in other notes), name them with `--also <path>` so they ride in the same commit.
 - Never auto-commit in the **root repo**. If saving a brief touches root files (rare — typically only when adding a new domain to the Repo Map), stage those changes and surface them in the session summary for user review.
 - Briefs saved to `owner-inbox/` (root-tracked) are not committed by the role; they're delivered for review and the user decides when (or whether) to commit.
 
@@ -249,9 +251,11 @@ After every route into `knowledge/<domain>/` or `projects/<name>/`, append a ste
 5. **Soft size cap.** If a row's Files column reaches 8 entries, flag the row in the routing summary for human review rather than auto-splitting.
 6. **Idempotency.** Re-routing the same file produces no change (the wikilink and entities are already present).
 
-This step runs **regardless of `obsidian_present`** — the retrieval value comes from FTS, not from rendering. Wikilinks render literally outside Obsidian; that's fine.
+`post-route` runs this step for you; call `pointers add` directly only when you are not filing a file (for example, to put an existing note into a cluster with `--topic`).
 
-Full algorithm in `.pka/roles/_obsidian.md` (Pointer Layer section) and `pka-skills/skills/pka-librarian/references/pointer-layer.md`.
+Without Obsidian the pointer layer is **opt-in**: rows are written only into `_MOC.md` files that already exist, and no MOC is created. The tool reports "no MOC, pointer row not written". The user opts in with `.pka/bin/pka-tools pointers init`, which gives the vault's folders a MOC with an empty Pointers table.
+
+Full conventions in `.pka/roles/_obsidian.md` (Pointer Layer section); the full procedure is `references/pointer-layer.md` in the pka-librarian skill.
 """,
     ),
     (
@@ -263,7 +267,7 @@ Full algorithm in `.pka/roles/_obsidian.md` (Pointer Layer section) and `pka-ski
     (
         "## Rename / graduate propagation",
         """\
-When a file is renamed or moved by the librarian, every Pointers-row wikilink to its old path is updated to the new path across **all** `_MOC.md` files in the vault. When a project is graduated from `projects/<name>/` into `knowledge/<subdir>/<name>/`, `graduate.sh` rewrites Pointers wikilinks for every file in that project. Both operations are idempotent and append-only at the row level.
+When a file is renamed or moved by the librarian, every Pointers-row wikilink to its old path is updated to the new path across **all** `_MOC.md` files in the vault: `.pka/bin/pka-tools pointers rename <old> <new>` (add `--prefix` for a folder), then `post-route <new path> --also <old path>` so the move and the link updates are one commit. When a project is graduated from `projects/<name>/` into `knowledge/<subdir>/<name>/`, `graduate.sh` rewrites Pointers wikilinks for every file in that project. Both operations are idempotent and append-only at the row level.
 """,
     ),
 ]
@@ -328,30 +332,31 @@ When the librarian routes a file into a domain, after the file is moved and othe
 
 1. **Identify the cluster.** `.pka/bin/pka-tools pointers add <file>` uses the file's frontmatter (`type`, `topic`, `tags`, `attendees`/`person`/`related`), filename and folders, plus any routing-context directive. A row with the file's topic slug is its cluster; otherwise a row whose topic has at least two distinctive words, all of them among the file's; otherwise a new slug is coined from the file's topic / first tag plus type / filename. The librarian passes `--topic` when it can see which cluster the file belongs to.
 2. **Update the row.** If a cluster matches, the new file's wikilink is added at the end of the Files column and any new entities from the file's frontmatter at the end of the Entities column (deduped; nothing is re-sorted). If no cluster matches, a new row is added below existing rows.
-3. **Cross-MOC duplication.** If the file's tags include multiple top-level domain tags (e.g., `[ai, leadership]`), duplicate the pointer row to each corresponding MOC. The same row may appear in multiple `_MOC.md` files — that is correct and intentional.
+3. **Cross-MOC duplication.** If the file's tags include multiple top-level domain tags (e.g., `[ai, leadership]`), duplicate the pointer row to each corresponding MOC. The same row may appear in multiple `_MOC.md` files — that is correct and intentional (doubles the FTS hit rate; append-only invariant keeps drift bounded).
 4. **Append-only.** Existing rows are extended, never deleted, reordered, or merged. User edits to row content are preserved verbatim across librarian routes.
 5. **Soft size cap.** If a row's Files column reaches 8 entries, the librarian flags the row in the routing summary for human review rather than auto-splitting.
 6. **Ambiguous cluster?** Default to the conservative read: append to the most-specific existing topic OR create a new row. Do not silently merge clusters that look similar but might not be.
 
-The full algorithm lives in `pka-skills/skills/pka-librarian/references/pointer-layer.md`.
+`.pka/bin/pka-tools post-route` (or `pointers add`) does all of this. The full procedure is `references/pointer-layer.md` in the pka-librarian skill.
 
 ### Retrieval behavior
 
 When a role needs to answer a question that requires reading existing knowledge:
 
-1. **Query the FTS index** as today, but boost rows from `_MOC.md` Pointers tables ~3× over body-level matches (rows tagged `is_pointer = 1` in the index — see `skills/pka-bootstrap/references/sqlite-modes.md`).
+1. **Query the FTS index** with `.pka/bin/pka-tools search <words>`, which boosts rows from `_MOC.md` Pointers tables 3× over body-level matches (rows tagged `is_pointer = 1`; see `references/sqlite-modes.md` in the pka-bootstrap skill).
 2. **For each high-ranked pointer row hit**, parse the Files column → list of file paths.
 3. **Expand to file bodies** by reading those files (typically 2–5 per cluster) instead of grepping all 1,500.
 4. **Fall back to body-level FTS** if no pointer row matches above the confidence threshold. Pointer rows are a fast path, not the only path.
 
 ### Behavior without Obsidian
 
-The pointer layer works regardless of `obsidian_present`:
+Without Obsidian the pointer layer is **opt-in**:
 
-- Without Obsidian: pointer-row wikilinks render as literal `[[path]]` text in plain-markdown viewers. The FTS index still parses them, the librarian still maintains them, retrieval still benefits — just less navigable for the human reader.
-- With Obsidian: the wikilinks become clickable navigation; the Pointers section becomes a usable at-a-glance map of the domain.
+- Rows are written only into `_MOC.md` files that already exist. No MOC is created by routing, and a tag naming a folder without a MOC does not create one. The tool reports "no MOC, pointer row not written".
+- To opt in, the user runs `.pka/bin/pka-tools pointers init` (optionally naming folders), which gives each folder a `_MOC.md` holding an empty Pointers table. From then on those MOCs are maintained like any other.
+- In plain-markdown viewers the wikilinks render as literal `[[path]]` text. The FTS index still parses them and retrieval still benefits.
 
-Roles do **not** skip pointer-layer maintenance based on `obsidian_present` — the retrieval value is independent of the rendering layer.
+With Obsidian the layer is on by default: MOCs are created as needed, the wikilinks are clickable, and the Pointers section is an at-a-glance map of the domain.
 
 ### Invariants
 
@@ -366,7 +371,7 @@ Roles do **not** skip pointer-layer maintenance based on `obsidian_present` — 
 - Not a vector store. No embeddings.
 - Not a replacement for full-text search. It is a faster path that sits in front of FTS.
 - Not a separate file. It is a section inside existing `_MOC.md` files, never a `_pointers.md` or similar.
-- Not Obsidian-dependent. Plain-markdown workspaces benefit from FTS-side gains; Obsidian only improves the rendering.
+- Not Obsidian-dependent. Plain-markdown workspaces that opt in get the same FTS-side gains; Obsidian only improves the rendering.
 """,
     ),
 ]
@@ -523,9 +528,97 @@ Thematic grouping (e.g., "Strategy docs" vs "Research briefs" vs "Vendor notes")
 
 ### Update policy
 
-- When librarian routes a new file into a domain, append a bullet linking to the file in the relevant MOC. Create the MOC if absent (with a stub matching the structure above).
+- When a role files a new note into a domain, a bullet linking to it is added to the nearest MOC (the note's folder, else its top-level folder), at the end of `## Files` or under `## Unsorted`. The MOC is created if absent (with a stub matching the structure above). `.pka/bin/pka-tools post-route` does this; `.pka/bin/pka-tools moc add-link` does it alone.
 - Never remove or reorder existing entries.
 - MOCs are navigation aids, not authoritative indexes — if the MOC diverges from the actual folder contents, the folder contents win.
+
+## Pointer Layer (added in v1.6.1)
+
+A small set of curated, dense, machine-readable rows inside each `_MOC.md` — one row per concept cluster — that the librarian maintains as files are routed. The pointer layer is **not Obsidian-specific** (it works in plain markdown too), but it lives in the same files as the rest of the MOC convention so it's documented here.
+
+### Why
+
+At ~1,500+ files, body-level FTS retrieval signal-to-noise drops. Pointer rows give roles a fast pre-FTS targeting layer: hit a pointer row first (high keyword density makes it rank above body matches), then expand to the small list of files the row points at. Converts "1,500-file haystack" queries into "30-cluster summary, then 3–5 targeted file reads". No vector store, no embeddings, no separate database — just markdown table rows that FTS naturally ranks highly.
+
+### File location
+
+A new section appended below the existing `## Subdomains` and `## Files` sections in each `_MOC.md`:
+
+```markdown
+# AI
+
+## Subdomains
+- [[AI/azure/_MOC|Azure]]
+
+## Files
+- [[AI/some-brief]]
+
+## Pointers
+
+Compact retrieval rows maintained by the librarian. Format: one row per concept cluster. FTS-indexed for fast lookup before expanding to file bodies.
+
+| Topic | Entities | Files |
+|---|---|---|
+| northwind-partnership-2026 | sasha-ortega, jamie-lin, taylor-brooks | [[northwind/2026-04-23-joint-partnership-meeting]], [[northwind/northwind_partnership_proposal]] |
+| ai-adoption-research | satya-nadella, sundar-pichai | [[AI/ai-adoption-tier-productivity-gap-research]], [[AI/companies/vendor-landscape-research]] |
+```
+
+### Row schema
+
+Three columns. All values are plain text; no nested structures; no YAML.
+
+- **Topic** — hyphenated lowercase slug. Stable identifier for the concept cluster. Date-suffixed when event-bound (`northwind-partnership-2026`); undated for ongoing initiatives (`ai-adoption-research`).
+- **Entities** — comma-separated lowercase hyphenated slugs (people, products, organizations, dates). No `[[wikilinks]]` here — entities are denormalized for FTS keyword density.
+- **Files** — comma-separated `[[wikilinks]]` to constituent files. Use full relative paths from the vault root (`[[northwind/2026-04-23-joint-partnership-meeting]]`) to match the wikilink convention above.
+
+**Granularity rule:** one row per concept cluster, not one row per file. A file may appear in multiple rows; that is correct. Row count per MOC should grow logarithmically with file count, not linearly — if a domain MOC has more pointer rows than files, the granularity is wrong.
+
+### Librarian behavior (gated only on routing into a domain — NOT on `obsidian_present`)
+
+When the librarian routes a file into a domain, after the file is moved and other Obsidian-mode side-effects are applied, it runs the pointer-maintenance step:
+
+1. **Identify the cluster.** `.pka/bin/pka-tools pointers add <file>` uses the file's frontmatter (`type`, `topic`, `tags`, `attendees`/`person`/`related`), filename and folders, plus any routing-context directive. A row with the file's topic slug is its cluster; otherwise a row whose topic has at least two distinctive words, all of them among the file's; otherwise a new slug is coined from the file's topic / first tag plus type / filename. The librarian passes `--topic` when it can see which cluster the file belongs to.
+2. **Update the row.** If a cluster matches, the new file's wikilink is added at the end of the Files column and any new entities from the file's frontmatter at the end of the Entities column (deduped; nothing is re-sorted). If no cluster matches, a new row is added below existing rows.
+3. **Cross-MOC duplication.** If the file's tags include multiple top-level domain tags (e.g., `[ai, leadership]`), duplicate the pointer row to each corresponding MOC. The same row may appear in multiple `_MOC.md` files — that is correct and intentional (doubles the FTS hit rate; append-only invariant keeps drift bounded).
+4. **Append-only.** Existing rows are extended, never deleted, reordered, or merged. User edits to row content are preserved verbatim across librarian routes.
+5. **Soft size cap.** If a row's Files column reaches 8 entries, the librarian flags the row in the routing summary for human review rather than auto-splitting.
+6. **Ambiguous cluster?** Default to the conservative read: append to the most-specific existing topic OR create a new row. Do not silently merge clusters that look similar but might not be.
+
+`.pka/bin/pka-tools post-route` (or `pointers add`) does all of this. The full procedure is `references/pointer-layer.md` in the pka-librarian skill.
+
+### Retrieval behavior
+
+When a role needs to answer a question that requires reading existing knowledge:
+
+1. **Query the FTS index** with `.pka/bin/pka-tools search <words>`, which boosts rows from `_MOC.md` Pointers tables 3× over body-level matches (rows tagged `is_pointer = 1`; see `references/sqlite-modes.md` in the pka-bootstrap skill).
+2. **For each high-ranked pointer row hit**, parse the Files column → list of file paths.
+3. **Expand to file bodies** by reading those files (typically 2–5 per cluster) instead of grepping all 1,500.
+4. **Fall back to body-level FTS** if no pointer row matches above the confidence threshold. Pointer rows are a fast path, not the only path.
+
+### Behavior without Obsidian
+
+Without Obsidian the pointer layer is **opt-in**:
+
+- Rows are written only into `_MOC.md` files that already exist. No MOC is created by routing, and a tag naming a folder without a MOC does not create one. The tool reports "no MOC, pointer row not written".
+- To opt in, the user runs `.pka/bin/pka-tools pointers init` (optionally naming folders), which gives each folder a `_MOC.md` holding an empty Pointers table. From then on those MOCs are maintained like any other.
+- In plain-markdown viewers the wikilinks render as literal `[[path]]` text. The FTS index still parses them and retrieval still benefits.
+
+With Obsidian the layer is on by default: MOCs are created as needed, the wikilinks are clickable, and the Pointers section is an at-a-glance map of the domain.
+
+### Invariants
+
+1. **Rows are append-only at the row level.** Existing rows are extended (new files / new entities) but never deleted, reordered, or merged by the librarian.
+2. **Files column entries are wikilinks to actual files** — broken links inside Pointers tables are bugs, surfaced by the lint health check (rule 2: broken links).
+3. **A renamed/moved file triggers pointer-row updates** in every MOC where the file is referenced.
+4. **A graduated project's files do not lose their pointer-row entries** — `graduate.sh` rewrites the wikilinks to the new `knowledge/` paths.
+5. **Pointer rows are never read by an LLM at full-document scale** — they are FTS-targeted retrieval primitives. If a row is being rendered to a user verbatim, the data has been pulled into the wrong layer.
+
+### What this is NOT
+
+- Not a vector store. No embeddings.
+- Not a replacement for full-text search. It is a faster path that sits in front of FTS.
+- Not a separate file. It is a section inside existing `_MOC.md` files, never a `_pointers.md` or similar.
+- Not Obsidian-dependent. Plain-markdown workspaces that opt in get the same FTS-side gains; Obsidian only improves the rendering.
 
 ## Tag conventions
 
@@ -664,6 +757,8 @@ Examples:
 - `Graduate: widget → knowledge/reference/`
 
 The trailer is mandatory. Do not omit. The exact trailer string is `Co-Authored-By: Claude <noreply@anthropic.com>`.
+
+Roles make these commits with the workspace's tool, never with `git add -A`: `.pka/bin/pka-tools post-route <file> --role <Role>` after filing a note (it commits the note with every file it touched), or `.pka/bin/pka-tools commit -m "<Role>: …" -- <paths>` for anything else. Both stage and commit exactly the named paths, add the trailer, refuse to commit the root repo, and exit 1 when git refuses the commit.
 
 ## Push triggers
 
@@ -842,6 +937,222 @@ def merge_role(text: str, sections: list[tuple[str, str]]) -> tuple[str, list[st
     return merge_sections(text, sections, ANCHOR_SECTIONS)
 
 
+# ---------------------------------------------------------------------------
+# REFRESHING SECTIONS A WORKSPACE ALREADY HAS
+# ---------------------------------------------------------------------------
+# Merging only adds missing sections, so a section seeded by an earlier
+# version keeps its old wording. A section can be refreshed safely when its
+# text is exactly one that some version of pka-skills shipped: then the user
+# never edited it. KNOWN_SECTION_HASHES lists those versions, per file and
+# heading; scripts/seeds.py maintains it (append-only). Anything else is the
+# user's text and is left alone unless they name it with --refresh-section.
+
+KNOWN_SECTION_HASHES = {
+    "_git-protocol.md:## Commit message structure": [
+        "126711e5cea369e1",
+        "75a8a124961afb6d",
+    ],
+    "_git-protocol.md:## Commit triggers": [
+        "e7568f8322fc40bf",
+    ],
+    "_git-protocol.md:## Detection": [
+        "4995172e138727ac",
+    ],
+    "_git-protocol.md:## Failure behavior": [
+        "a6fa554b79eccaa0",
+    ],
+    "_git-protocol.md:## Graduation commit sequence": [
+        "1f0a351155730e76",
+    ],
+    "_git-protocol.md:## Interaction with the Obsidian bootstrap": [
+        "4087e248bd11924e",
+    ],
+    "_git-protocol.md:## Interaction with the git bootstrap": [
+        "16ed3c8ed9df669f",
+    ],
+    "_git-protocol.md:## Invariants": [
+        "d42361167e8ce225",
+    ],
+    "_git-protocol.md:## Push behavior — never silent failures": [
+        "7fca636ec0def1ea",
+        "8f363bff35c45323",
+    ],
+    "_git-protocol.md:## Push triggers": [
+        "7dd825f0e537bb4a",
+    ],
+    "_obsidian.md:## Bootstrap": [
+        "b618b9c19693c59c",
+    ],
+    "_obsidian.md:## Detection": [
+        "7e65b438597956a2",
+    ],
+    "_obsidian.md:## Error handling": [
+        "84b0fe3cf1a3134e",
+    ],
+    "_obsidian.md:## Filename conventions": [
+        "935e32e08a412eb8",
+    ],
+    "_obsidian.md:## Frontmatter schemas": [
+        "3867a112ba2567a5",
+    ],
+    "_obsidian.md:## Invariants": [
+        "226d78da88f75110",
+    ],
+    "_obsidian.md:## MOC (Map of Content) files": [
+        "635438f5814f1445",
+        "744712aba83670e6",
+    ],
+    "_obsidian.md:## Pointer Layer (added in v1.6.1)": [
+        "0828652fcbd3498a",
+        "387e539222cb1a1b",
+        "480c1093f80bc9a4",
+        "934d75cb738d5168",
+        "fcadb8fab61ccda5",
+    ],
+    "_obsidian.md:## Rules for writing frontmatter": [
+        "8391a8393849ff71",
+    ],
+    "_obsidian.md:## Tag conventions": [
+        "ae5a9559d0ddcb28",
+    ],
+    "_obsidian.md:## When this file is out of date": [
+        "2c0297e40ceba15f",
+    ],
+    "_obsidian.md:## Wikilink syntax": [
+        "7bdfac0e77fcb0c5",
+    ],
+    "librarian.md:## Commit/push protocol (gated on `hybrid_monorepo_present`)": [
+        "175ebb697c4e1453",
+        "742bffe4b2a0b59e",
+        "f7c63d0b795c52ac",
+    ],
+    "librarian.md:## Indexing pointer rows": [
+        "394b4ec9ecfaacc5",
+        "acc2d758eff419d3",
+    ],
+    "librarian.md:## Obsidian coexistence (gated on `obsidian_present`)": [
+        "3a018531223ad484",
+        "ea5b5c5245088095",
+    ],
+    "librarian.md:## Pointer-row maintenance (gated only on routing into a domain — NOT on `obsidian_present`)": [
+        "0cbeab387c62987f",
+        "729b90af7286cc06",
+        "d6134ae35bdaf95b",
+    ],
+    "librarian.md:## Rename / graduate propagation": [
+        "4c33bf525498ff00",
+        "aa6f7019518431e6",
+    ],
+    "orchestrator.md:## Bootstrap dispatch": [
+        "5e90aed21362ad95",
+        "7b69d81990957438",
+        "d24f1dc6b3c43b6e",
+    ],
+    "orchestrator.md:## File references in responses": [
+        "15900644fd78297f",
+    ],
+    "orchestrator.md:## Mid-session push handling": [
+        "be23555efbeb6c03",
+    ],
+    "orchestrator.md:## Session-end protocol (extended)": [
+        "d38aa1431e1ee2c7",
+        "dfaed399435dc0ba",
+    ],
+    "orchestrator.md:## Session-start checks (cached for the session)": [
+        "2f287173daffc1c5",
+        "84e84c3377a6019d",
+    ],
+    "researcher.md:## Commit/push protocol (gated on `hybrid_monorepo_present`)": [
+        "1aae6574f77242fb",
+        "8513d149f6340902",
+    ],
+    "researcher.md:## Obsidian coexistence (gated on `obsidian_present`)": [
+        "081c2181daa2fdbf",
+    ],
+}
+
+
+def normalise_section(body: str) -> str:
+    """Whitespace-insensitive form of a section body, for comparison."""
+    lines = [line.rstrip() for line in body.replace("\r\n", "\n").split("\n")]
+    out: list[str] = []
+    for line in lines:
+        if not line and (not out or not out[-1]):
+            continue
+        out.append(line)
+    while out and not out[-1]:
+        out.pop()
+    return "\n".join(out)
+
+
+def section_hash(body: str) -> str:
+    import hashlib
+    return hashlib.sha256(normalise_section(body).encode("utf-8")).hexdigest()[:16]
+
+
+def h2_sections(text: str) -> list[tuple[str, int, int, int]]:
+    """(heading, heading offset, body offset, end offset) for each H2
+    outside fenced blocks. The body runs to the next such H2 or the end."""
+    heads = []
+    for offset, line in _outside_fence_lines(text):
+        if line.startswith("## "):
+            heads.append((line.rstrip(), offset))
+    out = []
+    for idx, (heading, offset) in enumerate(heads):
+        newline_at = text.find("\n", offset)
+        body_start = len(text) if newline_at == -1 else newline_at + 1
+        end = heads[idx + 1][1] if idx + 1 < len(heads) else len(text)
+        out.append((heading, offset, body_start, end))
+    return out
+
+
+def _seed_sections(seed: str) -> list[tuple[str, str]]:
+    return [(heading, seed[body:end]) for heading, _, body, end in h2_sections(seed)]
+
+
+def refreshable_sections(filename: str) -> list[tuple[str, str]]:
+    """The sections of a seeded file that pka-skills owns and may refresh."""
+    if filename == "_obsidian.md":
+        return _seed_sections(OBSIDIAN_SEED)
+    if filename == "_git-protocol.md":
+        return _seed_sections(GIT_PROTOCOL_SEED)
+    role = filename[:-3] if filename.endswith(".md") else filename
+    return list(ROLE_SECTIONS.get(role, []))
+
+
+def plan_refresh(filename: str, text: str, forced: set) -> tuple[str, list[dict]]:
+    """Return (new text, findings). A finding is {heading, state} with state
+    current, refreshed (was a shipped version), or customised (left alone
+    unless forced)."""
+    wanted = dict(refreshable_sections(filename))
+    if not wanted:
+        return text, []
+    nl = detect_newline(text)
+    findings = []
+    replacements = []
+    sections = h2_sections(text)
+    for index, (heading, _, body_start, end) in enumerate(sections):
+        if heading not in wanted:
+            continue
+        have = text[body_start:end]
+        target = wanted[heading]
+        if normalise_section(have) == normalise_section(target):
+            findings.append({"heading": heading, "state": "current"})
+            continue
+        known = section_hash(have) in KNOWN_SECTION_HASHES.get("%s:%s" % (filename, heading), [])
+        if known or heading in forced:
+            last = index == len(sections) - 1
+            new_body = nl + target.strip("\n").replace("\n", nl) + nl + ("" if last else nl)
+            replacements.append((body_start, end, new_body))
+            findings.append({"heading": heading, "state": "refreshed" if known else "replaced (customised)",
+                             "old": have, "new": target})
+        else:
+            findings.append({"heading": heading, "state": "customised", "old": have, "new": target})
+    for start, end, body in sorted(replacements, reverse=True):
+        text = text[:start] + body + text[end:]
+    return text, findings
+
+
 def unique_backup_root(parent: Path, stamp: str) -> Path:
     """A backup directory name that does not exist yet. Two runs within the
     same second get `<stamp>` and `<stamp>-2` rather than a crash."""
@@ -857,7 +1168,8 @@ def unique_backup_root(parent: Path, stamp: str) -> Path:
 # Top-level
 # ---------------------------------------------------------------------------
 
-def upgrade_workspace(workspace: Path, dry_run: bool = False) -> dict:
+def upgrade_workspace(workspace: Path, dry_run: bool = False, refresh: bool = False,
+                      forced: list | None = None) -> dict:
     pka_dir = workspace / ".pka"
     roles_dir = pka_dir / "roles"
     if not roles_dir.is_dir():
@@ -876,8 +1188,22 @@ def upgrade_workspace(workspace: Path, dry_run: bool = False) -> dict:
         "role_sections_already_present": {},
         "roles_unchanged": [],
         "appended_at_end": [],
+        "refresh": {},
+        "refresh_applied": refresh,
         "dry_run": dry_run,
     }
+    forced_by_file: dict = {}
+    for item in forced or []:
+        filename, _, heading = item.partition(":")
+        if not heading.startswith("## "):
+            raise SystemExit("ERROR: --refresh-section takes FILE:## Heading, e.g. librarian.md:## Output Conventions")
+        forced_by_file.setdefault(filename, set()).add(heading.strip())
+
+    def refreshed(filename: str, text: str) -> str:
+        new_text, findings = plan_refresh(filename, text, forced_by_file.get(filename, set()) if refresh else set())
+        if findings:
+            summary["refresh"][filename] = findings
+        return new_text if refresh else text
 
     # 1. Backup .pka/roles/ to .pka/upgrade-backups/<timestamp>/roles/
     if not dry_run:
@@ -915,17 +1241,18 @@ def upgrade_workspace(workspace: Path, dry_run: bool = False) -> dict:
     # and existing files (which may also be on the v1.6.0 baseline).
     for filename, sections in SHARED_REF_SECTIONS.items():
         target = roles_dir / filename
-        if not target.exists():
+        if not target.exists() and not dry_run:
             continue  # Should not happen — step 2 either seeded or skipped only when present
-        original = read_text_exact(target)
+        original = read_text_exact(target) if target.exists() else (OBSIDIAN_SEED if filename == "_obsidian.md" else GIT_PROTOCOL_SEED)
         merged, added, anchored = merge_sections(original, sections, SHARED_REF_ANCHORS)
         already_present = [h for h, _ in sections if h not in added]
         summary["shared_sections_added"][filename] = added
         summary["shared_sections_already_present"][filename] = already_present
         if added and not anchored:
             summary["appended_at_end"].append(filename)
-        if added and not dry_run:
-            write_text_exact(target, merged)
+        final = refreshed(filename, merged)
+        if final != original and not dry_run:
+            write_text_exact(target, final)
 
     # 3. Per-role section merge
     for role, sections in ROLE_SECTIONS.items():
@@ -942,14 +1269,14 @@ def upgrade_workspace(workspace: Path, dry_run: bool = False) -> dict:
         already_present = [h for h, _ in sections if h not in added]
         summary["role_sections_added"][role] = added
         summary["role_sections_already_present"][role] = already_present
-
-        if not added:
+        if added and not anchored:
+            summary["appended_at_end"].append(f"{role}.md")
+        final = refreshed(f"{role}.md", merged)
+        if final == original:
             summary["roles_unchanged"].append(role)
             continue
-        if not anchored:
-            summary["appended_at_end"].append(f"{role}.md")
         if not dry_run:
-            write_text_exact(role_path, merged)
+            write_text_exact(role_path, final)
 
     return summary
 
@@ -1009,11 +1336,45 @@ def print_summary(s: dict) -> None:
         for f in s["appended_at_end"]:
             print(f"           - .pka/roles/{f}")
         print()
-    print("NOTE: This upgrade only ADDS new H2 sections. It does NOT modify")
-    print("      existing sections (e.g., 'Key Competencies', 'Output Conventions',")
-    print("      or 'Invocation'). If you want the v1.6 bullet-level additions")
-    print("      to those sections, see references/role-definitions.md and merge")
-    print("      manually.")
+    stale = [(f, x) for f, items in s.get("refresh", {}).items() for x in items if x["state"] != "current"]
+    if stale:
+        done = s.get("refresh_applied") and not s["dry_run"]
+        print("Sections seeded by an earlier version:")
+        for filename, item in stale:
+            state = item["state"]
+            if state == "refreshed":
+                label = "refreshed" if done else ("would be refreshed" if s.get("refresh_applied") else
+                                                  "can be refreshed (unchanged since it was seeded)")
+            elif state == "replaced (customised)":
+                label = "replaced as requested" if done else "would be replaced as requested"
+            else:
+                label = "customised — left alone"
+            print(f"  {filename}: {item['heading']}  — {label}")
+        if not s.get("refresh_applied"):
+            print("  Run again with --refresh to update the unchanged ones (a backup is taken first).")
+        if any(item["state"] == "customised" for _, item in stale):
+            print("  Customised sections are never replaced automatically. Compare with --diff;")
+            print("  to take the new text for one, pass --refresh --refresh-section 'FILE:## Heading'.")
+        print()
+    print("NOTE: Sections outside the seeded set (e.g. 'Key Competencies', 'Output")
+    print("      Conventions', 'Invocation') are never modified. If you want later")
+    print("      bullet-level additions there, see references/role-definitions.md and")
+    print("      merge manually.")
+
+
+def print_diffs(s: dict) -> None:
+    import difflib
+    for filename, items in s.get("refresh", {}).items():
+        for item in items:
+            if item["state"] == "current":
+                continue
+            old = normalise_section(item["old"]).split("\n")
+            new = normalise_section(item["new"]).split("\n")
+            print(f"--- {filename}: {item['heading']} (yours)")
+            print(f"+++ {filename}: {item['heading']} (current pka-skills)")
+            for line in list(difflib.unified_diff(old, new, lineterm="", n=1))[2:]:
+                print(line)
+            print()
 
 
 def main() -> int:
@@ -1022,9 +1383,19 @@ def main() -> int:
     )
     ap.add_argument("--workspace", default=os.environ.get("WORKSPACE_ROOT", os.getcwd()))
     ap.add_argument("--dry-run", action="store_true", help="Report what would change; don't modify files.")
+    ap.add_argument("--refresh", action="store_true",
+                    help="Also replace seeded sections that are unchanged since an earlier version seeded them.")
+    ap.add_argument("--refresh-section", action="append", default=[], metavar="FILE:## Heading",
+                    help="With --refresh: also replace this customised section (repeatable).")
+    ap.add_argument("--diff", action="store_true", help="Print how each out-of-date section differs.")
     args = ap.parse_args()
-    s = upgrade_workspace(Path(args.workspace).resolve(), dry_run=args.dry_run)
+    if args.refresh_section and not args.refresh:
+        ap.error("--refresh-section needs --refresh")
+    s = upgrade_workspace(Path(args.workspace).resolve(), dry_run=args.dry_run, refresh=args.refresh,
+                          forced=args.refresh_section)
     print_summary(s)
+    if args.diff:
+        print_diffs(s)
     return 0
 
 

@@ -152,7 +152,7 @@ Thematic grouping (e.g., "Strategy docs" vs "Research briefs" vs "Vendor notes")
 
 ### Update policy
 
-- When librarian routes a new file into a domain, append a bullet linking to the file in the relevant MOC. Create the MOC if absent (with a stub matching the structure above).
+- When a role files a new note into a domain, a bullet linking to it is added to the nearest MOC (the note's folder, else its top-level folder), at the end of `## Files` or under `## Unsorted`. The MOC is created if absent (with a stub matching the structure above). `.pka/bin/pka-tools post-route` does this; `.pka/bin/pka-tools moc add-link` does it alone.
 - Never remove or reorder existing entries.
 - MOCs are navigation aids, not authoritative indexes — if the MOC diverges from the actual folder contents, the folder contents win.
 
@@ -208,25 +208,26 @@ When the librarian routes a file into a domain, after the file is moved and othe
 5. **Soft size cap.** If a row's Files column reaches 8 entries, the librarian flags the row in the routing summary for human review rather than auto-splitting.
 6. **Ambiguous cluster?** Default to the conservative read: append to the most-specific existing topic OR create a new row. Do not silently merge clusters that look similar but might not be.
 
-The full algorithm lives in `pka-skills/skills/pka-librarian/references/pointer-layer.md`.
+`.pka/bin/pka-tools post-route` (or `pointers add`) does all of this. The full procedure is `references/pointer-layer.md` in the pka-librarian skill.
 
 ### Retrieval behavior
 
 When a role needs to answer a question that requires reading existing knowledge:
 
-1. **Query the FTS index** as today, but boost rows from `_MOC.md` Pointers tables ~3× over body-level matches (rows tagged `is_pointer = 1` in the index — see `skills/pka-bootstrap/references/sqlite-modes.md`).
+1. **Query the FTS index** with `.pka/bin/pka-tools search <words>`, which boosts rows from `_MOC.md` Pointers tables 3× over body-level matches (rows tagged `is_pointer = 1`; see `references/sqlite-modes.md` in the pka-bootstrap skill).
 2. **For each high-ranked pointer row hit**, parse the Files column → list of file paths.
 3. **Expand to file bodies** by reading those files (typically 2–5 per cluster) instead of grepping all 1,500.
 4. **Fall back to body-level FTS** if no pointer row matches above the confidence threshold. Pointer rows are a fast path, not the only path.
 
 ### Behavior without Obsidian
 
-The pointer layer works regardless of `obsidian_present`:
+Without Obsidian the pointer layer is **opt-in**:
 
-- Without Obsidian: pointer-row wikilinks render as literal `[[path]]` text in plain-markdown viewers. The FTS index still parses them, the librarian still maintains them, retrieval still benefits — just less navigable for the human reader.
-- With Obsidian: the wikilinks become clickable navigation; the Pointers section becomes a usable at-a-glance map of the domain.
+- Rows are written only into `_MOC.md` files that already exist. No MOC is created by routing, and a tag naming a folder without a MOC does not create one. The tool reports "no MOC, pointer row not written".
+- To opt in, the user runs `.pka/bin/pka-tools pointers init` (optionally naming folders), which gives each folder a `_MOC.md` holding an empty Pointers table. From then on those MOCs are maintained like any other.
+- In plain-markdown viewers the wikilinks render as literal `[[path]]` text. The FTS index still parses them and retrieval still benefits.
 
-Roles do **not** skip pointer-layer maintenance based on `obsidian_present` — the retrieval value is independent of the rendering layer.
+With Obsidian the layer is on by default: MOCs are created as needed, the wikilinks are clickable, and the Pointers section is an at-a-glance map of the domain.
 
 ### Invariants
 
@@ -241,7 +242,7 @@ Roles do **not** skip pointer-layer maintenance based on `obsidian_present` — 
 - Not a vector store. No embeddings.
 - Not a replacement for full-text search. It is a faster path that sits in front of FTS.
 - Not a separate file. It is a section inside existing `_MOC.md` files, never a `_pointers.md` or similar.
-- Not Obsidian-dependent. Plain-markdown workspaces benefit from FTS-side gains; Obsidian only improves the rendering.
+- Not Obsidian-dependent. Plain-markdown workspaces that opt in get the same FTS-side gains; Obsidian only improves the rendering.
 
 ## Tag conventions
 
