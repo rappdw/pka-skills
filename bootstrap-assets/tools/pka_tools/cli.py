@@ -301,9 +301,11 @@ def cmd_pointers(args: argparse.Namespace) -> int:
         _emit(args, result, text)
         return EXIT_OK
     if args.pointers_command == "rename":
-        result = pointers.rename(ws, args.old, args.new, prefix=args.prefix, dry_run=args.dry_run)
-        text = ["%d link(s) rewritten in %d MOC file(s): [[%s]] -> [[%s]]%s" % (
-            result["rewrites"], len(result["changed"]), result["from"], result["to"],
+        result = pointers.rename(ws, args.old, args.new, prefix=args.prefix, dry_run=args.dry_run,
+                                 notes=args.notes)
+        text = ["%d link(s) rewritten in %d %s: [[%s]] -> [[%s]]%s" % (
+            result["rewrites"], len(result["changed"]), "file(s)" if args.notes else "MOC file(s)",
+            result["from"], result["to"],
             " (dry run)" if args.dry_run else "")]
         text += ["  %s" % rel for rel in result["changed"]]
         text += _listed("Could not read", result["skipped"])
@@ -515,6 +517,8 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("old", metavar="OLD")
     q.add_argument("new", metavar="NEW")
     q.add_argument("--prefix", action="store_true", help="OLD and NEW are folders: rewrite every link beneath OLD")
+    q.add_argument("--notes", action="store_true",
+                   help="also rewrite links in every markdown note of the vault, not only in _MOC.md files")
     q.add_argument("--dry-run", action="store_true")
     q.set_defaults(func=cmd_pointers)
     q = psub.add_parser("check", parents=[common], help="report broken pointer links and unreadable tables")

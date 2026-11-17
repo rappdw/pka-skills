@@ -312,6 +312,18 @@ class RenameAndCheck(Blank):
         self.assertEqual(result["rewrites"], 6)
         self.assertIn("[[archived/northwind/old_name_2]]", self.text("knowledge/AI/_MOC.md"))
 
+    def test_rename_notes_flag_reaches_ordinary_notes(self):
+        self.write("knowledge/AI/brief.md", "See [[northwind/old_name|the meeting]] and `[[northwind/old_name]]`.\n")
+        self.write("knowledge/AI/other.md", "Nothing to change.\n")
+        moc_only = self.json("pointers", "rename", "northwind/old_name", "northwind/new_name", "--dry-run")
+        self.assertNotIn("knowledge/AI/brief.md", moc_only["changed"])
+        result = self.json("pointers", "rename", "northwind/old_name", "northwind/new_name", "--notes")
+        self.assertIn("knowledge/AI/brief.md", result["changed"])
+        self.assertNotIn("knowledge/AI/other.md", result["changed"])
+        self.assertEqual(self.text("knowledge/AI/brief.md"),
+                         "See [[northwind/new_name|the meeting]] and `[[northwind/old_name]]`.\n")
+        self.assertEqual(self.json("pointers", "rename", "northwind/old_name", "northwind/new_name", "--notes")["rewrites"], 0)
+
     def test_rename_dry_run(self):
         before = self.snapshot()
         self.assertEqual(self.json("pointers", "rename", "northwind/old_name", "x/y", "--dry-run")["rewrites"], 5)

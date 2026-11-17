@@ -584,10 +584,15 @@ def _normalise_ref(ws: Workspace, given: str) -> str:
     return ref
 
 
-def rename(ws: Workspace, old: str, new: str, prefix: bool = False, dry_run: bool = False) -> dict:
-    """Rewrite wikilinks in every `_MOC.md` after a file or folder moved.
+def rename(ws: Workspace, old: str, new: str, prefix: bool = False, dry_run: bool = False,
+           notes: bool = False) -> dict:
+    """Rewrite wikilinks after a file or folder moved: in every `_MOC.md`,
+    and with `notes` in every markdown note of the vault too.
 
-    Only the link target changes: an alias or a `#heading` is kept.
+    Only the link target changes: an alias or a `#heading` is kept. Links in
+    fenced blocks, inline code, HTML comments and escaped `\\[[...]]` are
+    left alone, as are files that are read-only, not UTF-8 or use bare
+    carriage returns (those are listed under `skipped`).
     """
     old_ref = _normalise_ref(ws, old)
     new_ref = _normalise_ref(ws, new)
@@ -611,7 +616,12 @@ def rename(ws: Workspace, old: str, new: str, prefix: bool = False, dry_run: boo
         count += 1
         return "[[%s%s%s]]" % (replacement, match.group("anchor") or "", match.group("alias") or "")
 
-    for moc in ws.moc_files():
+    if notes:
+        files = [path for path in ws.walk(ws.vault, captures=False)
+                 if path.suffix.lower() in (".md", ".markdown")]
+    else:
+        files = ws.moc_files()
+    for moc in files:
         try:
             text = read_text(moc)
         except (NotText, OSError):

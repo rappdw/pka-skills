@@ -78,6 +78,8 @@ Examples:
 
 The trailer is mandatory. Do not omit. The exact trailer string is `Co-Authored-By: Claude <noreply@anthropic.com>`.
 
+Roles make these commits with the workspace's tool, never with `git add -A`: `.pka/bin/pka-tools post-route <file> --role <Role>` after filing a note (it commits the note with every file it touched), or `.pka/bin/pka-tools commit -m "<Role>: …" -- <paths>` for anything else. Both stage and commit exactly the named paths, add the trailer, refuse to commit the root repo, and exit 1 when git refuses the commit.
+
 ## Push triggers
 
 ### Session end (auto)
