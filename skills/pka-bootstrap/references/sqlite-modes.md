@@ -136,7 +136,30 @@ The MOC file's body content is also indexed normally (one additional row with `i
 
 On retrieval, queries against `search_fts` apply a multiplicative rank boost to `is_pointer = 1` rows. SQLite FTS5 uses `rank` such that **lower (more negative) values mean better matches** (BM25 sign convention; values lie in `(-Infinity, 0]`). To rank pointer rows higher, multiply their rank by `3.0` (making the value more negative); body rows stay at `1.0`.
 
-Example query:
+### Building the MATCH string — always quote
+
+Never pass the user's words (or a slug, a filename, a path) to `MATCH` as they are. FTS5 parses the string as a query language: a hyphen is the NOT/column operator, and `?`, `/`, `[`, `+`, `:` and the words `AND`, `OR`, `NOT`, `NEAR` are syntax. Unquoted, the slugs that pointer rows are made of fail outright:
+
+| Search text | Unquoted result |
+|---|---|
+| `northwind-partnership-2026` | `no such column: partnership` |
+| `what did we decide about pricing?` | `fts5: syntax error near "?"` |
+| `AI/ML notes` | `fts5: syntax error near "/"` |
+
+Build the string like this, every time:
+
+1. Split the search text on whitespace.
+2. In each term, double any `"` character (`"` → `""`).
+3. Wrap each term in double quotes.
+4. Join the terms with a single space (FTS5 treats that as AND).
+
+`northwind-partnership-2026 pricing` becomes `"northwind-partnership-2026" "pricing"`. Pass the result as a bound parameter (`MATCH ?`), never by string concatenation into the SQL.
+
+If the quoted query returns nothing, retry with the terms joined by ` OR ` before reporting no results.
+
+FTS finds words, not markup. Do not use it to look for syntax such as `- [ ]` (open checkboxes), `#tag` or `[[wikilink]]` — the tokenizer discards the punctuation, so the query matches nothing. Scan the files instead (see `pka-meetings/references/action-item-patterns.md` for open action items).
+
+Example query (the `?` parameter is the quoted string built above):
 ```sql
 SELECT
   path,

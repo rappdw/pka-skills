@@ -265,7 +265,10 @@ You say "transition `<project>` to knowledge." What happens:
 2. **Mandatory pause.** Regardless of your autonomy level, I wait for approval
 3. **Artifact cleanup.** I list build artifacts (`node_modules/`, temp files)
    and confirm before deleting
-4. **Move.** Directory moves from `projects/<name>/` to your archive destination
+4. **Move.** Directory moves from `projects/<name>/` to your archive destination.
+   If the project is its own git repository, the move goes through
+   `.pka/graduate.sh`, which keeps the project's full history as a backup
+   under `.pka/graduate-backups/` instead of nesting one repo inside another
 5. **Re-index.** Librarian runs a full content index pass on the moved directory
 6. **Map update.** Repo Map status changes to `archived`, priority to Reference
 

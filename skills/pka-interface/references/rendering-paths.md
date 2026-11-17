@@ -63,12 +63,15 @@ const meetings = db.exec(`
     ORDER BY note_date DESC
 `);
 
-// Full-text search
-const results = db.exec(`
+// Full-text search. Quote every term: raw text such as a hyphenated slug or
+// a trailing "?" is an FTS5 syntax error (see sqlite-modes.md).
+const ftsQuery = query.trim().split(/\s+/).filter(Boolean)
+    .map(t => '"' + t.replace(/"/g, '""') + '"').join(' ');
+const results = ftsQuery ? db.exec(`
     SELECT path, filename, folder, snippet(search_fts, 3, '<mark>', '</mark>', '...', 32) 
     FROM search_fts 
     WHERE search_fts MATCH ?
-`, [query]);
+`, [ftsQuery]) : [];
 
 // Activity log
 const activity = db.exec(`

@@ -100,7 +100,7 @@ If the root has uncommitted changes at session end, surface them in the summary.
 
 Any push failure (auth error, conflict, network unreachable, LFS upload disconnect) surfaces explicitly in the session summary with the failing repo and the error message. Do not hide. Do not retry destructively (no `--force`, no rebase).
 
-If a child repo has no remote configured (placeholder `.meta` URL or empty `origin`), report it as a **skipped** push, not a failure.
+If a child repo has no `origin` remote, report it as a **skipped** push, not a failure. The child repo's own remote is what a push uses; the URL in `.meta` is a copy that `.pka/build-repo-list.sh` regenerates, so set remotes with `git -C <child> remote add origin <url>` and then re-run that script.
 
 ## Graduation commit sequence
 

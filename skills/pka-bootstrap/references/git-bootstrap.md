@@ -39,15 +39,16 @@ Procedure for the `git` bootstrap target. Invoked when the user explicitly reque
 
 1. **No network operations.** No `curl`, no `git push`, no API calls. The bootstrap may set an origin URL only if the caller has explicitly opted in via the `ORIGIN_BASE` environment variable on `init_project_repos.sh` (and even that just calls `git remote add` locally — no network round-trip). Default behavior: no origin set at all.
 2. **Root never auto-commits.** Stage only.
-3. **Existing child repos are not reinitialized.** A project with `.git` but no LFS is **flagged** in the summary, not modified. Reinit is a separate, opt-in, destructive operation (`reinit-project-with-lfs.sh`) that requires typed confirmation per project.
+3. **Existing child repos are not reinitialized.** A project with `.git` but no LFS is **flagged** in the summary, not modified. Reinit is a separate, opt-in operation (`reinit-project-with-lfs.sh`) that replaces the history and requires typed confirmation per project; it keeps the old repository as a backup under `.pka/reinit-backups/`. Children that are symbolic links, or whose `.git` is a file (linked worktree, submodule), are never touched: their repository lives elsewhere.
 4. **Idempotent.** Re-running on an already-bootstrapped state must produce no changes.
-5. **Required binaries**: `git`, `git-lfs` on PATH (plus `python3` for `.meta` JSON manipulation). If any are missing, abort with a remediation hint and exit code 2.
+5. **Required binaries**: `git` 2.28 or newer and `git-lfs` on PATH (plus `python3` for `.meta` JSON manipulation). If any are missing or git is too old, abort with a remediation hint and exit code 2.
+6. **A usable git identity** (`user.name` / `user.email`). The helper checks before creating anything; without one, stop and tell the user to set it.
 
 ## Steps
 
 ### Step 0 — Preflight
 
-- Verify `git` and `git-lfs` are on PATH. If not, abort with: *"Git bootstrap needs `git` and `git-lfs`. Install with `brew install git-lfs` (macOS) or your package manager, then re-run."*
+- Verify `git` (2.28+) and `git-lfs` are on PATH. If not, abort with: *"Git bootstrap needs `git` and `git-lfs`. Install with `brew install git-lfs` (macOS) or your package manager, then re-run."*
 - Resolve `WORKSPACE_ROOT` to absolute path.
 - Create `.pka/` if absent (the base bootstrap may have done this; either way ensure it exists).
 
@@ -57,14 +58,17 @@ For each:
 - `bootstrap-assets/gitattributes-template` → `.pka/gitattributes-template`
 - `bootstrap-assets/gitignore-template`     → `.pka/gitignore-template`
 
-Logic: if destination exists, leave it alone (count as "already present" in summary). Otherwise, copy.
+Logic: if the destination is absent, copy. If it exists, leave it alone (count as "already present" in summary) — the templates are meant to be edited by the user.
 
 ### Step 2 — Install helper scripts
 
 For each script in `bootstrap-assets/scripts/*.sh`:
-- Copy to `.pka/<basename>` if absent.
+- If `.pka/<basename>` is absent, copy it. Count as "installed".
+- If it exists and is byte-identical to the plugin's copy (`cmp -s`), count as "already present".
+- If it exists and **differs**, replace it with the plugin's copy and count as "updated". The helper scripts are plugin-owned code, not user content: a stale copy keeps old bugs alive (the v1.6.3 data-loss fixes only reach a workspace this way). If the user has knowingly edited a helper, they can say so and the copy is skipped — otherwise replace.
 - Set executable bit (`chmod +x`).
-- If destination already exists, count as "already present" — do not overwrite.
+
+List the updated scripts by name in the summary.
 
 ### Step 3 — Seed `_git-protocol.md`
 
@@ -83,11 +87,16 @@ projects/
 owner-inbox/
 team-inbox/
 
+# Meeting captures (audio and transcripts written by earshot; large, private)
+meeting-notes/
+
 # Local artifacts
 .pka/knowledge.db
 .pka/knowledge.db-*
 .pka/*-log.txt
 .pka/graduate-backups/
+.pka/reinit-backups/
+.pka/upgrade-backups/
 
 # Secrets
 .gitea-pat
@@ -112,7 +121,7 @@ if not directory_exists("./.git"):
     git init -b main
 ```
 
-Stage all root-tracked changes (the `.gitignore`, `.pka/` scaffolding, etc.) with `git add -A`. **Do not commit.** The root commit is the user's first review gate — they do it manually.
+Stage the scaffolding this bootstrap wrote, **by path**: `git add -- .gitignore .pka/<each template, script and role file installed or updated>` (and `.meta` after Step 8). Do not use `git add -A` at the root: it would also stage whatever else is lying in the workspace — loose notes, exports, anything the ignore list does not cover — and present it to the user as bootstrap output. **Do not commit.** The root commit is the user's first review gate — they do it manually.
 
 If `./.git` already exists, leave it alone. Stage any newly-created scaffolding so the working tree shows what's ready for review.
 
@@ -125,11 +134,15 @@ if directory_exists("./knowledge") AND not directory_exists("./knowledge/.git"):
     cd knowledge
     git init -b main
     git lfs install --local
-    git add -A
+    git add -- .gitattributes .gitignore
+    git commit -m "Bootstrap (git): Configure LFS tracking and .gitignore" ...
+    git add -A        # a brand-new repo: the whole directory is its content
     git commit -m "Bootstrap (git): Initial hybrid monorepo setup" \
               -m "" \
               -m "Co-Authored-By: Claude <noreply@anthropic.com>"
 ```
+
+Do this by running `.pka/init_project_repos.sh`, not by hand. The script checks every step: if `git init` or a commit fails for a child it removes the half-made `.git`, lists the child under "Failed", carries on with the others and exits 1. Relay its "Failed" and "Left alone" lists to the user verbatim.
 
 If `knowledge/` doesn't exist yet, skip — base bootstrap or the user creates it first.
 
@@ -157,13 +170,20 @@ Run `.pka/build-repo-list.sh` (or equivalent inline logic) to walk `knowledge/` 
 }
 ```
 
-Empty origins indicate placeholder remotes — the user populates these later when they decide on a remote topology. The auto-push at session end **skips** child repos with empty origins, reporting them as skipped (not failed).
+An empty origin means the child repo has no `origin` remote yet. The auto-push at session end **skips** such repos, reporting them as skipped (not failed).
 
-If `.meta` already exists, regenerate from current state (entries may have been added or removed since last run). The format must be deterministic so re-running on identical state produces an identical file.
+`.meta` is **derived** from the child repos, never the other way round. The "projects" map is rebuilt on every run from each child's actual `origin` remote, so a URL typed into `.meta` by hand is overwritten and is never used for pushing. To give a child repo a remote:
+
+```
+git -C <child> remote add origin <url>
+.pka/build-repo-list.sh
+```
+
+If `.meta` already exists, regenerate from current state (entries may have been added or removed since last run). Other top-level keys in the file are preserved. The format is deterministic, so re-running on identical state produces an identical file. If the existing `.meta` is not valid JSON the script stops without touching it.
 
 ### Step 9 — Stage root scaffolding
 
-Final pass: `git add -A` in the root to stage anything Steps 1–8 produced. List the staged files in the summary so the user knows what's awaiting their review.
+Final pass: stage, by path, anything Steps 1–8 produced in the root (`.gitignore`, `.meta`, the `.pka/` files installed or updated). List the staged files in the summary so the user knows what's awaiting their review. Never `git add -A` at the root (see Step 5).
 
 ### Step 10 — Summary
 
@@ -173,7 +193,7 @@ Print to the user:
 Hybrid monorepo bootstrap complete.
 
 Templates installed:        N (M already present)
-Helper scripts installed:   N (M already present)
+Helper scripts installed:   N (M already present, K updated to the current version: <names>)
 Shared reference seeded:    .pka/roles/_git-protocol.md (or "already present")
 Root .gitignore:            created / augmented (lines added: K)
 
@@ -184,7 +204,10 @@ knowledge/:                 initialized with LFS (initial commit made)
                             OR  flagged: has .git but no LFS — see reinit-project-with-lfs.sh
 Projects initialized:       N
 Projects flagged:           M (have .git but no LFS — listed below)
-  - projects/<name>: run .pka/reinit-project-with-lfs.sh projects/<name> to opt into LFS (DESTRUCTIVE)
+  - projects/<name>: run .pka/reinit-project-with-lfs.sh projects/<name> to opt into LFS
+    (replaces the history; the old repository is kept under .pka/reinit-backups/)
+Left alone:                 K (symbolic links, linked worktrees, submodules — listed below)
+Failed:                     J (listed below with the reason; no .git was left behind)
 .meta manifest:             generated/updated with K entries
 
 Root working-tree changes STAGED for your review:
@@ -196,7 +219,9 @@ Root working-tree changes STAGED for your review:
 Next steps:
   1. git status / git diff --cached  to review staged changes
   2. git commit  to lock in the scaffolding
-  3. Set origin URLs in .meta when you've decided remote topology
+  3. When you've decided where each repo should live:
+       git -C <child> remote add origin <url>
+       .pka/build-repo-list.sh        (refreshes .meta from the repos)
   4. .pka/push-all.sh  whenever you're ready to push
 ```
 
@@ -205,10 +230,10 @@ Next steps:
 - **Missing binaries** (Step 0): abort with hint, exit 2.
 - **Templates missing in `bootstrap-assets/`**: bug in this plugin, abort with diagnostic.
 - **Filesystem permission errors**: abort with the path that failed and the OS error.
-- **`git init` fails**: surface the git error verbatim. Do not retry destructively.
-- **LFS install fails for one child**: report the specific child, continue with others.
+- **No usable git identity**: the helper stops before creating anything. Tell the user to set `user.name` and `user.email`.
+- **`git init`, `git lfs install` or a commit fails for one child** (hook, signing, permissions): the helper removes the `.git` it had just created for that child, reports the child under "Failed" with git's own error, continues with the others and exits 1. Surface the error verbatim. A re-run retries the failed children; it never reports them as "already initialized".
 
-All failures land in the summary; partial successes are not reverted.
+All failures land in the summary. Children that initialized successfully stay initialized.
 
 ## What NOT to do
 
