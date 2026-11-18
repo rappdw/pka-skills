@@ -1,23 +1,28 @@
 """Timeline backfill: put the notes a vault already has on people's timelines.
 
 Plan, then apply. Planning reads the vault and writes two files: a review
-report (`owner-inbox/timeline-backfill-plan-<date>.md`) and the exact lines
-to be written (`.pka/backfill/plan-<id>.json`). It changes nothing else and
-can be run as often as you like.
+report (`owner-inbox/timeline-backfill-plan-<id>.md`) and the exact lines to
+be written (`.pka/backfill/plan-<id>.json`). It changes nothing else and can
+be run as often as you like. A note whose name a link cannot carry is
+reported, not planned.
 
 Applying a plan:
-  - refuses when any person's index.md changed since the plan was made;
-  - copies every file it will touch to `.pka/backups/<id>/`;
-  - adds timeline lines only, through the same code `timeline add` uses, so
-    existing lines and anything else in index.md are never rewritten;
-  - verifies that every planned line is present, that every link resolves,
-    and that no file outside the planned index.md files changed (a hash of
-    every file in the workspace, before and after). A failed verification
-    puts the backup back;
-  - in a hybrid monorepo, makes one commit with exactly those files.
+  - checks the plan file itself (it is data and may have been edited):
+    every target must be the page of a person folder, every line a timeline
+    line linking to its note;
+  - refuses when a person page or a planned note changed since the plan;
+  - copies every page it will touch to `.pka/backups/<id>/`, and records
+    each page's new hash before writing it;
+  - adds timeline lines only, through the same code `timeline add` uses;
+  - verifies that every planned line is present, every link resolves, and
+    no other file in the vault changed. A failed check, an exception or an
+    interrupt puts every page back;
+  - in a hybrid monorepo, makes one commit with exactly those pages, unless
+    one of them had uncommitted edits of the user's.
 
-`restore` puts a backup back. It refuses a file that changed after the
-apply unless told to overwrite it.
+`restore` puts a backup back. It refuses a page that changed after the
+apply, or whose state after it was never recorded, unless forced; and a
+backup that was rolled back.
 
 Notes are never modified. Who goes on a timeline is decided as for a newly
 filed note (`timeline.who`), plus one more source of evidence: a link in the
@@ -54,7 +59,8 @@ _SKIP_IN_MANIFEST = (".pka/backups/", ".pka/backfill/")
 
 
 def _stamp() -> str:
-    return _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    """A sortable id that two runs in the same second never share."""
+    return "%s-%s" % (_dt.datetime.now().strftime("%Y%m%d-%H%M%S"), os.urandom(3).hex())
 
 
 # ------------------------------------------------------------ evidence
@@ -90,15 +96,12 @@ def backlinks(ws: Workspace, reg: Registry) -> Dict[str, Dict[str, str]]:
 
 
 def _in_wiki(path: Path, vault: Path) -> bool:
-    """Inside a wiki page's folder (a folder holding `wiki.md`)."""
-    probe = path.parent
-    while probe == vault or vault in probe.parents:
-        if (probe / "wiki.md").is_file():
-            return True
-        if probe == vault:
-            break
-        probe = probe.parent
-    return False
+    """Wiki material: a file in a wiki page's own folder (one holding
+    `wiki.md`, below the vault root) or in its `sources/` folder."""
+    folder = path.parent
+    if folder.name == "sources":
+        folder = folder.parent
+    return folder != vault and vault in folder.parents and (folder / "wiki.md").is_file()
 
 
 def candidates(ws: Workspace, reg: Registry) -> List[Path]:
@@ -115,6 +118,15 @@ def candidates(ws: Workspace, reg: Registry) -> List[Path]:
             continue
         out.append(path)
     return out
+
+
+def _link_reads_back(ws: Workspace, index: Path, link: str, key: str, cache: dict) -> bool:
+    """The link, as it will be written, is read back as this note and
+    resolves to a file. A name that cannot survive the round trip (an
+    upper-case `.MD`, angle brackets without Obsidian) is left out."""
+    from .pointers import resolve_link
+    found = tl.keys_in(ws, index, link)
+    return bool(found) and tl.resolve_bare(ws, found[0], cache) == key and resolve_link(ws, key) is not None
 
 
 # ------------------------------------------------------------ plan
@@ -140,6 +152,7 @@ def plan(
     plan_id = _stamp()
     obsidian = ws.obsidian_present
     back = backlinks(ws, reg)
+    cache: dict = {}
 
     # What each person's page can take, and what is on it already.
     pages: Dict[str, dict] = {}
@@ -148,7 +161,7 @@ def plan(
         present: Set[str] = set()
         if text is not None and not created:
             lines = split_lines(text)
-            present = set(tl.block_keys(ws, p.index, lines, tl.locate(lines)))
+            present = set(tl.block_keys(ws, p.index, lines, tl.locate(lines), cache))
         pages[p.slug] = {"person": p, "problem": problem, "created": created, "present": present,
                          "sha256": None if created or not p.index.is_file() else sha256_file(p.index)}
 
@@ -195,6 +208,7 @@ def plan(
             continue
         kind = note.kind(reg)
         label = note.label(kind)
+        note_hash = sha256_file(path)
         for slug in sorted(people):
             page = pages[slug]
             if key in page["present"]:
@@ -202,9 +216,13 @@ def plan(
                 continue
             p = page["person"]
             link = tl.format_link(ws, p.index, path, label, obsidian)
+            if not _link_reads_back(ws, p.index, link, key, cache):
+                if rel not in unlinkable:
+                    unlinkable.append(rel)
+                continue
             entries.append({
-                "slug": slug, "index": ws.rel(p.index), "note": rel, "key": key, "date": date, "kind": kind,
-                "tier": people[slug]["tier"], "evidence": people[slug]["evidence"],
+                "slug": slug, "index": ws.rel(p.index), "note": rel, "note_sha256": note_hash, "key": key,
+                "date": date, "kind": kind, "tier": people[slug]["tier"], "evidence": people[slug]["evidence"],
                 "line": tl.format_line(date, kind, link, ""),
             })
 
@@ -245,7 +263,7 @@ def plan(
         plan_file = folder / ("plan-%s.json" % plan_id)
         report_dir = ws.root / "owner-inbox"
         report_dir.mkdir(parents=True, exist_ok=True)
-        report_file = report_dir / ("timeline-backfill-plan-%s.md" % plan_id[:8])
+        report_file = report_dir / ("timeline-backfill-plan-%s.md" % plan_id)
         result["plan_file"] = ws.rel(plan_file)
         result["report_file"] = ws.rel(report_file)
         write_text_atomic(plan_file, json.dumps(result, indent=1, ensure_ascii=False) + "\n")
@@ -306,30 +324,34 @@ def report(result: dict) -> str:
     if result["opted_out"]:
         section("Opted out (`no-backref: true`)", ["- `%s`" % n for n in result["opted_out"]])
     if result["unlinkable"]:
-        section("Paths a wikilink cannot express (not added)", ["- `%s`" % n for n in result["unlinkable"]])
+        section("Notes whose name a link cannot carry (not added; rename them to add them)", ["- `%s`" % n for n in result["unlinkable"]])
     return "\n".join(out) + "\n"
 
 
 # ------------------------------------------------------------ apply
 
 def manifest(ws: Workspace) -> Dict[str, str]:
-    """sha256 of every regular file in the workspace (not `.git`, not the
-    backfill's own folders, not symbolic links)."""
+    """sha256 of every regular file in the vault, not in dot-folders
+    (`.obsidian`, `.git`, `.trash`: editors and sync rewrite those at will)
+    and not symbolic links. Apply writes only inside the vault, so this is
+    the scope its "nothing else changed" check needs."""
     out = {}
-    for folder, dirs, names in os.walk(str(ws.root)):
-        dirs[:] = sorted(d for d in dirs if d != ".git" and not os.path.islink(os.path.join(folder, d)))
+    for folder, dirs, names in os.walk(str(ws.vault)):
+        dirs[:] = sorted(d for d in dirs if not d.startswith(".") and not os.path.islink(os.path.join(folder, d)))
         for name in names:
             path = os.path.join(folder, name)
-            if os.path.islink(path) or not os.path.isfile(path):
+            if name.startswith(".") or os.path.islink(path) or not os.path.isfile(path):
                 continue
             rel = os.path.relpath(path, str(ws.root)).replace(os.sep, "/")
-            if rel.startswith(_SKIP_IN_MANIFEST):
-                continue
             try:
                 out[rel] = sha256_file(Path(path))
             except OSError:
                 out[rel] = "unreadable"
     return out
+
+
+def _bad_plan(what: str) -> ToolError:
+    return ToolError("the plan is not usable: %s; make a new one with `timeline plan`" % what, EXIT_USAGE)
 
 
 def load_plan(ws: Workspace, plan_arg: str) -> dict:
@@ -338,10 +360,21 @@ def load_plan(ws: Workspace, plan_arg: str) -> dict:
         data = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         raise ToolError("no such plan: %s" % plan_arg, EXIT_USAGE)
-    except (ValueError, OSError) as exc:
+    except (ValueError, OSError, UnicodeDecodeError) as exc:
         raise ToolError("the plan cannot be read: %s" % exc, EXIT_USAGE)
-    if not isinstance(data, dict) or data.get("version") != PLAN_VERSION or not isinstance(data.get("entries"), list):
+    if not isinstance(data, dict) or data.get("version") != PLAN_VERSION:
         raise ToolError("%s is not a version-%d backfill plan" % (plan_arg, PLAN_VERSION), EXIT_USAGE)
+    targets, entries = data.get("targets"), data.get("entries")
+    if not isinstance(targets, dict) or not isinstance(entries, list):
+        raise _bad_plan("it has no targets or entries")
+    for rel, target in targets.items():
+        if not (isinstance(rel, str) and isinstance(target, dict) and isinstance(target.get("slug"), str)
+                and (target.get("sha256") is None or isinstance(target.get("sha256"), str))):
+            raise _bad_plan("target %r is malformed" % (rel,))
+    for entry in entries:
+        fields = ("slug", "index", "note", "note_sha256", "key", "date", "kind", "line")
+        if not isinstance(entry, dict) or not all(isinstance(entry.get(f), str) for f in fields):
+            raise _bad_plan("an entry is missing one of %s" % ", ".join(fields))
     return data
 
 
@@ -351,153 +384,274 @@ def _current_hash(path: Path) -> Optional[str]:
     return sha256_file(path)
 
 
+def _check_plan(ws: Workspace, reg: Registry, data: dict) -> Dict[str, Person]:
+    """Every target is a person page of this registry and every entry a
+    well-formed line for an existing note in the vault, before any file is
+    read or written. A plan file is data; it may have been edited."""
+    from .pointers import resolve_link
+    pages: Dict[str, Person] = {}
+    for rel, target in data["targets"].items():
+        person = reg.get(target["slug"])
+        if person is None or ws.rel(person.index) != rel:
+            raise _bad_plan("%s is not the page of a person folder %r" % (rel, target["slug"]))
+        pages[rel] = person
+    cache: dict = {}
+    for entry in data["entries"]:
+        person = pages.get(entry["index"])
+        if person is None or person.slug != entry["slug"]:
+            raise _bad_plan("the entry for %s names a page that is not among its targets" % entry["note"])
+        match = tl._LINE_RE.match(entry["line"])
+        if not match or match.group("date") != entry["date"] or match.group("kind") not in tl.KINDS:
+            raise _bad_plan("the line for %s is not a timeline line" % entry["note"])
+        if "\n" in entry["line"] or "\r" in entry["line"]:
+            raise _bad_plan("the line for %s spans more than one line" % entry["note"])
+        found = tl.keys_in(ws, person.index, match.group("link"))
+        if not found or tl.resolve_bare(ws, found[0], cache) != entry["key"]:
+            raise _bad_plan("the line for %s does not link to it" % entry["note"])
+        note = resolve_link(ws, entry["key"])
+        if note is None or ws.rel(note) != entry["note"]:
+            raise _bad_plan("%s is not in the vault" % entry["note"])
+    return pages
+
+
+def _save(backup: Path, record: dict) -> None:
+    write_text_atomic(backup / "backup.json", json.dumps(record, indent=1, ensure_ascii=False) + "\n")
+
+
+def _new_backup(ws: Workspace) -> Path:
+    root = ws.pka / "backups"
+    root.mkdir(parents=True, exist_ok=True)
+    while True:
+        backup = root / _stamp()
+        try:
+            backup.mkdir()
+            return backup
+        except FileExistsError:
+            continue
+
+
+def _uncommitted(ws: Workspace, rels: List[str]) -> List[str]:
+    """Pages with changes git has not committed (the user's own edits, which
+    a by-path commit would sweep into the backfill commit)."""
+    from . import gitops
+    out = []
+    for rel in rels:
+        path = ws.root / rel
+        repo = gitops.toplevel(path.parent)
+        if repo is None:
+            continue
+        code, stdout, _err = gitops._git(repo, "status", "--porcelain", "--", os.path.relpath(
+            os.path.realpath(str(path)), str(repo)))
+        if code == 0 and stdout.strip():
+            out.append(rel)
+    return out
+
+
 def apply(ws: Workspace, plan_arg: str, dry_run: bool = False, commit: bool = True) -> dict:
     data = load_plan(ws, plan_arg)
     reg = registry(ws)
     require_home(reg)
+    pages = _check_plan(ws, reg, data)
     if bool(data.get("obsidian")) != ws.obsidian_present:
         raise ToolError("the plan was made %s Obsidian and the workspace is now %s; plan again"
                         % ("with" if data.get("obsidian") else "without",
                            "an Obsidian vault" if ws.obsidian_present else "not one"), EXIT_NOT_READY)
     targets: Dict[str, dict] = data["targets"]
-    changed_since = [rel for rel, t in targets.items() if _current_hash(ws.root / rel) != t["sha256"]]
-    if changed_since:
-        raise ToolError("these files changed since the plan was made; plan again: %s" % ", ".join(sorted(changed_since)),
+    stale = [rel for rel, t in targets.items() if _current_hash(ws.root / rel) != t["sha256"]]
+    stale += sorted({e["note"] for e in data["entries"] if _current_hash(ws.root / e["note"]) != e["note_sha256"]})
+    if stale:
+        raise ToolError("these files changed since the plan was made; plan again: %s" % ", ".join(sorted(set(stale))),
                         EXIT_NOT_READY)
     by_index: Dict[str, List[dict]] = {}
     for entry in data["entries"]:
-        if entry["index"] not in targets:
-            raise ToolError("the plan is inconsistent: %s is not among its targets" % entry["index"], EXIT_USAGE)
         by_index.setdefault(entry["index"], []).append(entry)
     result = {"plan": ws.rel(ws.resolve(plan_arg)), "entries": len(data["entries"]), "files": sorted(by_index),
-              "backup": None, "verified": False, "problems": [], "commit": None, "dry_run": dry_run}
+              "backup": None, "verified": False, "problems": [], "commit": None, "commit_failed": False,
+              "restored": False, "dry_run": dry_run}
     if dry_run or not data["entries"]:
         return result
+    dirty = _uncommitted(ws, sorted(by_index)) if commit and ws.hybrid_monorepo_present else []
 
-    backup_id = _stamp()
-    backup = ws.pka / "backups" / backup_id
+    backup = _new_backup(ws)
     before = manifest(ws)
-    files_dir = backup / "files"
-    record = {"version": PLAN_VERSION, "plan": result["plan"], "created": _dt.datetime.now().isoformat(timespec="seconds"),
-              "files": {}}
+    record = {"version": PLAN_VERSION, "plan": result["plan"], "state": "applying",
+              "created": _dt.datetime.now().isoformat(timespec="seconds"), "files": {}}
     for rel in sorted(by_index):
         src = ws.root / rel
         existed = src.exists()
         if existed:
-            dest = files_dir / rel
+            dest = backup / "files" / rel
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(str(src), str(dest))
-        record["files"][rel] = {"existed": existed, "before": targets[rel]["sha256"], "after": None}
-    write_text_atomic(backup / "backup.json", json.dumps(record, indent=1) + "\n")
+        record["files"][rel] = {"slug": targets[rel]["slug"], "existed": existed,
+                                "before": targets[rel]["sha256"], "after": None}
+    _save(backup, record)
     result["backup"] = ws.rel(backup)
 
     problems: List[str] = []
-    for rel, items in sorted(by_index.items()):
-        person = reg.get(targets[rel]["slug"])
-        if person is None or ws.rel(person.index) != rel:
-            problems.append("%s: the person folder is gone" % rel)
-            continue
-        problem, text, _created = tl.prepare_index(person)
-        if problem:
-            problems.append("%s: %s" % (rel, problem))
-            continue
-        newline = detect_newline(text)
-        lines = split_lines(text)
-        present = set(tl.block_keys(ws, person.index, lines, tl.locate(lines)))
-        for entry in sorted(items, key=lambda e: e["date"], reverse=True):
-            if entry["key"] in present:
-                continue
-            lines = tl.place(ws, person.index, lines, entry["line"], entry["date"], newline)
-            present.add(entry["key"])
-        try:
-            write_text_atomic(person.index, "".join(lines))
-        except OSError as exc:
-            problems.append("%s: could not write: %s" % (rel, exc))
-
-    # Verify: every planned line is there, every link resolves, nothing else changed.
-    if not problems:
-        from .pointers import resolve_link
+    try:
         for rel, items in sorted(by_index.items()):
-            index = ws.root / rel
-            lines = split_lines(read_text(index))
-            keys = set(tl.block_keys(ws, index, lines, tl.locate(lines)))
-            for entry in items:
-                if entry["key"] not in keys:
-                    problems.append("%s: the line for %s is missing" % (rel, entry["note"]))
-                elif resolve_link(ws, entry["key"]) is None:
-                    problems.append("%s: the link to %s does not resolve" % (rel, entry["note"]))
-        after = manifest(ws)
-        unexpected = sorted(rel for rel in set(before) | set(after)
-                            if before.get(rel) != after.get(rel) and rel not in by_index)
-        problems += ["changed although it is not in the plan: %s" % rel for rel in unexpected]
+            person = pages[rel]
+            problem, text, _created = tl.prepare_index(person)
+            if problem:
+                problems.append("%s: %s" % (rel, problem))
+                break
+            newline = detect_newline(text)
+            lines = split_lines(text)
+            present = set(tl.block_keys(ws, person.index, lines, tl.locate(lines)))
+            for entry in sorted(items, key=lambda e: e["date"], reverse=True):
+                if entry["key"] in present:
+                    continue
+                lines = tl.place(ws, person.index, lines, entry["line"], entry["date"], newline)
+                present.add(entry["key"])
+            content = "".join(lines)
+            record["files"][rel]["after"] = tl_hash(content)    # recorded before the write: restore can tell ours from theirs
+            _save(backup, record)
+            write_text_atomic(person.index, content)
+
+        if not problems:
+            problems = _verify(ws, by_index, before)
+    except BaseException as exc:      # an interrupt or crash: put everything back, then let it propagate
+        _roll_back(ws, backup, record)
+        if isinstance(exc, Exception) and not isinstance(exc, ToolError):
+            raise ToolError("the backfill failed and the pages were put back: %s" % exc, EXIT_FAIL)
+        raise
 
     if problems:
-        put_back(ws, backup, record)
-        result["problems"] = problems
-        result["restored"] = True
+        failed = _roll_back(ws, backup, record)
+        result["problems"] = problems + ["could not put back %s: %s" % (rel, why) for rel, why in failed]
+        result["restored"] = not failed
         return result
 
-    for rel in record["files"]:
-        record["files"][rel]["after"] = sha256_file(ws.root / rel)
-    write_text_atomic(backup / "backup.json", json.dumps(record, indent=1) + "\n")
+    record["state"] = "applied"
+    _save(backup, record)
     result["verified"] = True
 
     if commit and ws.hybrid_monorepo_present:
-        from . import gitops
-        people = len(by_index)
-        subject = "Timelines: backfill %d entr%s for %d %s" % (
-            len(data["entries"]), "y" if len(data["entries"]) == 1 else "ies", people, "person" if people == 1 else "people")
-        try:
-            result["commit"] = gitops.commit(ws, subject, sorted(by_index),
-                                             body="Plan %s. Backup in %s." % (result["plan"], result["backup"]))
-        except ToolError as exc:
-            result["commit"] = {"committed": False, "reason": exc.message}
+        if dirty:
+            result["commit"] = {"committed": False,
+                                "reason": "not committed: these pages had uncommitted changes of yours, which a "
+                                          "commit would include: %s" % ", ".join(dirty)}
+        else:
+            from . import gitops
+            people = len(by_index)
+            count = len(data["entries"])
+            subject = "Timelines: backfill %d entr%s for %d %s" % (
+                count, "y" if count == 1 else "ies", people, "person" if people == 1 else "people")
+            try:
+                result["commit"] = gitops.commit(ws, subject, sorted(by_index),
+                                                 body="Plan %s. Backup in %s." % (result["plan"], result["backup"]))
+            except ToolError as exc:
+                result["commit"] = {"committed": False, "reason": exc.message}
+                result["commit_failed"] = True
     return result
 
 
-def put_back(ws: Workspace, backup: Path, record: dict, only: Optional[List[str]] = None) -> List[str]:
-    done = []
+def tl_hash(content: str) -> str:
+    from .textio import sha256_bytes
+    return sha256_bytes(content.encode("utf-8"))
+
+
+def _verify(ws: Workspace, by_index: Dict[str, List[dict]], before: Dict[str, str]) -> List[str]:
+    """Every planned line is there, every link resolves, nothing else in
+    the vault changed."""
+    from .pointers import resolve_link
+    problems = []
+    for rel, items in sorted(by_index.items()):
+        index = ws.root / rel
+        lines = split_lines(read_text(index))
+        keys = set(tl.block_keys(ws, index, lines, tl.locate(lines)))
+        for entry in items:
+            if entry["key"] not in keys:
+                problems.append("%s: the line for %s is missing" % (rel, entry["note"]))
+            elif resolve_link(ws, entry["key"]) is None:
+                problems.append("%s: the link to %s does not resolve" % (rel, entry["note"]))
+    after = manifest(ws)
+    unexpected = sorted(rel for rel in set(before) | set(after)
+                        if before.get(rel) != after.get(rel) and rel not in by_index)
+    problems += ["changed although it is not in the plan: %s" % rel for rel in unexpected]
+    return problems
+
+
+def _roll_back(ws: Workspace, backup: Path, record: dict) -> List[tuple]:
+    failed = put_back(ws, backup, record)[1]
+    record["state"] = "rolled-back" if not failed else "rollback-incomplete"
+    try:
+        _save(backup, record)
+    except OSError:
+        pass
+    return failed
+
+
+def put_back(ws: Workspace, backup: Path, record: dict, only: Optional[List[str]] = None):
+    """Restore the saved pages (and remove stubs the apply created). Every
+    file is attempted; returns (restored, [(file, reason)])."""
+    done, failed = [], []
     for rel, info in sorted(record["files"].items()):
         if only is not None and rel not in only:
             continue
         target = ws.root / rel
-        saved = backup / "files" / rel
-        if info["existed"]:
-            data = saved.read_bytes()
-            tmp = target.with_name(target.name + ".pka-restore")
-            tmp.write_bytes(data)
-            shutil.copystat(str(saved), str(tmp))
-            os.replace(str(tmp), str(target))
-        elif target.exists() and not target.is_symlink():
-            os.remove(str(target))
-        done.append(rel)
-    return done
+        try:
+            if info["existed"]:
+                saved = backup / "files" / rel
+                data = saved.read_bytes()
+                if not target.parent.is_dir():
+                    raise OSError("the folder %s no longer exists" % ws.rel(target.parent))
+                tmp = target.with_name(target.name + ".pka-restore")
+                tmp.write_bytes(data)
+                shutil.copystat(str(saved), str(tmp))
+                os.replace(str(tmp), str(target))
+            elif target.exists() and not target.is_symlink():
+                os.remove(str(target))
+            done.append(rel)
+        except OSError as exc:
+            failed.append((rel, str(exc)))
+    return done, failed
 
 
 def restore(ws: Workspace, backup_arg: str, force: bool = False, dry_run: bool = False) -> dict:
     """Put a backfill backup back: the person pages as they were before the
-    apply. Refuses files changed since the apply, unless `force`."""
-    backup = ws.pka / "backups" / backup_arg if "/" not in backup_arg else ws.resolve(backup_arg)
+    apply. Refuses a page edited since the apply (or one whose state after
+    the apply was never recorded) unless `force`."""
+    name = backup_arg.rstrip("/").rsplit("/", 1)[-1]
+    if not name or name in (".", ".."):
+        raise ToolError("no backfill backup %s" % backup_arg, EXIT_USAGE)
+    backup = ws.pka / "backups" / name
     try:
         record = json.loads((backup / "backup.json").read_text(encoding="utf-8"))
     except FileNotFoundError:
         raise ToolError("no backfill backup %s (they are in .pka/backups/)" % backup_arg, EXIT_USAGE)
-    except (ValueError, OSError) as exc:
+    except (ValueError, OSError, UnicodeDecodeError) as exc:
         raise ToolError("the backup record cannot be read: %s" % exc, EXIT_USAGE)
+    if not isinstance(record, dict) or not isinstance(record.get("files"), dict):
+        raise ToolError("the backup record is malformed", EXIT_USAGE)
+    if record.get("state") == "rolled-back":
+        raise ToolError("that backfill was rolled back when it failed; there is nothing to restore", EXIT_NOT_READY)
+    reg = registry(ws)
+    files = {}
+    for rel, info in record["files"].items():
+        person = reg.get(info.get("slug", "")) if isinstance(info, dict) else None
+        if person is None or ws.rel(person.index) != rel or not isinstance(info.get("existed"), bool):
+            raise ToolError("the backup names %s, which is not the page of a person folder; nothing restored" % rel,
+                            EXIT_NOT_READY)
+        files[rel] = info
     conflicts = []
-    for rel, info in sorted(record["files"].items()):
+    for rel, info in sorted(files.items()):
         now = _current_hash(ws.root / rel)
-        if info.get("after") is not None and now != info["after"] and now != info["before"]:
+        if now == info["before"]:
+            continue
+        if info.get("after") is None or now != info["after"]:
             conflicts.append(rel)
     if conflicts and not force:
-        raise ToolError("changed since the backfill (edits would be lost; --force to restore anyway): %s"
-                        % ", ".join(conflicts), EXIT_NOT_READY)
-    pending = [rel for rel, info in sorted(record["files"].items())
-               if _current_hash(ws.root / rel) != info["before"]]
-    result = {"backup": ws.rel(backup), "restored": [], "unchanged": sorted(set(record["files"]) - set(pending)),
+        raise ToolError("changed since the backfill, or its state after the backfill is unknown (edits would be "
+                        "lost; --force to restore anyway): %s" % ", ".join(conflicts), EXIT_NOT_READY)
+    pending = [rel for rel, info in sorted(files.items()) if _current_hash(ws.root / rel) != info["before"]]
+    result = {"backup": ws.rel(backup), "restored": [], "failed": [], "unchanged": sorted(set(files) - set(pending)),
               "conflicts": conflicts, "dry_run": dry_run}
     if dry_run:
         result["restored"] = pending
         return result
-    result["restored"] = put_back(ws, backup, record, only=pending)
+    done, failed = put_back(ws, backup, {"files": files}, only=pending)
+    result["restored"] = done
+    result["failed"] = [{"file": rel, "reason": why} for rel, why in failed]
     return result

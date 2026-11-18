@@ -134,11 +134,11 @@ def resolve_bare(ws: Workspace, key: str, cache: Optional[dict] = None) -> str:
     return cache[key]
 
 
-def block_keys(ws: Workspace, index: Path, lines: List[str], block: Block) -> List[str]:
+def block_keys(ws: Workspace, index: Path, lines: List[str], block: Block, cache: Optional[dict] = None) -> List[str]:
     """The note each line of the block is about: a grammar line's own link,
     or the first link of any other line. Links in summaries do not count."""
     keys = []
-    cache: dict = {}
+    cache = {} if cache is None else cache
     if block.open is None:
         return keys
     for idx in range(block.open + 1, block.close):

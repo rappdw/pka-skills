@@ -502,7 +502,8 @@ def cmd_timeline(args: argparse.Namespace) -> int:
             text = ["Would add %d line(s) to %d file(s)" % (result["entries"], len(result["files"]))]
             text += ["  %s" % rel for rel in result["files"]]
         elif result["problems"]:
-            text = ["Backfill NOT applied; verification failed and the files were put back:"]
+            text = ["Backfill NOT applied; the check failed and the pages were %s:"
+                    % ("put back" if result["restored"] else "NOT all put back (see below)")]
             text += ["  %s" % p for p in result["problems"]]
         else:
             text = ["Added %d line(s) to %d file(s); verified. Backup: %s" % (result["entries"], len(result["files"]),
@@ -514,14 +515,15 @@ def cmd_timeline(args: argparse.Namespace) -> int:
             if result["backup"]:
                 text.append("Undo:   pka-tools timeline restore %s" % result["backup"].rsplit("/", 1)[-1])
         _emit(args, result, text)
-        return EXIT_FAIL if result["problems"] else EXIT_OK
+        return EXIT_FAIL if result["problems"] or result["commit_failed"] else EXIT_OK
     if command == "restore":
         result = backfill_mod.restore(ws, args.backup, force=args.force, dry_run=args.dry_run)
         text = ["%s %d file(s) from %s" % ("Would restore" if args.dry_run else "Restored", len(result["restored"]),
                                           result["backup"])]
         text += ["  %s" % rel for rel in result["restored"]]
+        text += ["  NOT restored %s: %s" % (f["file"], f["reason"]) for f in result["failed"]]
         _emit(args, result, text)
-        return EXIT_OK
+        return EXIT_FAIL if result["failed"] else EXIT_OK
     result = timeline_mod.strip(ws, args.person, dry_run=args.dry_run)
     text = ["Timeline blocks removed from %d file(s)%s" % (len(result["changed"]), " (dry run)" if args.dry_run else "")]
     text += ["  %s" % rel for rel in result["changed"]]

@@ -241,7 +241,196 @@ class BackfillVerification(support.ToolsCase):
         changed = self.changed(before, self.snapshot())
         self.assertEqual(changed, ["knowledge/AI/ai-adoption-research.md"])     # the person pages are back
         record = json.loads((self.ws / applied["backup"] / "backup.json").read_text(encoding="utf-8"))
-        self.assertTrue(all(info["after"] is None for info in record["files"].values()))
+        self.assertEqual(record["state"], "rolled-back")
+
+
+class ReviewFindings(support.ToolsCase):
+    """Regression tests for the review of the first Phase 5 build."""
+
+    def module(self):
+        import sys
+        sys.path.insert(0, str(support.ASSETS / "tools"))
+        from pka_tools import backfill, timeline
+        from pka_tools.workspace import Workspace
+        return backfill, timeline, Workspace(self.ws)
+
+    def code(self, *args):
+        code, _out, err = self.tool(*args, "--workspace", str(self.ws))
+        return code, err
+
+    def test_interrupt_mid_apply_puts_everything_back(self):          # high
+        backfill, timeline, ws = self.module()
+        result = backfill.plan(ws)
+        before = self.snapshot()
+        original = timeline.place
+        seen = set()
+
+        def boom(ws_, index, *args, **kwargs):
+            seen.add(index)
+            if len(seen) > 1:
+                raise KeyboardInterrupt
+            return original(ws_, index, *args, **kwargs)
+
+        timeline.place = boom
+        try:
+            with self.assertRaises(KeyboardInterrupt):
+                backfill.apply(ws, result["plan_file"])
+        finally:
+            timeline.place = original
+        self.assertEqual(self.changed(before, self.snapshot()), [])
+        backup = sorted(os.listdir(str(self.path(".pka/backups"))))[-1]
+        self.assertEqual(self.code("timeline", "restore", backup)[0], 3)        # rolled back: nothing to restore
+
+    def test_restore_refuses_a_page_whose_state_after_apply_is_unknown(self):
+        backfill, _timeline, ws = self.module()
+        applied = backfill.apply(ws, backfill.plan(ws)["plan_file"])
+        path = self.ws / applied["backup"] / "backup.json"
+        record = json.loads(path.read_text(encoding="utf-8"))
+        for info in record["files"].values():
+            info["after"] = None                         # as if the run died before recording it
+        path.write_text(json.dumps(record), encoding="utf-8")
+        code, err = self.code("timeline", "restore", applied["backup"].rsplit("/", 1)[-1])
+        self.assertEqual(code, 3, err)
+        self.assertIn(OPEN, self.text(PRIYA))
+
+    def test_restore_after_a_failed_verification_is_refused(self):     # medium
+        backfill, timeline, ws = self.module()
+        result = backfill.plan(ws)
+        original = timeline.place
+
+        def sneaky(*args, **kwargs):
+            (self.ws / "knowledge" / "AI" / "ai-adoption-research.md").write_text("changed\n", encoding="utf-8")
+            return original(*args, **kwargs)
+
+        timeline.place = sneaky
+        try:
+            applied = backfill.apply(ws, result["plan_file"])
+        finally:
+            timeline.place = original
+        self.write(PRIYA, self.text(PRIYA) + "\nimportant later edit\n")
+        code, err = self.code("timeline", "restore", applied["backup"].rsplit("/", 1)[-1])
+        self.assertEqual(code, 3, err)
+        self.assertIn("important later edit", self.text(PRIYA))
+
+    def test_a_name_a_link_cannot_carry_is_left_out_not_fatal(self):    # medium
+        self.write("knowledge/leadership/2026-05-02-Sync.MD", meeting("2026-05-02", ["Priya"]))
+        result = self.json("timeline", "plan")
+        self.assertIn("knowledge/leadership/2026-05-02-Sync.MD", result["unlinkable"])
+        self.assertNotIn("leadership/2026-05-02-Sync", {e["key"] for e in result["entries"]})
+        self.assertTrue(self.json("timeline", "apply", result["plan_file"])["verified"])
+
+    def test_angle_brackets_without_obsidian(self):
+        import shutil
+        shutil.rmtree(str(self.path("knowledge/.obsidian")))
+        self.write("knowledge/leadership/2026-05-02-a>b.md", meeting("2026-05-02", ["Priya"]))
+        result = self.json("timeline", "plan")
+        self.assertIn("knowledge/leadership/2026-05-02-a>b.md", result["unlinkable"])
+        self.assertTrue(self.json("timeline", "apply", result["plan_file"])["verified"])
+
+    def test_ids_never_collide(self):                                   # medium
+        backfill, _timeline, ws = self.module()
+        first = backfill.plan(ws, person="priya")
+        second = backfill.plan(ws, person="robin-smith")
+        self.assertNotEqual(first["plan_file"], second["plan_file"])
+        self.assertNotEqual(first["report_file"], second["report_file"])
+        self.assertEqual(json.loads(self.text(first["plan_file"]))["options"]["person"], "priya")
+        one = backfill.apply(ws, first["plan_file"], commit=False)
+        two = backfill.apply(ws, second["plan_file"], commit=False)
+        self.assertNotEqual(one["backup"], two["backup"])
+
+    def test_obsidian_writing_its_own_files_does_not_fail_the_apply(self):    # medium
+        backfill, timeline, ws = self.module()
+        result = backfill.plan(ws)
+        original = timeline.place
+
+        def obsidian(*args, **kwargs):
+            (self.ws / "knowledge" / ".obsidian" / "workspace.json").write_text('{"active": "x"}', encoding="utf-8")
+            return original(*args, **kwargs)
+
+        timeline.place = obsidian
+        try:
+            applied = backfill.apply(ws, result["plan_file"])
+        finally:
+            timeline.place = original
+        self.assertTrue(applied["verified"], applied["problems"])
+
+    def test_a_note_changed_after_planning_makes_the_plan_stale(self):   # medium
+        self.write("knowledge/leadership/2026-05-02-sync.md", meeting("2026-05-02", ["Priya"]))
+        result = self.json("timeline", "plan")
+        self.write("knowledge/leadership/2026-05-02-sync.md", meeting("2026-05-02", ["Priya"], extra="no-backref: true\n"))
+        code, err = self.code("timeline", "apply", result["plan_file"])
+        self.assertEqual(code, 3, err)
+        self.assertIn("2026-05-02-sync.md", err)
+        self.assertNotIn("2026-05-02-sync", self.text(PRIYA))
+
+    def test_restore_refuses_when_a_person_folder_moved(self):          # medium/low
+        applied = self.json("timeline", "apply", self.json("timeline", "plan")["plan_file"])
+        backup = applied["backup"].rsplit("/", 1)[-1]
+        os.rename(str(self.path("knowledge/personnel/priya")), str(self.path("knowledge/personnel/priya-old")))
+        for extra in ((), ("--force",)):
+            code, err = self.code("timeline", "restore", backup, *extra)
+            self.assertEqual(code, 3, err)
+        self.assertTrue(self.path(ROBIN).exists())      # all or nothing: nothing was touched
+
+    def test_a_foreign_plan_cannot_reach_outside_person_pages(self):    # low/medium
+        backfill, _timeline, ws = self.module()
+        outside = self.base / "secret.txt"
+        outside.write_text("outside the workspace\n", encoding="utf-8")
+        from pka_tools.textio import sha256_file
+        plan = backfill.plan(ws, write=False)
+        plan["targets"]["../secret.txt"] = {"slug": "priya", "sha256": sha256_file(outside), "created": False}
+        self.write(".pka/backfill/evil.json", json.dumps(plan))
+        self.assertEqual(self.code("timeline", "apply", ".pka/backfill/evil.json")[0], 64)
+        plan = backfill.plan(ws, write=False)
+        plan["entries"][0]["line"] = "- 2026-01-01 · doc · [[AI/ai-adoption-research|x]]"
+        self.write(".pka/backfill/evil2.json", json.dumps(plan))
+        self.assertEqual(self.code("timeline", "apply", ".pka/backfill/evil2.json")[0], 64)
+        self.assertFalse(self.path(".pka/backups").exists())
+
+    def test_a_foreign_backup_record_cannot_delete_notes(self):
+        self.write(".pka/backups/zz/backup.json", json.dumps(
+            {"version": 1, "files": {"knowledge/AI/ai-adoption-research.md": {"existed": False, "before": None,
+                                                                              "after": None}}}))
+        self.assertEqual(self.code("timeline", "restore", "zz")[0], 3)
+        self.assertEqual(self.code("timeline", "restore", "../../knowledge")[0], 64)
+        self.assertTrue(self.path("knowledge/AI/ai-adoption-research.md").exists())
+
+    def test_malformed_plans_are_usage_errors(self):                    # low
+        for body in ({"version": 1, "entries": [], "obsidian": True},
+                     {"version": 1, "entries": [{"slug": "priya"}], "targets": {}, "obsidian": True},
+                     {"version": 1, "entries": [], "targets": {"x": "y"}, "obsidian": True}):
+            self.write(".pka/backfill/bad.json", json.dumps(body))
+            code, err = self.code("timeline", "apply", ".pka/backfill/bad.json")
+            self.assertEqual(code, 64, err)
+            self.assertNotIn("Traceback", err)
+
+    def test_a_wiki_high_up_does_not_hide_its_subfolders(self):         # low
+        self.write("knowledge/AI/wiki.md", "# AI wiki\n")
+        keys = {e["key"] for e in self.plan_entries()}
+        self.assertIn("AI/northwind/2026-04-23-joint-partnership-meeting", keys)
+
+    def plan_entries(self):
+        return self.json("timeline", "plan")["entries"]
+
+
+class ReviewFindingsHybrid(BackfillHybrid):
+    def test_a_failed_commit_exits_1(self):                             # low
+        result = self.json("timeline", "plan")
+        hooks = self.repo / ".git" / "hooks"
+        hooks.mkdir(exist_ok=True)
+        (hooks / "pre-commit").write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+        os.chmod(str(hooks / "pre-commit"), 0o755)
+        code, err = self.tool("timeline", "apply", result["plan_file"], "--workspace", str(self.ws))[::2]
+        self.assertEqual(code, 1, err)
+
+    def test_the_users_uncommitted_page_edits_are_not_committed(self):
+        self.write(PRIYA, self.text(PRIYA) + "\nmy own unfinished thought\n")
+        result = self.json("timeline", "plan")
+        applied = self.json("timeline", "apply", result["plan_file"])
+        self.assertTrue(applied["verified"])
+        self.assertFalse(applied["commit"]["committed"])
+        self.assertIn("uncommitted changes", applied["commit"]["reason"])
+        self.assertEqual(self.git(self.repo, "log", "--format=%s").strip().splitlines()[0], "baseline")
 
 
 if __name__ == "__main__":
