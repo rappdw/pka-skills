@@ -224,7 +224,7 @@ Full conventions in `.pka/roles/_obsidian.md` (Pointer Layer section); the full 
     (
         "## Rename / graduate propagation",
         """\
-When a file is renamed or moved by the librarian, every Pointers-row wikilink to its old path is updated to the new path across **all** `_MOC.md` files in the vault: `.pka/bin/pka-tools pointers rename <old> <new>` (add `--prefix` for a folder, and `--notes` to rewrite links in every note as well), then `post-route <new path> --also <old path>` so the index drops the old location. When a project is graduated from `projects/<name>/` into `knowledge/<subdir>/<name>/`, move the folder and run `.pka/bin/pka-tools pointers rename projects/<name> knowledge/<subdir>/<name> --prefix --notes`, then `.pka/bin/pka-tools index`. Both operations are idempotent and append-only at the row level. Nothing is committed; the move and the rewritten links are left for the user to review.
+When a file is renamed or moved by the librarian, every Pointers-row wikilink to its old path is updated to the new path across **all** `_MOC.md` files in the vault: `.pka/bin/pka-tools pointers rename <old> <new>` (add `--prefix` for a folder, and `--notes` to rewrite links in every note as well), then `.pka/bin/pka-tools index` so the index follows the move (`post-route <new path> --also <old path>` re-indexes the two paths only, not the MOCs that changed). When a project is graduated from `projects/<name>/` into `knowledge/<subdir>/<name>/`, move the folder and run `.pka/bin/pka-tools pointers rename projects/<name> knowledge/<subdir>/<name> --prefix --notes`, then `.pka/bin/pka-tools index`. Both operations are idempotent and append-only at the row level. Nothing is committed; the move and the rewritten links are left for the user to review.
 """,
     ),
 ]
@@ -938,6 +938,7 @@ KNOWN_SECTION_HASHES = {
         "d6134ae35bdaf95b",
     ],
     "librarian.md:## Rename / graduate propagation": [
+        "22e12ce922bab6ba",
         "4c33bf525498ff00",
         "6c63456f622fc66a",
         "aa6f7019518431e6",
@@ -1087,11 +1088,21 @@ def plan_obsolete(filename: str, text: str, forced: set) -> tuple[str, list[dict
     return text, findings
 
 
+# The text above the first H2 of each obsolete shared-reference file, in every
+# version that was seeded (same hash as KNOWN_SECTION_HASHES).
+OBSOLETE_PREAMBLE_HASHES = {
+    "_git-protocol.md": ["9de05be64e53d527"],
+}
+
+
 def obsolete_file_state(filename: str, text: str) -> str:
-    """`unchanged` when every H2 section of an obsolete shared-reference file
-    is exactly what an earlier release seeded; otherwise `customised`."""
+    """`unchanged` when every H2 section of an obsolete shared-reference file,
+    and the text before the first one, is exactly what an earlier release
+    seeded; otherwise `customised`."""
     sections = h2_sections(text)
     if not sections:
+        return "customised"
+    if section_hash(text[:sections[0][1]]) not in OBSOLETE_PREAMBLE_HASHES.get(filename, []):
         return "customised"
     for heading, _, body_start, end in sections:
         if section_hash(text[body_start:end]) not in KNOWN_SECTION_HASHES.get("%s:%s" % (filename, heading), []):
@@ -1346,6 +1357,12 @@ def print_summary(s: dict) -> None:
             print(f"  {filename}: {item['heading']}  — {label}")
         if not s.get("refresh_applied"):
             print("  Run again with --refresh to remove the unchanged ones (a backup is taken first).")
+        remaining = [x for _, x in gone if x["state"] not in ("removed", "removed (customised)")] or \
+            [f for f, state in gone_files.items() if state != "removed"]
+        if remaining or not done:
+            print("  WARNING: while any of these remain, the role files still tell the roles to commit,")
+            print("  push or run helper scripts that are no longer there. Nothing does that any more:")
+            print("  remove or reword them, and do not run git on a role file's instruction.")
         if any(item["state"] == "customised" for _, item in gone):
             print("  A customised obsolete section stays until you remove it: edit the file, or pass")
             print("  --refresh --refresh-section 'FILE:## Heading'.")

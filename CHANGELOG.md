@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v1.8.0 — not yet released
+
+**Existing workspaces:** run `bootstrap upgrade`. Until you do, the copy of `pka-tools` already in the workspace behaves as its own release did, which for a workspace with nested repositories means it still commits. The librarian now checks for an older copy and asks for the upgrade before filing.
 
 ### Removed — hybrid monorepo and commit protocol
 
@@ -37,7 +39,11 @@ Still accepted, and does nothing (role files written for earlier releases name t
 
 Changed with it:
 
-- **Project transition** no longer goes through `graduate.sh`. The folder is moved and `pka-tools pointers rename <old> <new> --prefix --notes` rewrites every link to it, in MOCs and notes. If the project folder has its own `.git`, the skill stops and asks instead of moving it.
+- **Smaller changes that follow from the removal:** `post-route` can no longer exit 1 (that code meant a refused commit); `post-route -m ""` and `commit` with no paths are accepted where they were usage errors; `commit --json` no longer has `repo` or `sha` and gives `"reason": "removed"`; the installer also moves the workspace's copy of `bin/pka_tools/gitops.py` to the upgrade backup folder.
+- **Role files after the upgrade.** A plain `bootstrap upgrade` moves untouched helper scripts to the backup folder but leaves obsolete role sections in place until the refresh is accepted, and a customised one stays after it. While they remain they still tell a role to commit, push or run `push-all.sh`. The upgrade prints a warning for as long as any are left, and the tool's "not committed" messages now say not to run git.
+- **`pointers rename --notes`** also rewrites the notes of the moved folder itself when it is outside the vault, at any depth (the two-level `.pkaignore` rule for projects does not apply to it). Before, a project moved back out of `knowledge/` kept links to its archive location.
+- **An edit above the first heading of `_git-protocol.md`** now counts as a customisation, so the file is kept.
+- **Project transition** no longer goes through `graduate.sh`. The folder is moved and `pka-tools pointers rename <old> <new> --prefix --notes` rewrites every wikilink to it, in the vault's MOCs and notes and in the moved folder's own notes (so a project moved back out keeps working links too). Relative markdown links and mentions outside the vault are not rewritten; the skill searches for them and shows the user. If the project folder has its own `.git`, the skill stops and asks instead of moving it.
 - `upgrade-roles.py`: `plan_obsolete` and the "Obsolete" block of the summary; `_git-protocol.md` is no longer seeded. `KNOWN_SECTION_HASHES` keeps the hashes of the removed sections, which is how an untouched one is told from an edited one.
 - `pka-tools install` reports retired helpers it finds without a manifest entry.
 - README, `bootstrap-assets/README.md`, the tools README, `tests/README.md` and `docs/specification-addendum.md` (now the Obsidian half only) say the same.

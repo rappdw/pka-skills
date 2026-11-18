@@ -222,6 +222,22 @@ class Obsolete(support.ToolsCase):
         self.assertIn("_git-protocol.md (whole file)  — customised — left alone", out)
         self.assertEqual(self.text(".pka/roles/_git-protocol.md"), text)
 
+    def test_an_edit_above_the_first_heading_also_counts(self):
+        text = self.text(".pka/roles/_git-protocol.md")
+        first = text.index("\n## ")
+        text = text[:first] + "\nSam: ask Robin before changing any of this.\n" + text[first:]
+        self.write(".pka/roles/_git-protocol.md", text)
+        out = self.run_upgrade("--refresh")
+        self.assertIn("_git-protocol.md (whole file)  — customised — left alone", out)
+        self.assertEqual(self.text(".pka/roles/_git-protocol.md"), text)
+
+    def test_a_warning_stays_while_obsolete_text_remains(self):
+        self.assertIn("WARNING: while any of these remain", self.run_upgrade())
+        text = self.text(".pka/roles/researcher.md").replace(
+            "- One commit per brief.", "- One commit per brief. (Sam: and we sign them.)")
+        self.write(".pka/roles/researcher.md", text)
+        self.assertIn("WARNING: while any of these remain", self.run_upgrade("--refresh"))
+
     def test_dry_run_and_crlf(self):
         crlf = self.text(".pka/roles/orchestrator.md").replace("\n", "\r\n")
         self.write(".pka/roles/orchestrator.md", crlf)

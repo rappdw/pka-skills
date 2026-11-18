@@ -260,11 +260,11 @@ def cmd_commit(args: argparse.Namespace) -> int:
     result = {
         "committed": False, "reason": "removed", "deprecated": True,
         "paths": list(args.paths),
-        "message": "pka-tools no longer commits. Nothing was staged or committed; commit the changes yourself.",
+        "message": "pka-tools no longer commits. Nothing was staged or committed; the changes are left for the user to commit. Do not run git.",
     }
     _emit(args, result, [
         "Not committed: pka-tools no longer commits (`commit` is deprecated and does nothing).",
-        "Nothing was staged or committed; commit the changes yourself.",
+        "Nothing was staged or committed; the changes are left for the user to commit. Do not run git.",
     ])
     return EXIT_OK
 

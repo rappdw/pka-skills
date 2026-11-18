@@ -347,6 +347,25 @@ class RenameAndCheck(Blank):
         again = self.json("pointers", "rename", "projects/orion", "knowledge/archive/orion", "--prefix", "--notes")
         self.assertEqual(again["rewrites"], 0)
 
+    def test_a_project_moved_back_out_keeps_its_own_links(self):
+        """Reverse transition: the project is outside the vault again, and
+        its own notes still hold links to the archive location."""
+        import os
+        self.write("knowledge/archive/orion/plan.md", "See [[archive/orion/notes/kickoff|kickoff]].\n")
+        self.write("knowledge/archive/orion/notes/kickoff.md", "Back to [[archive/orion/plan]].\n")
+        self.write("knowledge/planning/review.md", "See [[archive/orion/plan]].\n")
+        os.makedirs(str(self.path("projects")), exist_ok=True)
+        os.rename(str(self.path("knowledge/archive/orion")), str(self.path("projects/orion")))
+        result = self.json("pointers", "rename", "knowledge/archive/orion", "projects/orion", "--prefix", "--notes")
+        self.assertEqual(result["rewrites"], 3)
+        self.assertEqual(sorted(result["changed"]),
+                         ["knowledge/planning/review.md", "projects/orion/notes/kickoff.md", "projects/orion/plan.md"])
+        self.assertEqual(self.text("projects/orion/plan.md"), "See [[projects/orion/notes/kickoff|kickoff]].\n")
+        self.assertEqual(self.text("projects/orion/notes/kickoff.md"), "Back to [[projects/orion/plan]].\n")
+        self.assertEqual(self.text("knowledge/planning/review.md"), "See [[projects/orion/plan]].\n")
+        again = self.json("pointers", "rename", "knowledge/archive/orion", "projects/orion", "--prefix", "--notes")
+        self.assertEqual(again["rewrites"], 0)
+
     def test_rename_dry_run(self):
         before = self.snapshot()
         self.assertEqual(self.json("pointers", "rename", "northwind/old_name", "x/y", "--dry-run")["rewrites"], 5)

@@ -199,9 +199,7 @@ shown as a difference for the user to decide.
 
 > "Refresh the role sections I haven't edited"
 
-### Unreleased (the release after v1.7.0; give this section its version number at release)
-
-Teach this for any installed release later than v1.7.0.
+### v1.8.0
 
 **1. PKA no longer commits or pushes.** *(Applies to every workspace; matters
 most to one with a `.meta` file at its root.)*
@@ -227,8 +225,9 @@ removed in one step, with a backup; edited ones are left for them to decide.
 
 **3. Moving a finished project keeps its links.** *(Applies to all
 workspaces.)*
-Transitioning a project into `knowledge/` now rewrites every link that pointed
-at it, in MOCs and in notes, so nothing is left pointing at the old folder.
+Transitioning a project into `knowledge/` now rewrites the wikilinks that
+pointed at it, in MOCs and in notes, and lists anything else that still names
+the old folder for the user to fix.
 
 > "Transition `<a finished project>` to knowledge"
 

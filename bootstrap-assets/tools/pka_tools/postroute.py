@@ -107,7 +107,7 @@ def run(
     notes: List[str] = []
     if (ws.root / ".meta").is_file():
         notes.append("not committed: pka-tools no longer commits (nested-repository support was removed); "
-                     "commit the changes yourself")
+                     "the changed files are left for the user to commit. Do not run git")
 
     steps: List[Dict[str, object]] = []
     touched: List[str] = []
