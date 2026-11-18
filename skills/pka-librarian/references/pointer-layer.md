@@ -14,7 +14,7 @@ When filing a note, this step is part of `.pka/bin/pka-tools post-route <file>`,
 .pka/bin/pka-tools pointers add <path-to-routed-file> [--topic <slug>] [--entities <a,b>] [--context "<routing directive>"]
 ```
 
-It prints, per MOC, what it did: `created-moc`, `created-section`, `created-table`, `appended` (a new row), `extended` (an existing row), `noop` (already recorded), `no-moc` (no MOC there and none may be created) or `skipped` with the reason. `--json` gives the same as data, including `changed` — the `_MOC.md` paths to add to this route's commit and to re-index. `--dry-run` shows the outcome without writing.
+It prints, per MOC, what it did: `created-moc`, `created-section`, `created-table`, `appended` (a new row), `extended` (an existing row), `noop` (already recorded), `no-moc` (no MOC there and none may be created) or `skipped` with the reason. `--json` gives the same as data, including `changed` — the `_MOC.md` paths to re-index. `--dry-run` shows the outcome without writing.
 
 ## What the librarian decides
 
@@ -79,7 +79,7 @@ Offer `pointers init` once when a routing report shows many `no MOC` lines, and 
 
 ## After the command
 
-`post-route` re-indexes the changed MOCs and includes them in the route's commit. When you run `pointers add` on its own, do both yourself: `.pka/bin/pka-tools index <file> <changed MOC>...`, then `.pka/bin/pka-tools commit -m "…" -- <file> <changed MOC>...`.
+`post-route` re-indexes the changed MOCs. When you run `pointers add` on its own, do it yourself: `.pka/bin/pka-tools index <file> <changed MOC>...`. Nothing is committed either way; name the changed files in your report.
 
 ## Failure handling
 
@@ -102,11 +102,17 @@ When a file that may be listed in a MOC is renamed or moved:
 
 Every wikilink to the old path in every `_MOC.md` (pointer rows and `## Files` bullets) gets the new target. An alias (`[[old|Name]]`) or heading (`[[old#Decisions]]`) is kept. Fenced examples are not touched. Running it twice changes nothing. Rows are never deleted, even when a file leaves the domain.
 
-Add `--notes` to rewrite links in every markdown note of the vault as well (the same rules: target only, keeping the link's own spacing, `./` and `.md`; fenced examples, HTML comments and inline code untouched; files that are read-only, not UTF-8, use bare carriage returns or have an unclosed fence are skipped with the reason). Links in a note's frontmatter (`related: ["[[AI/foo]]"]`) are rewritten too, since they would otherwise break. That edits the user's notes, so run it with `--dry-run` first and, unless the autonomy level is hands-off, show the list and ask. Pass every changed file to `post-route` with `--also` so the move and its link updates are one commit.
+Add `--notes` to rewrite links in every markdown note of the vault as well (the same rules: target only, keeping the link's own spacing, `./` and `.md`; fenced examples, HTML comments and inline code untouched; files that are read-only, not UTF-8, use bare carriage returns or have an unclosed fence are skipped with the reason). Links in a note's frontmatter (`related: ["[[AI/foo]]"]`) are rewritten too, since they would otherwise break. That edits the user's notes, so run it with `--dry-run` first and, unless the autonomy level is hands-off, show the list and ask. Pass every changed file to `post-route` with `--also` so they are re-indexed with the moved note.
 
 ## Graduation propagation
 
-When `graduate.sh` moves a project from `projects/<name>/` to `knowledge/<subdir>/<name>/`, every pointer-row wikilink under `[[projects/<name>/...]]` is rewritten to `[[<subdir>/<name>/...]]` by `graduate.sh` itself, in the same commit as the move.
+When a project moves from `projects/<name>/` to `knowledge/<subdir>/<name>/` (the transition workflow in `pka-bootstrap`), run this after the move:
+
+```
+.pka/bin/pka-tools pointers rename projects/<name> knowledge/<subdir>/<name> --prefix --notes
+```
+
+Both paths are relative to the workspace root. Every link under `[[projects/<name>/...]]`, in MOCs and in notes, becomes `[[<subdir>/<name>/...]]`; aliases and `#heading` anchors are kept; a second run changes nothing. Then `.pka/bin/pka-tools index` so the index follows the move.
 
 ## Checking
 

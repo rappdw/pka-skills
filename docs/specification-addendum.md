@@ -1,21 +1,19 @@
 ---
-title: pka-skills Addendum — Obsidian Coexistence & Hybrid Monorepo
+title: pka-skills Addendum — Obsidian Coexistence
 version: 1.1
 date: 2026-04-23
 status: draft — for implementation
 ---
 
-# pka-skills Addendum: Obsidian Coexistence & Hybrid Monorepo
+# pka-skills Addendum: Obsidian Coexistence
+
+> **Amended after v1.7.0.** This addendum originally specified two things: Obsidian coexistence, and a "hybrid monorepo" (a root git repository coordinating separate repositories at `knowledge/` and each `projects/<name>/` through a `.meta` manifest) with a commit/push protocol for the roles. The second was implemented in v1.6.0 and **removed** after v1.7.0: pka-skills no longer sets that layout up, and no role or tool stages, commits or pushes. The sections that specified it ("Bootstrap phase: Git/meta hybrid monorepo", "Commit/push protocol", test scenarios 12 to 22) have been deleted from this document; they are in the repository's history up to the `v1.7.0` tag. What remains is the Obsidian half, which is current. Workspaces that already have the layout are left as they are: see `CHANGELOG.md` and "Workspaces with nested repositories" in `skills/pka-bootstrap/SKILL.md`.
 
 ## Purpose
 
-Extend pka-skills along two parallel axes:
+Extend pka-skills so that it works alongside an Obsidian vault:
 
-1. **Obsidian coexistence** — roles (orchestrator, librarian, researcher, developer) produce work that plays well with an Obsidian vault when one is present, without breaking anything when it isn't. **Progressive enhancement**: a user with no Obsidian vault sees identical behavior to today; a user with an Obsidian vault at `knowledge/` gets frontmatter-rich notes, `[[wikilinks]]`, and maintained MOC (Map of Content) landing pages for free.
-
-2. **Hybrid monorepo bootstrap & git discipline** — the bootstrap skill can set up a `meta`-coordinated hybrid monorepo (root git repo, `knowledge/` child repo, per-project child repos, `.meta` manifest, LFS-configured templates), and roles follow a defined commit/push protocol as they operate so work is preserved with structured, reviewable history.
-
-These two axes are independent: either bootstrap can be run without the other. The commit/push protocol applies regardless of Obsidian state.
+**Obsidian coexistence** — roles (orchestrator, librarian, researcher, developer) produce work that plays well with an Obsidian vault when one is present, without breaking anything when it isn't. **Progressive enhancement**: a user with no Obsidian vault sees identical behavior to today; a user with an Obsidian vault at `knowledge/` gets frontmatter-rich notes, `[[wikilinks]]`, and maintained MOC (Map of Content) landing pages for free.
 
 ## Non-goals
 
@@ -23,8 +21,8 @@ These two axes are independent: either bootstrap can be run without the other. T
 - No dependency on any Obsidian plugin. Everything works with just core Obsidian; plugins (Dataview, Templater, Periodic Notes) are user-enhancement, not skill-required.
 - No change to how Claude invokes roles or to the @role syntax.
 - Do not take any automated action to enable or disable Obsidian. That's the user's choice.
-- No automatic bootstrap (either kind). Both the Obsidian mechanical retrofit and the git/meta setup are user-triggered, not detection-triggered.
-- The git bootstrap does **not** create remote repos on Gitea/GitHub, set origin URLs to user-specific orgs, or push. Anything requiring credentials or a remote-topology decision remains a user operation.
+- No automatic bootstrap. The Obsidian mechanical retrofit is user-triggered, not detection-triggered.
+- No git. Nothing is staged, committed or pushed for the user; whether the workspace is in a repository, and when to commit, is theirs.
 
 ## Retrofit strategy: eager mechanical, lazy semantic
 
@@ -44,7 +42,7 @@ A one-time, user-triggered pass that does the mechanical retrofit of an Obsidian
 **Preconditions**:
 - `obsidian_present` is true.
 - User has explicitly requested bootstrap.
-- (Recommended, not required) the vault is in a clean git state so the user can review the resulting diff before committing.
+- (Recommended, not required) if the vault is in a git repository, it is in a clean state so the user can review the resulting diff before committing.
 
 **Idempotency**: Must be safe to re-run. Re-running on an already-bootstrapped vault should detect existing state and either skip or augment, never overwrite user-authored content.
 
@@ -78,55 +76,7 @@ A one-time, user-triggered pass that does the mechanical retrofit of an Obsidian
 - N files with malformed existing frontmatter (skipped, listed by path)
 - Total files touched
 
-The user is expected to review the resulting diff in git and commit (or reject) as a single reviewable changeset.
-
-## Bootstrap phase: Git/meta hybrid monorepo
-
-A separate one-time, user-triggered bootstrap that establishes the hybrid monorepo structure: a root `.git` coordinating independent child repos at `knowledge/` and each `projects/<name>/` via a `meta` manifest (`.meta` at root). Independent from Obsidian bootstrap — either can run without the other.
-
-**Preconditions**:
-- User has explicitly requested the bootstrap (e.g., "bootstrap git" or "initialize hybrid repo").
-- The `git` and `git-lfs` binaries are available in the environment.
-- No silent auto-run on session start or on any detection signal.
-
-**Idempotency**: detects existing state and no-ops where appropriate. Safe to re-run.
-
-**What the bootstrap does**:
-
-1. **Install templates to `.pka/`** (if not present):
-   - `.pka/gitattributes-template` — LFS filters for common binary types (video: mp4, mov, avi, mkv; audio: m4a; images: png, jpg, jpeg; office: pptx, docx, xlsx, xlsm; pdf; 3D: skp, x3d).
-   - `.pka/gitignore-template` — OS noise (`.DS_Store`, `Thumbs.db`), Word/Office lock files (`~$*`), `.claude/`, `.vscode/`, `.idea/`.
-
-2. **Install `.pka/` helper scripts** (if not present): `graduate.sh`, `init_project_repos.sh`, `reinit-project-with-lfs.sh`, `push-all.sh`, `build-repo-list.sh`.
-
-3. **Root `.gitignore`**: create or augment root `.gitignore` to exclude child-repo content (`knowledge/`, `projects/`), inboxes (`owner-inbox/`, `team-inbox/`), caches and local artifacts (`.pka/knowledge.db*`, `.pka/*-log.txt`), and secrets (`.gitea-pat*`, `*.token`, `*.secret`).
-
-4. **Root `.git`**: initialize root repository if absent. Stage files. **Do not auto-commit** — print a summary and hand off to the user for review/commit. (Root repo commits require human review; see "Commit/push protocol" below.)
-
-5. **`knowledge/` child repo**: if `knowledge/.git` does not exist, initialize as a child repo, copy the gitattributes and gitignore templates, run `git lfs install --local`, and make an initial commit (`Initial commit`) in the child repo. The child-repo initial commit is mechanical and safe to auto-commit.
-
-6. **`projects/*` child repos**: for each project lacking `.git`, run the init pattern from `init_project_repos.sh`: copy templates, `git init -b main`, `git lfs install --local`, initial commit. Does NOT set `origin` remotes (remote topology is a user decision) and does NOT push.
-
-7. **`.meta` manifest**: generate `.meta` at the root listing every child repo discovered, with placeholder remote URLs (`""` or `"TBD"`) for child repos that have no origin set. Entries whose child repo has an existing `origin` are populated with that URL.
-
-**What the bootstrap does NOT do**:
-
-- Does not create repos on any remote host (Gitea, GitHub, etc.). Those require credentials and are user operations.
-- Does not set `origin` remotes. The user decides remote topology (org name, host, naming scheme).
-- Does not push.
-- Does not reinit existing child repos. If a project already has `.git` but no LFS, the bootstrap flags it in the summary and suggests `reinit-project-with-lfs.sh` as a separate, destructive operation the user opts into explicitly.
-- Does not commit the root repo. That is the user's first review gate.
-- Does not modify files inside child repos beyond the initial scaffolding.
-
-**Output**: bootstrap prints a summary:
-- N templates installed / already present
-- N scripts installed / already present
-- Root repo: initialized (uncommitted, awaiting review) / already present
-- `knowledge/`: initialized with LFS / already present
-- N projects initialized with LFS
-- N projects flagged (have `.git` but no LFS — reinit candidates, listed by path)
-- `.meta` generated with N entries
-- Root working-tree changes staged for user review (listed)
+The bootstrap commits nothing. A user who keeps the vault in git reviews the resulting diff and commits (or rejects) it as a single reviewable changeset.
 
 ## Ongoing (post-bootstrap) behavior
 
@@ -298,75 +248,9 @@ MOC filename is `_MOC.md` with underscore prefix so it sorts to the top of the f
 
 No changes. Developer operates in `projects/` which is outside the vault. Even if `obsidian_present` is true, developer continues to use plain markdown and standard code-project conventions.
 
-## Commit/push protocol
-
-Roles operate continuously across a session, touching files in multiple repos. This protocol defines when they commit and when they push. Applies whether or not Obsidian is present — it's git hygiene, not Obsidian-specific. Activates only in a workspace that has been bootstrapped as a hybrid monorepo (root `.git` + child repos). In a single-repo or no-repo workspace, roles continue their pre-protocol behavior.
-
-### Commit triggers
-
-**Child repos** (`knowledge/`, `projects/*`): **auto-commit per semantic unit** after a role completes meaningful work.
-
-- The "unit" is a coherent, reviewable change — not every file-write, but one commit per *thing accomplished*. The role decides the unit boundary.
-- Examples:
-  - Librarian routing a file into `knowledge/` → one commit after the route completes (including any MOC/frontmatter/backlink side-effects from the Obsidian behavior).
-  - Researcher finalizing a brief → one commit when the brief is saved.
-  - Obsidian bootstrap → one commit in `knowledge/` summarizing the batch.
-  - Graduation → see "Graduation commit sequence" below.
-
-**Root repo**: **no auto-commit.** Root repo changes (CLAUDE.md updates, `.meta` changes, new/updated `.pka/` scripts or templates, git bootstrap scaffolding) accumulate in the working tree. The role stages changes where obvious, lists them in the session summary, and hands off to the user for review and manual commit.
-
-Rationale: the root is the system's own configuration. Its blast radius is larger than any single child repo, changes are rarer and more consequential, and a bad auto-commit there is harder to notice and unwind. Human review.
-
-### Commit message structure
-
-Commits carry a role prefix and a short description, followed by a Claude trailer:
-
-```
-<Role>: <short description>
-
-<optional body>
-
-Co-Authored-By: Claude <noreply@anthropic.com>
-```
-
-Examples:
-- `Librarian: Route 2026-04-22-slt-meeting.md to leadership/`
-- `Researcher: Add brief on Meridian AI adoption tier research`
-- `Bootstrap (obsidian): 7 MOC stubs, 12 person indexes, 41 frontmatter additions`
-- `Bootstrap (git): Initial hybrid monorepo setup` (in `knowledge/` and each new `projects/*` initial commit; root bootstrap scaffolding is staged, not committed)
-- `Graduate: threat_actors → knowledge/reference/` (in `knowledge/`)
-
-### Push triggers
-
-**At session end**: consolidated auto-push via `meta git push` across all child repos that have unpushed commits. Runs as part of the session-end protocol.
-
-**Mid-session on user request**: if the user says "push", "push now", or similar natural phrasing, push immediately across all child repos with unpushed commits.
-
-**Root repo push**: pushed only after the user has committed it. The auto-push uses `meta git push` which operates on registered child repos; if the root is also tracked in the manifest (or by a separate command), it pushes only committed state — same gate as commit.
-
-**Never silent failures**: any push failure (auth, conflict, network, LFS upload disconnect) surfaces explicitly in the session summary with the failing repo and error. Do not hide or silently retry.
-
-### Graduation commit sequence
-
-When a project is graduated from `projects/<name>/` to `knowledge/<subdir>/` via `graduate.sh`:
-
-1. In `knowledge/` (child repo): auto-commit the new content with message `Graduate: <name> from projects/` (or `Graduate <name> from projects` to match existing script convention).
-2. In root repo: `.meta` update removing `projects/<name>` is staged, **not committed**. Flagged in session summary for user review.
-3. The old project repo on the remote (if any): graduation script prints instructions for archiving (e.g., Gitea API call). Role does not call remote APIs.
-
-### Failure behavior
-
-- **Commit failure** (merge conflict, pre-commit hook failure, unexpected working-tree state): surface to the user, pause further automatic commits in that repo, continue with other work. Do not force, amend, or retry destructively.
-- **Push failure at session end**: record in session log and summary; continue (don't block session close). User can re-invoke push next session.
-- **LFS-specific failures** (missing `git-lfs` binary, oversized object, remote-side disconnect mid-upload): surface with a remediation hint (e.g., install lfs, retry push — LFS uploads are resumable, prior objects are already on the server).
-
-### Interaction with the Obsidian bootstrap
-
-The Obsidian bootstrap produces changes inside `knowledge/` only. Under this protocol it is a single child-repo commit (`Bootstrap (obsidian): ...`), auto-committed per the child-repo rule above. The user reviews the diff in `knowledge/` before (or after) the session-end push.
-
 ## Lifecycle interactions
 
-The `graduate.sh` script (root-level) moves a project from `projects/` to `knowledge/`. Once graduated, the project *is* inside the vault (when Obsidian is present).
+The transition workflow moves a finished project from `projects/` to `knowledge/` and rewrites the links that pointed at it (`pka-tools pointers rename … --prefix --notes`). Once graduated, the project *is* inside the vault (when Obsidian is present).
 
 - Graduated project content does not automatically get frontmatter — that's a retrofit task the librarian handles if/when it routes individual files later.
 - The librarian SHOULD add the graduated project to `knowledge/_MOC.md` (or the relevant sub-MOC) as part of the graduate flow when `obsidian_present` is true.
@@ -422,31 +306,7 @@ Apply regardless of Obsidian state (these are existing good practice):
 10. **Frontmatter on existing file**: librarian routes a file that already has frontmatter. Assert: existing frontmatter preserved; missing required fields added; extra fields left alone.
 11. **Researcher brief emission**: researcher creates a new brief under vault. Assert: `type: brief` frontmatter present; `related` populated only when confidence is high; `tags` include domain tag.
 
-### Git/meta bootstrap
-
-12. **Git bootstrap, cold workspace**: fresh workspace with no `.git` anywhere, `knowledge/` folder with files but no `.git`, `projects/foo/` and `projects/bar/` with no `.git`. Run git bootstrap. Assert: `.pka/` templates and scripts installed; root `.gitignore` created; root `.git` initialized but no commit made; `knowledge/.git` and each project's `.git` initialized with LFS; `.meta` generated with entries for all three child repos; summary lists root working-tree changes staged for user review.
-
-13. **Git bootstrap, idempotent**: run git bootstrap twice in sequence. Assert: second run is a no-op; no child repo is reinitialized; `.meta` is unchanged; no files are duplicated or overwritten.
-
-14. **Git bootstrap, partial pre-existing**: workspace with root `.git` already present and `knowledge/.git` present, but `projects/newbie/` without `.git`. Run git bootstrap. Assert: root and `knowledge/` left alone; `projects/newbie/` initialized with LFS; `.meta` updated to include `projects/newbie`; summary reports what it did and didn't touch.
-
-15. **Git bootstrap, LFS-missing project flagged**: workspace with `projects/legacy/` that has `.git` but no `.gitattributes` with LFS filters. Run git bootstrap. Assert: `projects/legacy/` is NOT modified; it appears in the summary as a reinit candidate with a pointer to `reinit-project-with-lfs.sh`.
-
-16. **Git bootstrap does not create remotes or push**: run git bootstrap in a workspace with no network. Assert: completes successfully; no `origin` remotes set on child repos; no `curl` or push attempts made; `.meta` entries for new child repos have placeholder URLs.
-
-### Commit/push protocol
-
-17. **Child-repo auto-commit per unit**: librarian routes a file into `knowledge/`. Assert: exactly one commit created in `knowledge/`, message prefixed `Librarian:`, trailer includes `Co-Authored-By: Claude`. No commit in root repo.
-
-18. **Root-repo no auto-commit**: role makes a change that touches `.meta` (e.g., graduation). Assert: `.meta` is modified and staged (or at least listed for review); no commit is made in the root repo; summary flags the change for user review.
-
-19. **Session-end push**: complete a session with commits in `knowledge/` and one `projects/foo/`. At session close, assert: `meta git push` or equivalent is invoked, attempting to push both repos. If a remote isn't configured (placeholder `.meta` URL), surface that as a skipped push in the summary, not a failure.
-
-20. **Push failure surfaces, doesn't block**: simulate a push failure in one child repo (e.g., unreachable origin). Assert: failure is listed in session summary with error detail; session close proceeds; other child repos are still pushed.
-
-21. **User "push now" mid-session**: user says "push" partway through a session. Assert: push runs immediately against child repos with unpushed commits; returns a summary; session continues.
-
-22. **Graduation commit sequence**: graduate `projects/widget/` to `knowledge/reference/widget/`. Assert: commit in `knowledge/` has message `Graduate: widget → knowledge/reference/` (or equivalent); root `.meta` change is staged but not committed; graduation script prints remote-archival instructions.
+Scenarios 12 to 22 (git bootstrap, commit/push protocol) were removed with the feature.
 
 ## Open questions for the implementer
 
@@ -454,13 +314,14 @@ Apply regardless of Obsidian state (these are existing good practice):
 
 2. **MOC structure specifics**: how deep does grouping go? Recommend: start flat (bullet list per file), let users reorganize manually. Auto-grouping by date or tag is future work.
 
-3. **How does the orchestrator recognize the "bootstrap" request?** Free-form phrasing, a specific keyword, a slash-command? Implementer's call, but should be robust to natural phrasing ("let's bootstrap", "run the obsidian bootstrap", "bootstrap the vault", "bootstrap git", "initialize hybrid repo") rather than exact string matching.
+3. **How does the orchestrator recognize the "bootstrap" request?** Free-form phrasing, a specific keyword, a slash-command? Implementer's call, but should be robust to natural phrasing ("let's bootstrap", "run the obsidian bootstrap", "bootstrap the vault") rather than exact string matching.
 
-4. **Single bootstrap command or two?** "bootstrap" could take a target (`bootstrap obsidian`, `bootstrap git`, `bootstrap all`), or the two could be separate commands. Recommend a single "bootstrap" skill with a target argument; defaults to prompting the user for which to run if ambiguous.
+4. **Single bootstrap command or two?** "bootstrap" could take a target (`bootstrap obsidian`, `bootstrap upgrade`, `bootstrap all`), or these could be separate commands. Recommend a single "bootstrap" skill with a target argument; defaults to prompting the user for which to run if ambiguous.
 
 ## Design decisions (locked in)
 
-- **Commit/push protocol lives in its own shared-reference file**: `.pka/roles/_git-protocol.md`, sibling to `_obsidian.md`. Keeps `_obsidian.md` focused on Obsidian conventions; roles link to whichever shared file applies.
+- **Obsidian conventions live in one shared-reference file**: `.pka/roles/_obsidian.md`. Roles link to it rather than repeating the rules.
+- **No git** (decided after v1.7.0): the commit/push protocol and its shared reference `.pka/roles/_git-protocol.md` were removed.
 
 ## Summary of file changes expected
 
@@ -474,24 +335,10 @@ In pka-skills repo:
 - `.pka/roles/developer.md` — no change
 - New: `.pka/roles/_obsidian.md` — shared Obsidian conventions (detection predicate, frontmatter schemas, wikilink rules, MOC policy, tag conventions, filename rules, error handling). Referenced by the roles that need them to avoid repetition.
 
-### Git/meta hybrid monorepo
-
-- New: git-bootstrap logic. Location is the implementer's call — could be a dedicated role (`.pka/roles/_git-bootstrap.md`), a routine inside the orchestrator, or a standalone script invoked by the orchestrator. The spec requires only the behavior, not the structure.
-- New: template files that the git bootstrap installs to `.pka/`: `gitattributes-template`, `gitignore-template`.
-- New: helper scripts that the git bootstrap installs to `.pka/`: `graduate.sh`, `init_project_repos.sh`, `reinit-project-with-lfs.sh`, `push-all.sh`, `build-repo-list.sh`. These already exist in Dan's current workspace and can be vendored into the pka-skills repo as the installable artifacts.
-
-### Commit/push protocol
-
-- New: shared reference documenting the protocol (e.g., `.pka/roles/_git-protocol.md`) — see open question #4.
-- `.pka/roles/orchestrator.md` — add session-end push behavior (`meta git push` or equivalent), surfacing of staged-but-uncommitted root changes in the session summary, handling of user "push" command mid-session.
-- `.pka/roles/librarian.md` / `researcher.md` — add auto-commit-per-semantic-unit behavior in child repos, with structured commit messages per the spec. Do not auto-commit in the root repo.
-
 ### Bootstrap command unification
 
-- Orchestrator "bootstrap" handler should support both targets (`obsidian`, `git`) — see open question #5.
+- Orchestrator "bootstrap" handler takes a target (`obsidian`, `upgrade`, `all`) — see open question #4.
 
 ### Tests
 
 - Scenarios 1–11 for Obsidian behavior.
-- Scenarios 12–16 for git bootstrap.
-- Scenarios 17–22 for commit/push protocol.

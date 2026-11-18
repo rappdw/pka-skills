@@ -2,16 +2,17 @@
 
 Seed roles created at bootstrap. Each role is a markdown file in `.pka/roles/` with YAML frontmatter. New roles can be added post-bootstrap via the team extension workflow.
 
-## Shared-reference files
+## Shared-reference file
 
-Two shared-reference files sit alongside the role definitions in `.pka/roles/`. They document conventions multiple roles share, so each role can link to them rather than duplicating rules:
+One shared-reference file sits alongside the role definitions in `.pka/roles/`. It documents conventions several roles share, so each role links to it rather than repeating the rules:
 
 | File                          | Source seed in this skill                | When to seed                          |
 |-------------------------------|------------------------------------------|----------------------------------------|
-| `.pka/roles/_obsidian.md`     | `references/obsidian-conventions.md`     | On `bootstrap obsidian` or `bootstrap all` |
-| `.pka/roles/_git-protocol.md` | `references/git-protocol.md`             | On `bootstrap git` or `bootstrap all`      |
+| `.pka/roles/_obsidian.md`     | `references/obsidian-conventions.md`     | Base bootstrap, `bootstrap obsidian`, `bootstrap upgrade` |
 
-Both files start with an `_` so they sort to the top of `.pka/roles/` listings. They are **not roles** — they have no frontmatter `role:` field and aren't in the roster. Roles consult them when an Obsidian-specific or commit-protocol decision is needed.
+The name starts with `_` so it sorts to the top of `.pka/roles/` listings. It is **not a role** — it has no frontmatter `role:` field and is not in the roster. Roles consult it when an Obsidian-specific decision is needed.
+
+(Earlier releases also seeded `.pka/roles/_git-protocol.md` for the nested-repository layout. It is no longer seeded; `bootstrap upgrade` reports an existing copy as obsolete and removes it on `--refresh` when the user never edited it.)
 
 Seeding rules:
 - Write the file only if absent. Never overwrite — the user may have customized it.
@@ -84,19 +85,17 @@ System-level coordination. Knows where everything is via the Repo Map. Never doe
 - Cross-role coordination and task routing
 - team-inbox triage and routing
 - Transcript detection and pka-meetings handoff
-- Bootstrap dispatch (obsidian / git / all) when the user requests setup
-- Session-end consolidated push for hybrid-monorepo workspaces
+- Bootstrap dispatch (obsidian / upgrade / all) when the user requests setup
 
 ## Working Style
 Concise, status-oriented. Leads with what's new or needs attention. Asks only when genuinely ambiguous. Maintains session-log discipline.
 
 ## Session-start checks (cached for the session)
 
-In addition to the existing session-start protocol, evaluate two predicates:
+In addition to the existing session-start protocol, evaluate one predicate:
 
 ```
-obsidian_present       := directory_exists("./knowledge/.obsidian")
-hybrid_monorepo_present := file_exists("./.meta") AND directory_exists("./.git")
+obsidian_present := directory_exists("./knowledge/.obsidian")
 ```
 
 If `obsidian_present` is true, surface one greeting line:
@@ -105,9 +104,9 @@ If `obsidian_present` is true, surface one greeting line:
 
 Conventions for Obsidian-mode behavior live in `.pka/roles/_obsidian.md`. Do not duplicate them here; consult that file when an Obsidian-specific decision is needed.
 
-Conventions for the commit/push protocol live in `.pka/roles/_git-protocol.md`. Apply only when `hybrid_monorepo_present`.
+Nothing is committed or pushed for the user. Filing a note changes files in the working tree; when to commit them is the user's decision, in whatever repository they keep the workspace in.
 
-For the greeting's open threads, run `.pka/bin/pka-tools log open` (the open-threads field of the last 20 session-log entries, newest first) rather than reading the log by eye. `.pka/bin/pka-tools status` reports both predicates, the index state and whether the index needs migrating.
+For the greeting's open threads, run `.pka/bin/pka-tools log open` (the open-threads field of the last 20 session-log entries, newest first) rather than reading the log by eye. `.pka/bin/pka-tools status` reports the predicate, the index state and whether the index needs migrating.
 
 ## File references in responses
 
@@ -117,42 +116,30 @@ When `obsidian_present` is false, use `path:line` everywhere as today.
 
 ## Bootstrap dispatch
 
-If the user invokes a "bootstrap" request — natural phrasings include "let's bootstrap the vault", "bootstrap obsidian", "initialize the hybrid repo", "bootstrap git", "bootstrap everything", "bootstrap all" — resolve the target:
+If the user invokes a "bootstrap" request — natural phrasings include "let's bootstrap the vault", "bootstrap obsidian", "bootstrap everything", "bootstrap all" — resolve the target:
 
 | User phrasing contains                                       | Target     |
 |--------------------------------------------------------------|------------|
 | "obsidian", "vault", "moc", "frontmatter"                    | `obsidian` |
-| "git", "hybrid repo", "monorepo", "meta", "lfs"              | `git`      |
-| "all", "everything", or both Obsidian and git words appear   | `all`      |
+| "all", "everything"                                          | `all`      |
 | "upgrade", "upgrade roles", "update my pka"                  | `upgrade`  |
 
 If the target is still ambiguous after this, ask:
 
-> "Which bootstrap should I run? Options: `obsidian` (vault retrofit), `git` (hybrid monorepo), `all` (both), `upgrade` (refresh role files and helpers in an already-bootstrapped workspace)."
+> "Which bootstrap should I run? Options: `obsidian` (vault retrofit), `upgrade` (refresh role files and helpers in an already-bootstrapped workspace), `all` (both)."
+
+A request to "bootstrap git", set up a "hybrid repo" or a "meta monorepo" names a layout that was removed: say so, and that a workspace is kept in one ordinary repository (or none) that the user commits themselves.
 
 Then hand off to the relevant procedure in the pka-bootstrap skill. All bootstraps are idempotent and user-triggered. Never run on detection alone.
-
-## Session-end protocol (extended)
-
-In addition to the existing session log entry:
-
-1. If `hybrid_monorepo_present`, run a consolidated push across child repos with unpushed commits. Implementation: `meta git push` if `meta` is on PATH; otherwise iterate `.meta` entries and run `git push` in each child directory (helper: `.pka/push-all.sh`).
-2. If any child repo's push fails (auth, network, conflict, LFS upload disconnect): record the failure in the session summary with the repo path and error. Do not retry destructively. Session close still proceeds.
-3. **Surface, do not commit, root-repo changes.** If `git status` in the root shows staged or unstaged changes, list them in the session summary and tell the user they're awaiting human review. Never auto-commit root.
-4. Skipped pushes (the child repo has no `origin` remote, or there is nothing to push) are reported as **skipped**, not failures.
-
-## Mid-session push handling
-
-If the user says "push", "push now", "push the changes", or similar, run the same consolidated push immediately and report a summary. Session continues.
 
 ## Output Conventions
 - Session log entries: `## YYYY-MM-DD HH:MM | orchestrator | summary | open threads | next action`, written with `.pka/bin/pka-tools log add --role orchestrator --summary … [--open …] [--next …]`
 - Greetings: open threads + inbox items + lifecycle flags + (if `obsidian_present`) the vault-detected line
 - Never creates content — delegates to @researcher, @librarian, or specialized roles
-- Never auto-commits root repo. Root changes are staged at most and surfaced in the session summary.
+- Never commits, stages or pushes. Changes are left in the working tree and named in the session summary.
 
 ## Invocation
-The orchestrator is always active. It handles session start, session end, Repo Map updates, project lifecycle commands, bootstrap dispatch, push coordination, and anything that requires cross-role coordination.
+The orchestrator is always active. It handles session start, session end, Repo Map updates, project lifecycle commands, bootstrap dispatch, and anything that requires cross-role coordination.
 ```
 
 ---
@@ -209,23 +196,11 @@ When `obsidian_present` is false, briefs are produced without frontmatter — cu
 
 Full conventions (frontmatter rules, wikilink rules, malformed-frontmatter handling) are in `.pka/roles/_obsidian.md`. Consult that file when an Obsidian-specific decision is needed; do not duplicate the rules here.
 
-## Commit/push protocol (gated on `hybrid_monorepo_present`)
+## Filing a brief
 
-When the orchestrator's session-start detection reports `hybrid_monorepo_present` true:
+After saving a brief inside the workspace's knowledge folders (`knowledge/` or a `projects/<name>/` folder), run `.pka/bin/pka-tools post-route <brief>`. It adds the frontmatter and MOC link (Obsidian vaults), the pointer row and any person-timeline line, and indexes the brief. If the brief changed other notes in the vault (a related-list update, a moved file's old location), name them with `--also <path>` so they are re-indexed with it.
 
-- After saving a brief inside a child repo (`knowledge/` or any `projects/<name>/`), run `.pka/bin/pka-tools post-route <brief> --role Researcher -m "Researcher: <short description of brief>"`. It adds the frontmatter, MOC link and pointer row, indexes the brief, and commits all of it as one unit in **the destination child repo** with the trailer:
-  ```
-  Researcher: <short description of brief>
-
-  Co-Authored-By: Claude <noreply@anthropic.com>
-  ```
-- One commit per brief. If a brief includes other side-effect updates to the same vault (related-list updates in other notes), name them with `--also <path>` so they ride in the same commit.
-- Never auto-commit in the **root repo**. If saving a brief touches root files (rare — typically only when adding a new domain to the Repo Map), stage those changes and surface them in the session summary for user review.
-- Briefs saved to `owner-inbox/` (root-tracked) are not committed by the role; they're delivered for review and the user decides when (or whether) to commit.
-
-Full protocol in `.pka/roles/_git-protocol.md`.
-
-When `hybrid_monorepo_present` is false: no auto-commit; current behavior.
+Nothing is committed: the brief and the files `post-route` changed are left in the working tree for the user. Briefs saved to `owner-inbox/` are delivered for review and are not filed with `post-route`.
 
 ## Output Conventions
 - Saves one-shot briefs to: `owner-inbox/` (default) or — when working inside the vault — to the relevant `knowledge/` topic folder.
@@ -280,7 +255,7 @@ When routing a file **into `knowledge/`** with `obsidian_present` true:
    - Preserve spaces where they exist — Obsidian handles them and existing content uses them.
    - Do not rename existing files unless explicitly asked.
 
-2. **Frontmatter and MOC update** — run `.pka/bin/pka-tools post-route <routed file>` once the file is in place. It adds the schema fields from `.pka/roles/_obsidian.md` that are missing (filename-derived values only: date, person, topic from the filename, domain tag from the folder), adds a `- [[file]]` bullet to the folder's `_MOC.md` (creating a stub if there is none), and then does the pointer row, index and commit steps below. Existing frontmatter lines and MOC entries are never changed or reordered. Files it cannot edit safely (malformed frontmatter, read-only, unusual line endings) are skipped and named in its output: put them in the routing report. Body-derived fields (attendees, a topic beyond the filename, related notes) are yours to fill, and only when confidence is high — empty is better than wrong.
+2. **Frontmatter and MOC update** — run `.pka/bin/pka-tools post-route <routed file>` once the file is in place. It adds the schema fields from `.pka/roles/_obsidian.md` that are missing (filename-derived values only: date, person, topic from the filename, domain tag from the folder), adds a `- [[file]]` bullet to the folder's `_MOC.md` (creating a stub if there is none), and then does the pointer row, timeline and index steps below. Existing frontmatter lines and MOC entries are never changed or reordered. Files it cannot edit safely (malformed frontmatter, read-only, unusual line endings) are skipped and named in its output: put them in the routing report. Body-derived fields (attendees, a topic beyond the filename, related notes) are yours to fill, and only when confidence is high — empty is better than wrong.
 
 3. **A different MOC section** — the bullet goes at the end of `## Files` (or a `## Unsorted` section). When the user keeps thematic sections and the right one is clear, pass `--section "<heading>"`.
 
@@ -288,27 +263,9 @@ When routing a file **into `knowledge/`** with `obsidian_present` true:
 
 5. **Wikilinks vs plain links** — cross-references inside the vault use `[[wikilinks]]`; references to files outside the vault use plain markdown. See `.pka/roles/_obsidian.md` for the full rule.
 
-When `obsidian_present` is false: no frontmatter and no MOC bullet. `post-route` still runs the person timeline (with relative markdown links), the pointer row (into existing MOCs only), the index and the commit.
+When `obsidian_present` is false: no frontmatter and no MOC bullet. `post-route` still runs the person timeline (with relative markdown links), the pointer row (into existing MOCs only) and the index.
 
 Full conventions in `.pka/roles/_obsidian.md`. Consult that file when an Obsidian-specific decision is needed; do not duplicate the rules here.
-
-## Commit/push protocol (gated on `hybrid_monorepo_present`)
-
-When the orchestrator's session-start detection reports `hybrid_monorepo_present` true:
-
-- After completing a routing operation that lands in `knowledge/` or any `projects/<name>/`, auto-commit that semantic unit in **the destination child repo**. `.pka/bin/pka-tools post-route <file>` makes this commit as its last step, by path, with the message:
-  ```
-  Librarian: Route <filename> to <destination-folder>/
-
-  Co-Authored-By: Claude <noreply@anthropic.com>
-  ```
-- One commit per routing unit. Side-effects of the route (MOC update, frontmatter, person-index backlink, **pointer-row maintenance**) belong to the same semantic unit and ride along in the same commit.
-- Never auto-commit in the **root repo**. If routing produces root-tracked side effects (e.g., updates to `CLAUDE.md`'s Repo Map when a new domain folder is added), stage those changes and surface them in the routing report for user review.
-- A bulk re-routing pass should produce **one commit per logical unit**, not one giant commit — this preserves reviewability and enables targeted reverts.
-
-Full protocol in `.pka/roles/_git-protocol.md`.
-
-When `hybrid_monorepo_present` is false: no auto-commit; current behavior.
 
 ## Pointer-row maintenance (gated only on routing into a domain — NOT on `obsidian_present`)
 
@@ -333,7 +290,7 @@ Full conventions in `.pka/roles/_obsidian.md` (Pointer Layer section); the full 
 
 ## Rename / graduate propagation
 
-When a file is renamed or moved by the librarian, every Pointers-row wikilink to its old path is updated to the new path across **all** `_MOC.md` files in the vault: `.pka/bin/pka-tools pointers rename <old> <new>` (add `--prefix` for a folder), then `post-route <new path> --also <old path>` so the move and the link updates are one commit. When a project is graduated from `projects/<name>/` into `knowledge/<subdir>/<name>/`, `graduate.sh` rewrites Pointers wikilinks for every file in that project. Both operations are idempotent and append-only at the row level.
+When a file is renamed or moved by the librarian, every Pointers-row wikilink to its old path is updated to the new path across **all** `_MOC.md` files in the vault: `.pka/bin/pka-tools pointers rename <old> <new>` (add `--prefix` for a folder, and `--notes` to rewrite links in every note as well), then `post-route <new path> --also <old path>` so the index drops the old location. When a project is graduated from `projects/<name>/` into `knowledge/<subdir>/<name>/`, move the folder and run `.pka/bin/pka-tools pointers rename projects/<name> knowledge/<subdir>/<name> --prefix --notes`, then `.pka/bin/pka-tools index`. Both operations are idempotent and append-only at the row level. Nothing is committed; the move and the rewritten links are left for the user to review.
 
 ## Output Conventions
 - Saves reports to: `owner-inbox/`

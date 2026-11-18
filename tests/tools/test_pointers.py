@@ -324,6 +324,29 @@ class RenameAndCheck(Blank):
                          "See [[northwind/new_name|the meeting]] and `[[northwind/old_name]]`.\n")
         self.assertEqual(self.json("pointers", "rename", "northwind/old_name", "northwind/new_name", "--notes")["rewrites"], 0)
 
+    def test_a_project_moved_into_the_vault_keeps_its_links(self):
+        """The transition workflow: move the folder, then one `rename
+        --prefix --notes` with workspace-relative paths."""
+        self.write("projects/orion/plan.md", "plan\n")
+        self.write("projects/orion/notes/kickoff.md", "kickoff\n")
+        self.write("knowledge/planning/_MOC.md", "## Files\n- [[projects/orion/plan]]\n\n## Pointers\n\n"
+                   "| Topic | Entities | Files |\n|---|---|---|\n"
+                   "| orion-plan | priya | [[projects/orion/plan]], [[projects/orion/notes/kickoff|Kickoff]] |\n")
+        self.write("knowledge/planning/review.md", "See [[projects/orion/notes/kickoff#Decisions]].\n")
+        import os
+        os.makedirs(str(self.path("knowledge/archive")))
+        os.rename(str(self.path("projects/orion")), str(self.path("knowledge/archive/orion")))
+        result = self.json("pointers", "rename", "projects/orion", "knowledge/archive/orion", "--prefix", "--notes")
+        self.assertEqual(result["rewrites"], 4)
+        self.assertEqual(result["changed"], ["knowledge/planning/_MOC.md", "knowledge/planning/review.md"])
+        self.assertEqual(self.text("knowledge/planning/_MOC.md"),
+                         "## Files\n- [[archive/orion/plan]]\n\n## Pointers\n\n"
+                         "| Topic | Entities | Files |\n|---|---|---|\n"
+                         "| orion-plan | priya | [[archive/orion/plan]], [[archive/orion/notes/kickoff|Kickoff]] |\n")
+        self.assertEqual(self.text("knowledge/planning/review.md"), "See [[archive/orion/notes/kickoff#Decisions]].\n")
+        again = self.json("pointers", "rename", "projects/orion", "knowledge/archive/orion", "--prefix", "--notes")
+        self.assertEqual(again["rewrites"], 0)
+
     def test_rename_dry_run(self):
         before = self.snapshot()
         self.assertEqual(self.json("pointers", "rename", "northwind/old_name", "x/y", "--dry-run")["rewrites"], 5)

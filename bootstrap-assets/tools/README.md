@@ -1,9 +1,10 @@
 # pka-tools
 
-The deterministic half of pka-skills. The skills decide what a note is about and where it belongs; `pka-tools` makes the edit. It exists because path arithmetic, table edits, SQL and commit mechanics were previously written as prose for a model to re-derive each session, and the tests ran against reference code that never shipped.
+The deterministic half of pka-skills. The skills decide what a note is about and where it belongs; `pka-tools` makes the edit. It exists because path arithmetic, table edits and SQL were previously written as prose for a model to re-derive each session, and the tests ran against reference code that never shipped.
 
 - Python 3.9 or newer, standard library only. Nothing to install.
 - No network calls.
+- No git. Nothing is staged, committed or pushed; a command's changes are left in the working tree.
 - Vendored into a workspace at `.pka/bin/pka-tools` by `pka-tools install` (see [`../README.md`](../README.md)). Roles run the workspace's copy.
 
 ```
@@ -16,8 +17,8 @@ The workspace is `--workspace`, else `$WORKSPACE_ROOT`, else the nearest folder 
 
 | Command | What it does | Writes |
 |---|---|---|
-| `status` | Workspace root, vault, Obsidian and hybrid-monorepo predicates, storage mode and schema version, index roots, meeting and people folders | nothing |
-| `install [--git] [--dry-run]` | Vendor the plugin's helpers into `.pka/` by manifest. Run from the plugin's copy | `.pka/bin/`, `.pka/manifest.json`, helper scripts |
+| `status` | Workspace root, vault, the Obsidian predicate, storage mode and schema version, index roots, meeting and people folders | nothing |
+| `install [--dry-run]` | Vendor the plugin's helpers into `.pka/` by manifest. Run from the plugin's copy | `.pka/bin/`, `.pka/upgrade-roles.py`, `.pka/manifest.json` |
 | `db init` | Create `.pka/knowledge.db` at the current schema | the database |
 | `db migrate` | Print the migration plan. Changes nothing | nothing |
 | `db migrate --apply` | Back up, migrate in one transaction, verify, roll back on failure | the database, `.pka/db-backups/` |
@@ -26,16 +27,14 @@ The workspace is `--workspace`, else `$WORKSPACE_ROOT`, else the nearest folder 
 | `index [PATH…] [--rebuild] [--prune] [--dry-run]` | Index new and changed files, drop rows for removed ones | the database |
 | `search TERM… [--limit N] [--any]` | Full-text search with quoted terms and the pointer-row boost | nothing |
 | `actions [--since D] [--until D] [--all-dates] [--scope meetings\|all] [--under F]` | Open checkboxes in dated notes | nothing |
-| `commit -m SUBJECT [--body T] -- PATH…` | Commit exactly those paths in their child repo, with the trailer | a git commit |
-| `commit --stage-only PATH…` | `git add` the paths and stop (for root-repo side effects) | the git index |
-| `post-route FILE [--role R] [-m SUBJECT] [--topic S] [--section H] [--also P]… [--no-commit] [--dry-run]` | Everything after filing a note: frontmatter and MOC link (Obsidian), pointer row, index, one commit | the note, `_MOC.md` files, the database, a git commit |
+| `post-route FILE [--topic S] [--section H] [--also P]… [--dry-run]` | Everything after filing a note: frontmatter and MOC link (Obsidian), pointer row, timeline, index | the note, `_MOC.md` files, person `index.md` files, the database |
 | `moc add-link FILE [--section H]` | Add a `- [[note]]` bullet to the nearest `_MOC.md` | one `_MOC.md` |
 | `pointers add FILE [--topic S] [--entities A,B] [--context T] [--moc M] [--dry-run]` | Record a routed file in its domain MOC's Pointers table | `_MOC.md` files |
 | `pointers init [FOLDER…]` | Opt in to the pointer layer without Obsidian: a `_MOC.md` with an empty Pointers table per folder | new `_MOC.md` files |
 | `pointers rename OLD NEW [--prefix] [--notes] [--dry-run]` | Rewrite links after a file or folder moved (MOCs; with `--notes`, every note) | `_MOC.md` files, notes |
 | `pointers check [--strict]` | Broken pointer links, unreadable tables, rows over the soft cap | nothing |
 | `pointers list [MOC]` | Pointer rows as data | nothing |
-| `obsidian bootstrap [--dry-run] [--commit]` | The one-time mechanical retrofit of `knowledge/` | MOC and index stubs, frontmatter |
+| `obsidian bootstrap [--dry-run]` | The one-time mechanical retrofit of `knowledge/` | MOC and index stubs, frontmatter |
 | `people list` | Every person folder, with name and aliases | nothing |
 | `people resolve NAME…` | Which person a name, link or slug means: high, ambiguous or none | nothing |
 | `people alias SLUG ALIAS` | Record a name the user says means this person | the person's `index.md` |
@@ -48,6 +47,19 @@ The workspace is `--workspace`, else `$WORKSPACE_ROOT`, else the nearest folder 
 | `log add --role R --summary S [--open T] [--next N]` | Append one well-formed session-log entry | `.pka/session-log.md` |
 | `log open [--last N]` | Open threads of recent entries, newest first | nothing |
 | `log check [--strict]` | Entries that do not follow the grammar | nothing |
+
+### Deprecated, accepted and ignored
+
+`pka-tools` used to commit what it filed into the nested repositories of a "hybrid monorepo". That support was removed. Role files written for earlier releases still name the commands and flags below, so they are accepted for now and do nothing. Do not use them in new text; a later release may reject them.
+
+| Still accepted | What it does now |
+|---|---|
+| `commit [-m S] [--body T] [--stage-only] [PATH…]` | Nothing. Exits 0 and says pka-tools no longer commits. Never runs git |
+| `post-route … --role R`, `-m SUBJECT`, `--body T`, `--no-commit` | Ignored. `post-route` commits nothing either way |
+| `obsidian bootstrap --commit` | Ignored. The summary says nothing was committed |
+| `install --git` | Ignored. The nested-repository scripts are no longer shipped |
+
+In a workspace whose root still has a `.meta` file, `post-route` adds a note to its result (`notes` in JSON, a `Note:` line in text) saying the note was not committed, because routes there used to end in a commit.
 
 `pointers add`, `moc add-link` and `post-route` also take `--create-moc` / `--no-create-moc`. By default a missing `_MOC.md` is created only in an Obsidian vault: without Obsidian the pointer layer and MOC links are opt-in (`pointers init`).
 
@@ -62,21 +74,18 @@ The one command a skill runs after it has put a note in place. Its steps, each r
 | `pointers` | a pointer row in the domain MOC(s) | note inside the vault; without Obsidian only into existing MOCs |
 | `timeline` | a line on the timeline of each person the note belongs to (`--summary`, `--summary-for`, `--person`, `--include-large`, `--no-timeline`) | note inside the vault and a people folder exists; with or without Obsidian |
 | `index` | the note, every MOC changed above, and every `--also` path | index mode |
-| `commit` | the note, every file changed above, every MOC that already links to the note, and every `--also` path, by path, with the trailer | hybrid monorepo, and not `--no-commit` |
 
-Arguments are checked before anything is written: a bad `--section`, `--topic` or `--also` exits 64 with every file as it was. An `--also` path must be a file, in the same repository as the note, and either exist or be known to git; one that git already has as removed (the old location of a note that was moved and committed) is noted and left out of the commit, so re-running after a move is a no-op.
+Arguments are checked before anything is written: a bad `--section` or `--topic`, or an `--also` that names a folder, exits 64 with every file as it was. An `--also` path that no longer exists is fine: naming the old location of a moved note is how its rows leave the index.
 
-The commit includes the MOCs the note is recorded in even when this run did not change them, so a change left uncommitted by an earlier run (a refused commit, `--no-commit`) is committed with the note. If the user had their own uncommitted edits in one of those MOCs, they go into the same commit.
-
-A step that cannot do its work reports why and the later steps still run. The exit code is 1 only when git refused the commit. Running it twice changes nothing and makes no second commit. It refuses MOCs, files under `.pka/`, and anything inside an earshot capture directory.
+A step that cannot do its work reports why and the later steps still run. Running it twice changes nothing. It refuses MOCs, files under `.pka/`, and anything inside an earshot capture directory. Nothing is committed: `touched` in the result lists the files it changed, for the caller to report.
 
 ## Exit codes
 
 | Code | Meaning |
 |---|---|
-| 0 | Done, including "nothing to do" and "nothing to commit" |
-| 1 | The operation was attempted and failed (a commit was refused, a migration rolled back) |
-| 2 | A prerequisite is missing: Python older than 3.9, no `git`, SQLite without FTS5 |
+| 0 | Done, including "nothing to do" |
+| 1 | The operation was attempted and failed (a migration rolled back) |
+| 2 | A prerequisite is missing: Python older than 3.9, SQLite without FTS5 |
 | 3 | The workspace is not ready: no `.pka/`, no index, index needs `db migrate`, no Obsidian vault |
 | 64 | Bad arguments. Nothing was touched |
 
@@ -106,12 +115,7 @@ Every command that writes to a user's file follows these. The tests in `tests/to
 
 ## Git rules
 
-- `commit` stages and commits by path: `git add -- <paths>`, `git commit -- <paths>`. Never `-A`. The user's other modified, staged and untracked files are left as they were.
-- A path is a path. `*`, `?`, `[` and git's `:(magic)` prefixes are taken literally, a folder is refused (it would sweep in everything under it), and a path that neither exists nor is tracked is a usage error.
-- `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE` and the other variables that redirect git are removed from the environment, so a commit made from inside a hook of the root repository still lands in the child repository.
-- Only child repositories (inside the workspace root) are committed. The root repository is the user's review gate; `--stage-only` is the most it gets.
-- The trailer `Co-Authored-By: Claude <noreply@anthropic.com>` is always added.
-- A failed commit exits 1 and leaves the files staged. Nothing is reset, retried or forced. There is no push.
+There is one: `pka-tools` does not run git. No command stages, commits, resets or pushes, in any repository, and the package has no code that invokes `git`. A workspace may be a repository, contain repositories, or be neither; the tool only edits files. `tests/tools/test_install.py` fails if the package gains a `subprocess` import.
 
 ## Database rules
 
@@ -136,7 +140,6 @@ tools/
     ├── indexer.py         index
     ├── search.py          search
     ├── actions.py         actions
-    ├── gitops.py          commit
     ├── pointers.py        pointers add / init / rename / check / list
     ├── mocs.py            moc add-link
     ├── postroute.py       post-route

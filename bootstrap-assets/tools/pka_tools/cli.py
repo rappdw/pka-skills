@@ -22,7 +22,7 @@ from typing import List, Optional
 from . import __version__
 from . import actions as actions_mod
 from . import db as db_mod
-from . import gitops, indexer, install as install_mod, mocs, obsidian, people as people_mod, pointers, postroute
+from . import indexer, install as install_mod, mocs, obsidian, people as people_mod, pointers, postroute
 from . import search as search_mod, sessionlog, timeline as timeline_mod
 from .errors import EXIT_FAIL, EXIT_OK, EXIT_USAGE, ToolError
 from .workspace import Workspace, find_root
@@ -79,7 +79,6 @@ def cmd_status(args: argparse.Namespace) -> int:
         "vendored_files": vendored,
         "vault": ws.rel(ws.vault) or ".",
         "obsidian_present": ws.obsidian_present,
-        "hybrid_monorepo_present": ws.hybrid_monorepo_present,
         "storage_mode": "index" if schema is not None else "markdown-only",
         "schema_version": schema,
         "schema_current": schema == db_mod.SCHEMA_VERSION if schema is not None else None,
@@ -93,7 +92,6 @@ def cmd_status(args: argparse.Namespace) -> int:
         "pka-tools:        %s (vendored: %s)" % (__version__, manifest_version or "no manifest"),
         "Vault:            %s" % data["vault"],
         "Obsidian:         %s" % ("present" if data["obsidian_present"] else "not present"),
-        "Hybrid monorepo:  %s" % ("present" if data["hybrid_monorepo_present"] else "not present"),
         "Storage:          %s" % (
             "markdown-only (no index)" if schema is None
             else "index, schema version %d%s" % (schema, "" if data["schema_current"] else " (needs `db migrate`)")
@@ -108,9 +106,11 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 def cmd_install(args: argparse.Namespace) -> int:
     root = find_root_for_install(args.workspace)
-    report = install_mod.install(root, assets=args.assets, with_git=args.git, dry_run=args.dry_run)
-    text = ["pka-tools install%s — plugin version %s, components: %s" % (
-        " (dry run)" if args.dry_run else "", report["plugin_version"], ", ".join(report["components"]))]
+    report = install_mod.install(root, assets=args.assets, dry_run=args.dry_run)
+    text = ["pka-tools install%s — plugin version %s" % (
+        " (dry run)" if args.dry_run else "", report["plugin_version"])]
+    if args.git:
+        text.append("  --git is deprecated and ignored: the nested-repository scripts are no longer shipped.")
     text += [
         "  installed: %d   updated: %d   current: %d   kept: %d   conflicts: %d" % (
             len(report["installed"]), len(report["updated"]), len(report["current"]),
@@ -125,6 +125,9 @@ def cmd_install(args: argparse.Namespace) -> int:
             report["conflicts"])
     text += _listed("No longer shipped, moved to the backup folder", report["obsolete_moved"])
     text += _listed("No longer shipped, edited locally, left in place", report["obsolete_kept"])
+    text += _listed(
+        "From the removed nested-repository support, not recorded in the manifest, left in place (yours to keep or delete)",
+        report["retired_unmanaged"])
     if report["backups"]:
         text.append("Previous copies saved under: %s" % report["backups"])
     _emit(args, report, text)
@@ -252,20 +255,17 @@ def cmd_actions(args: argparse.Namespace) -> int:
 
 
 def cmd_commit(args: argparse.Namespace) -> int:
-    ws = _workspace(args)
-    result = gitops.commit(ws, args.message or "", args.paths, body=args.body or "", stage_only=args.stage_only)
-    if result["committed"]:
-        text = ["Committed %s in %s: %s" % ((result["sha"] or "")[:10], result["repo"], args.message)]
-    else:
-        reasons = {
-            "no-repo": "Not committed: the paths are not inside a git repository.",
-            "root-repo": "Not committed: %s is not a child repository. The workspace root is never "
-                         "committed automatically (use --stage-only to stage for review)." % result["repo"],
-            "no-changes": "Nothing to commit: the paths have no changes.",
-            "staged": "Staged in %s for review (not committed)." % result["repo"],
-        }
-        text = [reasons.get(result["reason"], "Not committed.")]
-    _emit(args, result, text)
+    """Deprecated stub. Role files written for earlier releases still call
+    `pka-tools commit`; it must not fail them, and it must not touch git."""
+    result = {
+        "committed": False, "reason": "removed", "deprecated": True,
+        "paths": list(args.paths),
+        "message": "pka-tools no longer commits. Nothing was staged or committed; commit the changes yourself.",
+    }
+    _emit(args, result, [
+        "Not committed: pka-tools no longer commits (`commit` is deprecated and does nothing).",
+        "Nothing was staged or committed; commit the changes yourself.",
+    ])
     return EXIT_OK
 
 
@@ -364,9 +364,9 @@ def cmd_post_route(args: argparse.Namespace) -> int:
     ws = _workspace(args)
     entities = [item.strip() for item in (args.entities or "").split(",") if item.strip()]
     result = postroute.run(
-        ws, args.file, role=args.role, message=args.message, body=args.body or "",
+        ws, args.file,
         topic=args.topic or "", entities=entities, context=args.context or "", section=args.section,
-        also=args.also, do_commit=not args.no_commit, create_mocs=args.create_moc, dry_run=args.dry_run,
+        also=args.also, create_mocs=args.create_moc, dry_run=args.dry_run,
         do_timeline=not args.no_timeline, timeline_people=args.person, summary=args.summary or "",
         summary_for=_summary_for(args.summary_for), include_large=args.include_large,
     )
@@ -378,8 +378,9 @@ def cmd_post_route(args: argparse.Namespace) -> int:
             text.append("               over the 8-file soft cap: %s" % item)
     if result["touched"]:
         text.append("Files changed besides the note: %s" % (", ".join(p for p in result["touched"] if p != result["file"]) or "none"))
+    text += ["Note: %s" % note for note in result["notes"]]
     _emit(args, result, text)
-    return EXIT_FAIL if result["failed"] else EXIT_OK
+    return EXIT_OK
 
 
 def cmd_people(args: argparse.Namespace) -> int:
@@ -513,7 +514,7 @@ def cmd_log(args: argparse.Namespace) -> int:
 
 def cmd_obsidian(args: argparse.Namespace) -> int:
     ws = _workspace(args)
-    summary = obsidian.bootstrap(ws, dry_run=args.dry_run, do_commit=args.commit)
+    summary = obsidian.bootstrap(ws, dry_run=args.dry_run)
     text = [
         "Obsidian bootstrap summary%s" % (" (dry run)" if args.dry_run else ""),
         "------------------------------",
@@ -530,14 +531,9 @@ def cmd_obsidian(args: argparse.Namespace) -> int:
         text.append("Files SKIPPED (malformed or unsupported frontmatter, left untouched): %d" % len(summary["skipped"]))
         text += ["  - %s" % item for item in summary["skipped"]]
     text += _listed("Notes", summary["warnings"])
-    commit = summary["commit"]
-    if commit is None:
-        if summary["touched"] and not args.dry_run:
-            text.append("No commit made (run with --commit inside a hybrid monorepo, or review the diff yourself).")
-    elif commit["committed"]:
-        text.append("Commit: %s in %s" % ((commit["sha"] or "")[:10], commit["repo"]))
-    else:
-        text.append("No commit (%s)." % commit["reason"])
+    if summary["touched"] and not args.dry_run:
+        text.append("Nothing was committed: review the changes and commit them yourself."
+                    + (" (--commit is deprecated and ignored.)" if args.commit else ""))
     _emit(args, summary, text)
     return EXIT_OK
 
@@ -571,7 +567,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("install", parents=[common],
                        help="vendor the plugin's helpers into .pka/ (run from the plugin's copy)")
-    p.add_argument("--git", action="store_true", help="also install the hybrid-monorepo scripts and templates")
+    p.add_argument("--git", action="store_true", help="deprecated, ignored (the nested-repository scripts are no longer shipped)")
     p.add_argument("--assets", metavar="DIR", help="the plugin's bootstrap-assets/ folder (default: located automatically)")
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(func=cmd_install)
@@ -612,11 +608,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--under", action="append", metavar="FOLDER", help="scan this folder instead (repeatable)")
     p.set_defaults(func=cmd_actions)
 
-    p = sub.add_parser("commit", parents=[common], help="commit exactly the named paths in their child repo")
-    p.add_argument("-m", "--message", metavar="SUBJECT", help="one-line commit subject")
-    p.add_argument("--body", metavar="TEXT", help="optional commit body")
-    p.add_argument("--stage-only", action="store_true", help="git add the paths and stop (for root-repo changes)")
-    p.add_argument("paths", nargs="+", metavar="PATH")
+    p = sub.add_parser("commit", parents=[common],
+                       help="deprecated: does nothing (pka-tools no longer commits)")
+    p.add_argument("-m", "--message", metavar="SUBJECT", help="ignored")
+    p.add_argument("--body", metavar="TEXT", help="ignored")
+    p.add_argument("--stage-only", action="store_true", help="ignored")
+    p.add_argument("paths", nargs="*", metavar="PATH")
     p.set_defaults(func=cmd_commit)
 
     p = sub.add_parser("pointers", help="maintain the pointer tables in _MOC.md files")
@@ -662,18 +659,19 @@ def build_parser() -> argparse.ArgumentParser:
     q.set_defaults(func=cmd_moc)
 
     p = sub.add_parser("post-route", parents=[common],
-                       help="after filing a note: frontmatter, MOC link, pointer row, index, commit")
+                       help="after filing a note: frontmatter, MOC link, pointer row, timeline, index")
     p.add_argument("file", metavar="FILE")
-    p.add_argument("--role", default="Librarian", help="commit message prefix (default: Librarian)")
-    p.add_argument("-m", "--message", metavar="SUBJECT", help="commit subject (default: <Role>: Route <file> to <folder>/)")
-    p.add_argument("--body", metavar="TEXT", help="optional commit body")
+    p.add_argument("--role", default="Librarian", help="deprecated, ignored (was the commit message prefix)")
+    p.add_argument("-m", "--message", metavar="SUBJECT", help="deprecated, ignored (was the commit subject)")
+    p.add_argument("--body", metavar="TEXT", help="deprecated, ignored (was the commit body)")
     p.add_argument("--topic", help="pointer cluster (as for `pointers add`)")
     p.add_argument("--entities", metavar="A,B")
     p.add_argument("--context", help="the routing directive, if any")
     p.add_argument("--section", metavar="HEADING", help="MOC section for the link (as for `moc add-link`)")
     p.add_argument("--also", action="append", metavar="PATH",
-                   help="another path that belongs in the same commit, e.g. the note's old location (repeatable)")
-    p.add_argument("--no-commit", action="store_true", help="do every step except the commit")
+                   help="another path to re-index with the note, e.g. the note's old location, "
+                        "so its rows are dropped (repeatable)")
+    p.add_argument("--no-commit", action="store_true", help="deprecated, ignored (nothing is committed)")
     p.add_argument("--no-timeline", action="store_true", help="do not add the note to anyone's timeline")
     p.add_argument("--person", action="append", metavar="SLUG",
                    help="put the note on this person's timeline instead of working it out (repeatable)")
@@ -757,7 +755,7 @@ def build_parser() -> argparse.ArgumentParser:
     osub.required = True
     q = osub.add_parser("bootstrap", parents=[common], help="the one-time mechanical retrofit of knowledge/")
     q.add_argument("--dry-run", action="store_true")
-    q.add_argument("--commit", action="store_true", help="commit the touched files in knowledge/, by path")
+    q.add_argument("--commit", action="store_true", help="deprecated, ignored (nothing is committed)")
     q.set_defaults(func=cmd_obsidian)
     return parser
 

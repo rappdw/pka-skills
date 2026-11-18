@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run all shell-based tests for the pka-skills addendum.
+# Run all the test suites.
 #
 # Each individual test script exits 0 when its tests pass, non-zero on failure.
 # This runner aggregates and prints a final summary.
@@ -35,12 +35,9 @@ git_config_fingerprint() {
 }
 GIT_CONFIG_BEFORE=$(git_config_fingerprint)
 
-run_suite "git-bootstrap"      "$THIS_DIR/test_git_bootstrap.sh"
 run_suite "obsidian-bootstrap" "$THIS_DIR/test_obsidian_bootstrap.sh"
-run_suite "commit-protocol"    "$THIS_DIR/test_commit_protocol.sh"
 run_suite "upgrade"            "$THIS_DIR/test_upgrade.sh"
 run_suite "pointer-layer"      "$THIS_DIR/test_pointer_layer.sh"
-run_suite "script-safety"      "$THIS_DIR/test_script_safety.sh"
 run_suite "pka-tools"          "$THIS_DIR/test_tools.sh"
 
 if [ "$GIT_CONFIG_BEFORE" = "$(git_config_fingerprint)" ]; then

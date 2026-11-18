@@ -138,25 +138,25 @@ File naming: `<YYYY-MM-DD>-<meeting-slug>.md`
 
 **Never move earshot capture directories.** Routing files the notes only; the capture directory (audio, `transcript.*`, `narrative.md`) stays where earshot wrote it. If the notes carry a `**Recording**: <capture-dir>` header (added by thinkkit's take-notes), preserve that line verbatim when moving or rewriting the notes — it stays valid precisely because the capture directory doesn't move.
 
-### Step 5 — Post-route: frontmatter, MOC, pointer row, index, commit
+### Step 5 — Post-route: frontmatter, MOC, pointer row, timeline, index
 
 Once the note is saved, run the same command the librarian runs after a route, so a meeting note gets exactly what a routed document gets:
 
 ```
-.pka/bin/pka-tools post-route <path to the filed note> --role Meetings [--topic <slug>]
+.pka/bin/pka-tools post-route <path to the filed note> [--topic <slug>]
 ```
 
-In order: frontmatter and a `- [[note]]` bullet in its folder's `_MOC.md` (when `obsidian_present`), a pointer row, **a line on each attendee's timeline**, the index (index mode), and one commit by path in the child repo (when `hybrid_monorepo_present`) with the message `Meetings: Route <filename> to <folder>/` and the trailer. Pass `--topic` when the meeting belongs to a known pointer cluster (an ongoing series, a project).
+In order: frontmatter and a `- [[note]]` bullet in its folder's `_MOC.md` (when `obsidian_present`), a pointer row, **a line on each attendee's timeline**, and the index (index mode). Nothing is committed: the note and the files `post-route` changed are left in the working tree for the user. Pass `--topic` when the meeting belongs to a known pointer cluster (an ongoing series, a project).
 
 **Timeline summaries.** You have the note in front of you, so write the summary for each person's line: at most 140 characters, drawn only from the note — the decisions, and what *that person* owns. For a 1-1, list the topics only (no judgements about the person). Pass them as `--summary-for <slug>="…"` per person, or `--summary "…"` for one summary for everyone:
 
 ```
-.pka/bin/pka-tools post-route knowledge/leadership/2026-11-14-slt-sync.md --role Meetings \
+.pka/bin/pka-tools post-route knowledge/leadership/2026-11-14-slt-sync.md \
     --summary-for priya="Owns the adapter spike; vendor decision deferred" \
     --summary-for robin-smith="Drafts the Q1 hiring plan"
 ```
 
-Who goes on a timeline is decided by the tool from the note (the person's folder, `person` / `attendees` frontmatter, `## Attendees` links, the filename) — see `.pka/bin/pka-tools timeline who <note>`. Meetings with more than 8 resolved attendees add none of them unless the user asks (`--include-large`). In "ask before everything" mode, run `post-route … --dry-run` first and show the timeline lines in the confirmation. Relay any step that reports `skipped` with its reason; exit code 1 means the commit was refused (report git's message; the note is filed regardless).
+Who goes on a timeline is decided by the tool from the note (the person's folder, `person` / `attendees` frontmatter, `## Attendees` links, the filename) — see `.pka/bin/pka-tools timeline who <note>`. Meetings with more than 8 resolved attendees add none of them unless the user asks (`--include-large`). In "ask before everything" mode, run `post-route … --dry-run` first and show the timeline lines in the confirmation. Relay any step that reports `skipped` with its reason, and a `Note: not committed…` line if the summary has one.
 
 If the meeting has an earshot capture with a `narrative.md`, index the narrative in place as well — it is the richest artifact for the meeting, and its capture directory never moves:
 

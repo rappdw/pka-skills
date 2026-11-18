@@ -2,9 +2,51 @@
 
 ## Unreleased
 
+### Removed — hybrid monorepo and commit protocol
+
+**pka-skills no longer runs git.** No skill, role or tool stages, commits or pushes, in any repository. Filing a note changes files in the workspace; committing them is the user's to do.
+
+The "hybrid monorepo" added in v1.6.0 (a root repository coordinating separate repositories at `knowledge/` and each `projects/<name>/` through a `.meta` manifest, a commit in the child repository after every route, a consolidated push at session end) is gone. It was one layout among several a workspace could have, it was the source of every data-loss bug fixed in v1.6.3, and it made every skill carry a second code path.
+
+Removed:
+
+- The `bootstrap git` target, and `git` from `bootstrap all` (now `upgrade` or base setup, then `obsidian`).
+- `pka-tools`: `gitops.py`; the commit step of `post-route`; `obsidian bootstrap --commit`; the `git` component of `install`; the `hybrid_monorepo_present` predicate and its line in `status`.
+- The vendored scripts and templates: `graduate.sh`, `init_project_repos.sh`, `reinit-project-with-lfs.sh`, `push-all.sh`, `build-repo-list.sh`, `gitattributes-template`, `gitignore-template`.
+- The references `git-bootstrap.md`, `git-protocol.md` (the seed of `.pka/roles/_git-protocol.md`) and `commit-protocol.md`.
+- From the role seeds: the orchestrator's "Session-end protocol (extended)" and "Mid-session push handling", the librarian's and researcher's "Commit/push protocol", and the git lines in the sections that remain.
+- The suites `test_git_bootstrap.sh`, `test_commit_protocol.sh`, `test_script_safety.sh`, the hybrid-only tests in `tests/tools/`, and evals S12 to S22. CI no longer installs git-lfs.
+
+Still accepted, and does nothing (role files written for earlier releases name these; a later release may reject them):
+
+| Still accepted | Now |
+|---|---|
+| `pka-tools commit …` | Exits 0, says pka-tools no longer commits, never runs git |
+| `post-route --role R`, `-m SUBJECT`, `--body T`, `--no-commit` | Ignored |
+| `obsidian bootstrap --commit` | Ignored |
+| `install --git` | Ignored |
+
+`post-route --also PATH` keeps the part of its meaning that was not about git: the path is re-indexed with the note, so naming a moved note's old location drops it from the index. It no longer needs the path to exist or to be known to git; a folder is still refused.
+
+**A workspace that already has the layout keeps it.** Nothing here deletes or edits `.meta`, the nested repositories, the root `.gitignore`, `.pka/graduate-backups/` or `.pka/reinit-backups/`. What changes for such a workspace:
+
+- **Routes are no longer committed, and nothing is pushed at session end.** `post-route` adds a `Note: not committed…` line to its summary when the workspace root has a `.meta`, and the skills relay it once per session.
+- **The helper scripts in `.pka/` are no longer shipped or maintained.** On the next `bootstrap upgrade`, a script the manifest records and you never edited is moved to `.pka/upgrade-backups/<timestamp>/vendored/`; an edited one, and any from a workspace bootstrapped before v1.7 (no manifest entry), stays where it is, and the installer lists them. They are yours to run by hand or delete.
+- **Role files.** `bootstrap upgrade` reports `.pka/roles/_git-protocol.md` and the commit/push sections as **obsolete**. With the refresh (`upgrade-roles.py --refresh`, which the skill asks about) the ones you never edited are removed after the usual backup; edited ones are left and listed, and a section can be removed by name with `--refresh-section`. The researcher gains a "Filing a brief" section, which carries the `post-route` instruction that used to live in its commit section. The orchestrator's unseeded sections (Key Competencies, Output Conventions, Invocation) are never rewritten and may still mention pushing: `references/upgrade.md` names the three lines.
+- **`status --json`** no longer has `hybrid_monorepo_present`; `post-route --json` no longer has `commit` or `failed`, and its `steps` has no `commit` entry; `obsidian bootstrap --json` no longer has `commit`; `install --json` gains `retired_unmanaged`.
+
+Changed with it:
+
+- **Project transition** no longer goes through `graduate.sh`. The folder is moved and `pka-tools pointers rename <old> <new> --prefix --notes` rewrites every link to it, in MOCs and notes. If the project folder has its own `.git`, the skill stops and asks instead of moving it.
+- `upgrade-roles.py`: `plan_obsolete` and the "Obsolete" block of the summary; `_git-protocol.md` is no longer seeded. `KNOWN_SECTION_HASHES` keeps the hashes of the removed sections, which is how an untouched one is told from an edited one.
+- `pka-tools install` reports retired helpers it finds without a manifest entry.
+- README, `bootstrap-assets/README.md`, the tools README, `tests/README.md` and `docs/specification-addendum.md` (now the Obsidian half only) say the same.
+
+Tests: `tests/tools/` covers the stub (`commit` never touches git, with or without git on PATH), the ignored flags, the `.meta` note, `post-route` leaving a real repository with nothing staged, the installer's three cases for retired helpers, obsolete sections reported, removed and kept when customised (against `tests/fixtures/v1.7.0-roles/`, the role files exactly as v1.7.0 seeded them), and a guard that no module of the tool can start a process. 273 tests in `tests/tools/`; `run-all.sh` runs four suites and the git-config check.
+
 ### Changed — `pka-tutorial` checks the release before teaching
 
-- Pre-flight asks the plugin's copies of `pka-tools status` and `upgrade-roles.py --dry-run` whether the workspace's toolkit (`.pka/manifest.json`), role files and index are on the installed release. Neither command changes a file. Equal versions alone are not taken as upgraded, because the librarian and `bootstrap git` install a missing toolkit themselves.
+- Pre-flight asks the plugin's copies of `pka-tools status` and `upgrade-roles.py --dry-run` whether the workspace's toolkit (`.pka/manifest.json`), role files and index are on the installed release. Neither command changes a file. Equal versions alone are not taken as upgraded, because the librarian installs a missing toolkit itself.
 - **Workspace behind:** before any tour, the tutorial walks the user through `bootstrap upgrade`: a `--dry-run` preview of the installer, what each of the three steps does and what backs it up, then a hand-off ("say *bootstrap upgrade*"). It does not perform the upgrade; `pka-bootstrap` does, on the user's request. Afterwards it confirms the result and teaches what is new in the releases in between, as capabilities with a prompt to try for each.
 - **Plugin behind the workspace** (upgraded from another machine): it says to update the plugin, and does not suggest `bootstrap upgrade`.
 - **Index not migrated** (toolkit and roles current): one sentence pointing to `bootstrap upgrade`, no walkthrough.

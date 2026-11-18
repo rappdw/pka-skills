@@ -58,13 +58,13 @@
     "expect": "existing topic, tags, and any other user fields preserved verbatim; only missing schema fields (e.g., type, date if absent) are added; routing report shows which fields were added vs. preserved"
   },
   {
-    "scenario": "S17 — Child-repo auto-commit per unit",
-    "prompt": "Route 2026-04-22-slt-meeting.md to leadership/. The workspace is a hybrid monorepo (root .git + .meta + child repos).",
-    "expect": "exactly one commit created in knowledge/ child repo; commit message starts with 'Librarian: Route 2026-04-22-slt-meeting.md to leadership/'; commit has 'Co-Authored-By: Claude <noreply@anthropic.com>' trailer; NO commit in root repo even if root tracking changed (e.g., session-log update is staged in root for user review only)"
+    "scenario": "R7 — Routing commits nothing",
+    "prompt": "Route 2026-04-22-slt-meeting.md to leadership/. The workspace root has .meta and knowledge/ is its own git repository.",
+    "expect": "moves the file and runs `.pka/bin/pka-tools post-route` once, without --role or -m; no git add, git commit or git push in any repository; relays post-route's 'not committed' note once; the routing report lists the routed file and the MOC, timeline and index changes as left in the working tree for the user to commit"
   },
   {
-    "scenario": "S18 — Root-repo no auto-commit",
-    "prompt": "After graduation, the root .meta has been updated. Routing this next file may also touch CLAUDE.md's Repo Map.",
-    "expect": ".meta change is STAGED in root (git add .meta), NOT committed; CLAUDE.md change (if any) staged, not committed; routing report's 'Root-tracked side effects' section lists both files for user review; no git commit invocation in root by any role"
+    "scenario": "R8 — A role file still says to commit",
+    "prompt": "Route this brief into knowledge/AI/. (.pka/roles/librarian.md still has the old 'Commit/push protocol' section)",
+    "expect": "routes and post-routes as usual; does not commit despite the role file's section; mentions that the role file carries an obsolete commit section and that 'bootstrap upgrade' with the refresh removes it"
   }
 ]

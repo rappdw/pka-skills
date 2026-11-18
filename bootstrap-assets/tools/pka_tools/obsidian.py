@@ -21,7 +21,6 @@ from typing import Dict, List, Optional, Tuple
 
 from . import frontmatter
 from .errors import EXIT_NOT_READY, ToolError
-from .gitops import commit as git_commit
 from .textio import NotText, detect_newline, has_bare_cr, read_text, split_lines, write_text_atomic
 from .workspace import CAPTURE_MARKER, MOC_NAME, Workspace, domain_tag
 
@@ -223,7 +222,7 @@ def ensure_note(ws: Workspace, plan: Plan, path: Path, dry_run: bool) -> Tuple[s
     return "merged", detail
 
 
-def bootstrap(ws: Workspace, dry_run: bool = False, do_commit: bool = False) -> dict:
+def bootstrap(ws: Workspace, dry_run: bool = False) -> dict:
     if not ws.obsidian_present:
         raise ToolError(
             "No Obsidian vault detected at knowledge/.obsidian/. "
@@ -237,7 +236,7 @@ def bootstrap(ws: Workspace, dry_run: bool = False, do_commit: bool = False) -> 
         "person_indexes_created": [], "person_indexes_already_present": [],
         "frontmatter_added": [], "frontmatter_merged": [],
         "skipped": [], "warnings": [],
-        "files_total": 0, "touched": [], "dry_run": dry_run, "commit": None,
+        "files_total": 0, "touched": [], "dry_run": dry_run,
     }
     touched: List[str] = []
 
@@ -333,11 +332,4 @@ def bootstrap(ws: Workspace, dry_run: bool = False, do_commit: bool = False) -> 
 
     summary["touched"] = touched
     summary["unreadable_names"] = ws.unreadable_names
-    if do_commit and touched and not dry_run:
-        subject = "Bootstrap (obsidian): %d MOCs, %d person indexes, %d frontmatter additions" % (
-            len(summary["moc_created"]),
-            len(summary["person_indexes_created"]),
-            len(summary["frontmatter_added"]) + len(summary["frontmatter_merged"]),
-        )
-        summary["commit"] = git_commit(ws, subject, touched)
     return summary

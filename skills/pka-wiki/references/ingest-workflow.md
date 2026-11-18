@@ -101,11 +101,10 @@ If the source is in `team-inbox/`, move it to the wiki's `sources/` folder
 Once `wiki.md` is written (and the source moved, if it was):
 
 ```
-.pka/bin/pka-tools post-route knowledge/topics/<slug>/wiki.md --role Wiki \
-    -m "Wiki: Ingest <source filename> into <slug>" [--also <moved source path>]
+.pka/bin/pka-tools post-route knowledge/topics/<slug>/wiki.md [--also <moved source path>]
 ```
 
-It adds any missing frontmatter keys and the domain tag (Obsidian vaults), a bullet for the page in the nearest `_MOC.md`, a pointer row for the topic, indexes the page and every `--also` path, and makes one commit by path in `knowledge/` (hybrid monorepo). Name the moved source with `--also` rather than post-routing it separately: it belongs to the wiki, not to a MOC of its own. The steps that do not apply say so; exit code 1 means the commit was refused (report git's message — the ingest itself is done).
+It adds any missing frontmatter keys and the domain tag (Obsidian vaults), a bullet for the page in the nearest `_MOC.md`, a pointer row for the topic, and indexes the page and every `--also` path. Nothing is committed. Name the moved source with `--also` rather than post-routing it separately: it belongs to the wiki, not to a MOC of its own. The steps that do not apply say so.
 
 ### Step 8 — Cross-wiki mention scan
 

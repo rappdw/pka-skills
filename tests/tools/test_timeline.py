@@ -233,34 +233,25 @@ class Timeline(support.ToolsCase):
 class PostRouteTimeline(support.ToolsCase):
     def setUp(self):
         super().setUp()
-        self.git(self.ws, "init", "-q", "-b", "main")
-        self.write(".gitignore", "knowledge/\nprojects/\n")
-        self.write(".meta", '{"projects": {}}\n')
-        self.repo = self.init_child_repo("knowledge")
+        self.repo = self.init_repo("knowledge")
 
-    def committed(self):
-        return sorted(self.git(self.repo, "show", "--name-only", "--format=", "HEAD").split())
-
-    def test_timeline_lines_ride_in_the_note_commit(self):
+    def test_timeline_lines_are_written_by_post_route_and_left_uncommitted(self):
         rel = "knowledge/leadership/2026-06-10-roadmap.md"
+        head = self.git(self.repo, "rev-parse", "HEAD")
         self.write(rel, meeting("2026-06-10", ["priya", "Robin"], "Roadmap"))
         result = self.json("post-route", rel, "--role", "Meetings", "--summary-for", "priya=Owns the roadmap draft")
         steps = {s["step"]: s["action"] for s in result["steps"]}
         self.assertEqual(steps["timeline"], "written")
-        self.assertIn("personnel/priya/index.md", self.committed())
-        self.assertIn("personnel/robin-smith/index.md", self.committed())
-        self.assertEqual(self.git(self.repo, "status", "--porcelain").strip(), "")
-        head = self.git(self.repo, "rev-parse", "HEAD")
+        self.assertIn("knowledge/personnel/priya/index.md", result["touched"])
+        self.assertIn("knowledge/personnel/robin-smith/index.md", result["touched"])
+        status = self.git(self.repo, "status", "--porcelain").splitlines()
+        self.assertIn(" M personnel/priya/index.md", status)
+        self.assertIn("?? personnel/robin-smith/index.md", status)     # created by this run
+        self.assertEqual(self.git(self.repo, "rev-parse", "HEAD"), head)
+        snap = self.snapshot()
         again = self.json("post-route", rel, "--role", "Meetings")
         self.assertEqual({s["step"]: s["action"] for s in again["steps"]}["timeline"], "noop")
-        self.assertEqual(self.git(self.repo, "rev-parse", "HEAD"), head)
-
-    def test_a_timeline_line_left_by_an_earlier_run_is_committed(self):
-        rel = "knowledge/leadership/2026-06-11-sync.md"
-        self.write(rel, meeting("2026-06-11", ["priya"]))
-        self.ok("post-route", rel, "--no-commit")
-        self.ok("post-route", rel)
-        self.assertEqual(self.git(self.repo, "status", "--porcelain").strip(), "")
+        self.assertEqual(self.snapshot(), snap)
 
     def test_options(self):
         rel = "knowledge/AI/brief.md"
@@ -356,16 +347,14 @@ class ReviewFindings(support.ToolsCase):
         self.ok("timeline", "strip")
         self.assertEqual(self.text(PRIYA), text)
 
-    def test_leftover_line_from_an_earlier_person_run_is_committed(self):
-        self.git(self.ws, "init", "-q", "-b", "main")
-        self.write(".gitignore", "knowledge/\nprojects/\n")
-        self.write(".meta", '{"projects": {}}\n')
-        repo = self.init_child_repo("knowledge")
+    def test_a_second_run_after_a_person_run_adds_nothing(self):
         rel = "knowledge/AI/brief.md"
         self.write(rel, "---\ndate: 2026-06-12\n---\n# Brief\n")
-        self.ok("post-route", rel, "--person", "robin-smith", "--no-commit")
-        self.ok("post-route", rel)
-        self.assertEqual(self.git(repo, "status", "--porcelain").strip(), "")
+        self.ok("post-route", rel, "--person", "robin-smith")
+        snap = self.snapshot()
+        result = self.json("post-route", rel)
+        self.assertEqual(result["touched"], [])
+        self.assertEqual(self.snapshot(), snap)
 
     def test_list_on_a_non_utf8_index(self):
         self.write(PRIYA, b"caf\xe9\n")

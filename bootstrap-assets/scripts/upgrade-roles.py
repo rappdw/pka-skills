@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""upgrade-roles.py — merge v1.6 / v1.6.1 additions into existing .pka/roles/ files.
+"""upgrade-roles.py — bring existing .pka/roles/ files up to the current release.
 
 A workspace bootstrapped with pka-skills v1.5 has these role files:
   .pka/roles/orchestrator.md
@@ -7,15 +7,21 @@ A workspace bootstrapped with pka-skills v1.5 has these role files:
   .pka/roles/researcher.md
 
 v1.6 adds:
-  - Two shared-reference files: .pka/roles/_obsidian.md, .pka/roles/_git-protocol.md
+  - A shared-reference file: .pka/roles/_obsidian.md
   - New H2 sections in each existing role file (Obsidian coexistence,
-    commit/push protocol, bootstrap dispatch, session-end push, etc.)
+    bootstrap dispatch, etc.)
 
 v1.6.1 adds (additive on top of 1.6.0):
   - A "## Pointer Layer" section in .pka/roles/_obsidian.md (for workspaces
     that already have an _obsidian.md file from a previous upgrade)
   - Three new H2 sections in librarian.md (Pointer-row maintenance, Indexing
     pointer rows, Rename / graduate propagation)
+
+Removed with the nested-repository layout (see OBSOLETE_SECTIONS and
+OBSOLETE_FILES below): the commit/push sections of the role files and
+.pka/roles/_git-protocol.md. They are no longer seeded. In a workspace that
+has them they are reported as obsolete; `--refresh` removes the ones that are
+exactly what an earlier release wrote, and leaves edited ones alone.
 
 This script applies all additions IN PLACE without overwriting any content
 the user has customized. It is:
@@ -76,11 +82,10 @@ ORCHESTRATOR_SECTIONS = [
     (
         "## Session-start checks (cached for the session)",
         """\
-In addition to the existing session-start protocol, evaluate two predicates:
+In addition to the existing session-start protocol, evaluate one predicate:
 
 ```
-obsidian_present       := directory_exists("./knowledge/.obsidian")
-hybrid_monorepo_present := file_exists("./.meta") AND directory_exists("./.git")
+obsidian_present := directory_exists("./knowledge/.obsidian")
 ```
 
 If `obsidian_present` is true, surface one greeting line:
@@ -89,9 +94,9 @@ If `obsidian_present` is true, surface one greeting line:
 
 Conventions for Obsidian-mode behavior live in `.pka/roles/_obsidian.md`. Do not duplicate them here; consult that file when an Obsidian-specific decision is needed.
 
-Conventions for the commit/push protocol live in `.pka/roles/_git-protocol.md`. Apply only when `hybrid_monorepo_present`.
+Nothing is committed or pushed for the user. Filing a note changes files in the working tree; when to commit them is the user's decision, in whatever repository they keep the workspace in.
 
-For the greeting's open threads, run `.pka/bin/pka-tools log open` (the open-threads field of the last 20 session-log entries, newest first) rather than reading the log by eye. `.pka/bin/pka-tools status` reports both predicates, the index state and whether the index needs migrating.
+For the greeting's open threads, run `.pka/bin/pka-tools log open` (the open-threads field of the last 20 session-log entries, newest first) rather than reading the log by eye. `.pka/bin/pka-tools status` reports the predicate, the index state and whether the index needs migrating.
 """,
     ),
     (
@@ -105,37 +110,21 @@ When `obsidian_present` is false, use `path:line` everywhere as today.
     (
         "## Bootstrap dispatch",
         """\
-If the user invokes a "bootstrap" request — natural phrasings include "let's bootstrap the vault", "bootstrap obsidian", "initialize the hybrid repo", "bootstrap git", "bootstrap everything", "bootstrap all" — resolve the target:
+If the user invokes a "bootstrap" request — natural phrasings include "let's bootstrap the vault", "bootstrap obsidian", "bootstrap everything", "bootstrap all" — resolve the target:
 
 | User phrasing contains                                       | Target     |
 |--------------------------------------------------------------|------------|
 | "obsidian", "vault", "moc", "frontmatter"                    | `obsidian` |
-| "git", "hybrid repo", "monorepo", "meta", "lfs"              | `git`      |
-| "all", "everything", or both Obsidian and git words appear   | `all`      |
+| "all", "everything"                                          | `all`      |
 | "upgrade", "upgrade roles", "update my pka"                  | `upgrade`  |
 
 If the target is still ambiguous after this, ask:
 
-> "Which bootstrap should I run? Options: `obsidian` (vault retrofit), `git` (hybrid monorepo), `all` (both), `upgrade` (refresh role files and helpers in an already-bootstrapped workspace)."
+> "Which bootstrap should I run? Options: `obsidian` (vault retrofit), `upgrade` (refresh role files and helpers in an already-bootstrapped workspace), `all` (both)."
+
+A request to "bootstrap git", set up a "hybrid repo" or a "meta monorepo" names a layout that was removed: say so, and that a workspace is kept in one ordinary repository (or none) that the user commits themselves.
 
 Then hand off to the relevant procedure in the pka-bootstrap skill. All bootstraps are idempotent and user-triggered. Never run on detection alone.
-""",
-    ),
-    (
-        "## Session-end protocol (extended)",
-        """\
-In addition to the existing session log entry:
-
-1. If `hybrid_monorepo_present`, run a consolidated push across child repos with unpushed commits. Implementation: `meta git push` if `meta` is on PATH; otherwise iterate `.meta` entries and run `git push` in each child directory (helper: `.pka/push-all.sh`).
-2. If any child repo's push fails (auth, network, conflict, LFS upload disconnect): record the failure in the session summary with the repo path and error. Do not retry destructively. Session close still proceeds.
-3. **Surface, do not commit, root-repo changes.** If `git status` in the root shows staged or unstaged changes, list them in the session summary and tell the user they're awaiting human review. Never auto-commit root.
-4. Skipped pushes (the child repo has no `origin` remote, or there is nothing to push) are reported as **skipped**, not failures.
-""",
-    ),
-    (
-        "## Mid-session push handling",
-        """\
-If the user says "push", "push now", "push the changes", or similar, run the same consolidated push immediately and report a summary. Session continues.
 """,
     ),
 ]
@@ -151,7 +140,7 @@ When routing a file **into `knowledge/`** with `obsidian_present` true:
    - Preserve spaces where they exist — Obsidian handles them and existing content uses them.
    - Do not rename existing files unless explicitly asked.
 
-2. **Frontmatter and MOC update** — run `.pka/bin/pka-tools post-route <routed file>` once the file is in place. It adds the schema fields from `.pka/roles/_obsidian.md` that are missing (filename-derived values only: date, person, topic from the filename, domain tag from the folder), adds a `- [[file]]` bullet to the folder's `_MOC.md` (creating a stub if there is none), and then does the pointer row, index and commit steps below. Existing frontmatter lines and MOC entries are never changed or reordered. Files it cannot edit safely (malformed frontmatter, read-only, unusual line endings) are skipped and named in its output: put them in the routing report. Body-derived fields (attendees, a topic beyond the filename, related notes) are yours to fill, and only when confidence is high — empty is better than wrong.
+2. **Frontmatter and MOC update** — run `.pka/bin/pka-tools post-route <routed file>` once the file is in place. It adds the schema fields from `.pka/roles/_obsidian.md` that are missing (filename-derived values only: date, person, topic from the filename, domain tag from the folder), adds a `- [[file]]` bullet to the folder's `_MOC.md` (creating a stub if there is none), and then does the pointer row, timeline and index steps below. Existing frontmatter lines and MOC entries are never changed or reordered. Files it cannot edit safely (malformed frontmatter, read-only, unusual line endings) are skipped and named in its output: put them in the routing report. Body-derived fields (attendees, a topic beyond the filename, related notes) are yours to fill, and only when confidence is high — empty is better than wrong.
 
 3. **A different MOC section** — the bullet goes at the end of `## Files` (or a `## Unsorted` section). When the user keeps thematic sections and the right one is clear, pass `--section "<heading>"`.
 
@@ -159,29 +148,9 @@ When routing a file **into `knowledge/`** with `obsidian_present` true:
 
 5. **Wikilinks vs plain links** — cross-references inside the vault use `[[wikilinks]]`; references to files outside the vault use plain markdown. See `.pka/roles/_obsidian.md` for the full rule.
 
-When `obsidian_present` is false: no frontmatter and no MOC bullet. `post-route` still runs the person timeline (with relative markdown links), the pointer row (into existing MOCs only), the index and the commit.
+When `obsidian_present` is false: no frontmatter and no MOC bullet. `post-route` still runs the person timeline (with relative markdown links), the pointer row (into existing MOCs only) and the index.
 
 Full conventions in `.pka/roles/_obsidian.md`. Consult that file when an Obsidian-specific decision is needed; do not duplicate the rules here.
-""",
-    ),
-    (
-        "## Commit/push protocol (gated on `hybrid_monorepo_present`)",
-        """\
-When the orchestrator's session-start detection reports `hybrid_monorepo_present` true:
-
-- After completing a routing operation that lands in `knowledge/` or any `projects/<name>/`, auto-commit that semantic unit in **the destination child repo**. `.pka/bin/pka-tools post-route <file>` makes this commit as its last step, by path, with the message:
-  ```
-  Librarian: Route <filename> to <destination-folder>/
-
-  Co-Authored-By: Claude <noreply@anthropic.com>
-  ```
-- One commit per routing unit. Side-effects of the route (MOC update, frontmatter, person-index backlink, **pointer-row maintenance**) belong to the same semantic unit and ride along in the same commit.
-- Never auto-commit in the **root repo**. If routing produces root-tracked side effects (e.g., updates to `CLAUDE.md`'s Repo Map when a new domain folder is added), stage those changes and surface them in the routing report for user review.
-- A bulk re-routing pass should produce **one commit per logical unit**, not one giant commit — this preserves reviewability and enables targeted reverts.
-
-Full protocol in `.pka/roles/_git-protocol.md`.
-
-When `hybrid_monorepo_present` is false: no auto-commit; current behavior.
 """,
     ),
 ]
@@ -213,23 +182,11 @@ Full conventions (frontmatter rules, wikilink rules, malformed-frontmatter handl
 """,
     ),
     (
-        "## Commit/push protocol (gated on `hybrid_monorepo_present`)",
+        "## Filing a brief",
         """\
-When the orchestrator's session-start detection reports `hybrid_monorepo_present` true:
+After saving a brief inside the workspace's knowledge folders (`knowledge/` or a `projects/<name>/` folder), run `.pka/bin/pka-tools post-route <brief>`. It adds the frontmatter and MOC link (Obsidian vaults), the pointer row and any person-timeline line, and indexes the brief. If the brief changed other notes in the vault (a related-list update, a moved file's old location), name them with `--also <path>` so they are re-indexed with it.
 
-- After saving a brief inside a child repo (`knowledge/` or any `projects/<name>/`), run `.pka/bin/pka-tools post-route <brief> --role Researcher -m "Researcher: <short description of brief>"`. It adds the frontmatter, MOC link and pointer row, indexes the brief, and commits all of it as one unit in **the destination child repo** with the trailer:
-  ```
-  Researcher: <short description of brief>
-
-  Co-Authored-By: Claude <noreply@anthropic.com>
-  ```
-- One commit per brief. If a brief includes other side-effect updates to the same vault (related-list updates in other notes), name them with `--also <path>` so they ride in the same commit.
-- Never auto-commit in the **root repo**. If saving a brief touches root files (rare — typically only when adding a new domain to the Repo Map), stage those changes and surface them in the session summary for user review.
-- Briefs saved to `owner-inbox/` (root-tracked) are not committed by the role; they're delivered for review and the user decides when (or whether) to commit.
-
-Full protocol in `.pka/roles/_git-protocol.md`.
-
-When `hybrid_monorepo_present` is false: no auto-commit; current behavior.
+Nothing is committed: the brief and the files `post-route` changed are left in the working tree for the user. Briefs saved to `owner-inbox/` are delivered for review and are not filed with `post-route`.
 """,
     ),
 ]
@@ -267,7 +224,7 @@ Full conventions in `.pka/roles/_obsidian.md` (Pointer Layer section); the full 
     (
         "## Rename / graduate propagation",
         """\
-When a file is renamed or moved by the librarian, every Pointers-row wikilink to its old path is updated to the new path across **all** `_MOC.md` files in the vault: `.pka/bin/pka-tools pointers rename <old> <new>` (add `--prefix` for a folder), then `post-route <new path> --also <old path>` so the move and the link updates are one commit. When a project is graduated from `projects/<name>/` into `knowledge/<subdir>/<name>/`, `graduate.sh` rewrites Pointers wikilinks for every file in that project. Both operations are idempotent and append-only at the row level.
+When a file is renamed or moved by the librarian, every Pointers-row wikilink to its old path is updated to the new path across **all** `_MOC.md` files in the vault: `.pka/bin/pka-tools pointers rename <old> <new>` (add `--prefix` for a folder, and `--notes` to rewrite links in every note as well), then `post-route <new path> --also <old path>` so the index drops the old location. When a project is graduated from `projects/<name>/` into `knowledge/<subdir>/<name>/`, move the folder and run `.pka/bin/pka-tools pointers rename projects/<name> knowledge/<subdir>/<name> --prefix --notes`, then `.pka/bin/pka-tools index`. Both operations are idempotent and append-only at the row level. Nothing is committed; the move and the rewritten links are left for the user to review.
 """,
     ),
 ]
@@ -363,7 +320,7 @@ With Obsidian the layer is on by default: MOCs are created as needed, the wikili
 1. **Rows are append-only at the row level.** Existing rows are extended (new files / new entities) but never deleted, reordered, or merged by the librarian.
 2. **Files column entries are wikilinks to actual files** — broken links inside Pointers tables are bugs, surfaced by the lint health check (rule 2: broken links).
 3. **A renamed/moved file triggers pointer-row updates** in every MOC where the file is referenced.
-4. **A graduated project's files do not lose their pointer-row entries** — `graduate.sh` rewrites the wikilinks to the new `knowledge/` paths.
+4. **A graduated project's files do not lose their pointer-row entries** — after the folder is moved, `pka-tools pointers rename projects/<name> knowledge/<subdir>/<name> --prefix --notes` rewrites the wikilinks to the new `knowledge/` paths.
 5. **Pointer rows are never read by an LLM at full-document scale** — they are FTS-targeted retrieval primitives. If a row is being rendered to a user verbatim, the data has been pulled into the wrong layer.
 
 ### What this is NOT
@@ -402,12 +359,30 @@ Each person's `index.md` carries a `## Timeline`: one line per note about them, 
 
 SHARED_REF_SECTIONS = {
     "_obsidian.md": OBSIDIAN_SECTIONS_V161 + OBSIDIAN_SECTIONS_V170,
-    # _git-protocol.md has no v1.6.1 additions
 }
 
 # ---------------------------------------------------------------------------
-# SHARED-REFERENCE SEEDS (verbatim from references/obsidian-conventions.md
-# and references/git-protocol.md fenced blocks)
+# OBSOLETE: seeded by earlier releases for the nested-repository layout
+# (a root repository coordinating repositories at knowledge/ and projects/*),
+# which pka-skills no longer sets up, commits to or pushes.
+# ---------------------------------------------------------------------------
+OBSOLETE_SECTIONS = {
+    "orchestrator.md": [
+        "## Session-end protocol (extended)",
+        "## Mid-session push handling",
+    ],
+    "librarian.md": [
+        "## Commit/push protocol (gated on `hybrid_monorepo_present`)",
+    ],
+    "researcher.md": [
+        "## Commit/push protocol (gated on `hybrid_monorepo_present`)",
+    ],
+}
+OBSOLETE_FILES = ("_git-protocol.md",)
+
+# ---------------------------------------------------------------------------
+# SHARED-REFERENCE SEED (verbatim from the fenced block in
+# references/obsidian-conventions.md)
 # ---------------------------------------------------------------------------
 
 OBSIDIAN_SEED = """\
@@ -637,7 +612,7 @@ With Obsidian the layer is on by default: MOCs are created as needed, the wikili
 1. **Rows are append-only at the row level.** Existing rows are extended (new files / new entities) but never deleted, reordered, or merged by the librarian.
 2. **Files column entries are wikilinks to actual files** — broken links inside Pointers tables are bugs, surfaced by the lint health check (rule 2: broken links).
 3. **A renamed/moved file triggers pointer-row updates** in every MOC where the file is referenced.
-4. **A graduated project's files do not lose their pointer-row entries** — `graduate.sh` rewrites the wikilinks to the new `knowledge/` paths.
+4. **A graduated project's files do not lose their pointer-row entries** — after the folder is moved, `pka-tools pointers rename projects/<name> knowledge/<subdir>/<name> --prefix --notes` rewrites the wikilinks to the new `knowledge/` paths.
 5. **Pointer rows are never read by an LLM at full-document scale** — they are FTS-targeted retrieval primitives. If a row is being rendered to a user verbatim, the data has been pulled into the wrong layer.
 
 ### What this is NOT
@@ -736,136 +711,6 @@ This file captures the contract between pka-skills roles and the Obsidian vault.
 Roles should treat this file as authoritative. When in doubt during implementation, follow this file; raise the divergence with the user.
 """
 
-GIT_PROTOCOL_SEED = """\
----
-title: Commit/Push Protocol
-type: shared-reference
-status: active when workspace is a hybrid monorepo (root .git + .meta + child repos)
----
-
-# Commit/Push Protocol
-
-Shared reference for pka roles. Roles link here instead of duplicating commit-and-push rules.
-
-This protocol activates only when the workspace is a **hybrid monorepo**: a root `.git`, a `.meta` manifest at the root, and one or more child repos (`knowledge/`, `projects/<name>/`) each with their own `.git`. In a single-repo or no-repo workspace, roles continue their pre-protocol behavior — no auto-commit, no session-end push.
-
-## Detection
-
-```
-hybrid_monorepo_present := file_exists("./.meta") AND directory_exists("./.git")
-```
-
-Evaluate once at session start, cache for the session.
-
-## Commit triggers
-
-### Child repos (`knowledge/`, `projects/*`)
-
-**Auto-commit per semantic unit** after a role completes meaningful work.
-
-A "unit" is a coherent, reviewable change — not every file-write, but one commit per *thing accomplished*. The role decides the unit boundary.
-
-Examples:
-- Librarian routing a file into `knowledge/` → one commit after the route completes (including any MOC/frontmatter/backlink side-effects).
-- Researcher finalizing a brief → one commit when the brief is saved.
-- Obsidian bootstrap → one commit in `knowledge/` summarizing the batch.
-- Graduation → see "Graduation commit sequence" below.
-
-### Root repo
-
-**No auto-commit. Ever.**
-
-Root repo changes (`CLAUDE.md` updates, `.meta` changes, new/updated `.pka/` scripts or templates, git-bootstrap scaffolding) accumulate in the working tree. The role:
-
-1. Stages obviously-related changes with `git add` (best-effort grouping).
-2. Lists them in the session summary.
-3. Hands off to the user for review and manual commit.
-
-Rationale: the root is the system's own configuration. Its blast radius is larger than any single child repo. Bad auto-commits there are harder to notice and unwind. Human review is the gate.
-
-## Commit message structure
-
-Commits carry a role prefix and a short description, followed by a Claude trailer:
-
-```
-<Role>: <short description>
-
-<optional body>
-
-Co-Authored-By: Claude <noreply@anthropic.com>
-```
-
-Examples:
-- `Librarian: Route 2026-04-22-slt-meeting.md to leadership/`
-- `Researcher: Add brief on AI adoption tier productivity gap`
-- `Bootstrap (obsidian): 7 MOC stubs, 12 person indexes, 41 frontmatter additions`
-- `Bootstrap (git): Initial hybrid monorepo setup`
-- `Graduate: widget → knowledge/reference/`
-
-The trailer is mandatory. Do not omit. The exact trailer string is `Co-Authored-By: Claude <noreply@anthropic.com>`.
-
-Roles make these commits with the workspace's tool, never with `git add -A`: `.pka/bin/pka-tools post-route <file> --role <Role>` after filing a note (it commits the note with every file it touched), or `.pka/bin/pka-tools commit -m "<Role>: …" -- <paths>` for anything else. Both stage and commit exactly the named paths, add the trailer, refuse to commit the root repo, and exit 1 when git refuses the commit.
-
-## Push triggers
-
-### Session end (auto)
-
-At session end, the orchestrator runs a consolidated push across all child repos with unpushed commits. Implementation: `meta git push` if `meta` is on PATH, else iterate `.meta` entries and run `git push` in each child repo directory.
-
-The session-end push is part of the session-end protocol — it runs after the final session-log entry is written.
-
-### Mid-session on user request
-
-If the user says "push", "push now", "push the changes", or similar natural phrasing, push immediately across all child repos with unpushed commits and report a summary. Session continues.
-
-### Root repo push
-
-The root is pushed only after the user has committed it. The auto-push uses `meta git push` (or equivalent), which operates on registered child repos; if the root is also tracked in the manifest, it pushes only committed state — same gate as commit.
-
-If the root has uncommitted changes at session end, surface them in the summary. Do not commit; do not push.
-
-## Push behavior — never silent failures
-
-Any push failure (auth error, conflict, network unreachable, LFS upload disconnect) surfaces explicitly in the session summary with the failing repo and the error message. Do not hide. Do not retry destructively (no `--force`, no rebase).
-
-If a child repo has no `origin` remote, report it as a **skipped** push, not a failure. The child repo's own remote is what a push uses; the URL in `.meta` is a copy that `.pka/build-repo-list.sh` regenerates, so set remotes with `git -C <child> remote add origin <url>` and then re-run that script.
-
-## Graduation commit sequence
-
-When a project is graduated from `projects/<name>/` to `knowledge/<subdir>/<name>/` via `graduate.sh`:
-
-1. In `knowledge/` (child repo): auto-commit the new content with message `Graduate: <name> → knowledge/<subdir>/`.
-2. In root repo: `.meta` update removing `projects/<name>` is **staged, not committed**. Flagged in the session summary for user review.
-3. The old project repo on the remote (if any): the graduation script prints instructions for archiving (e.g., a Gitea/GitHub API call). The role does not call remote APIs.
-
-## Failure behavior
-
-- **Commit failure** (merge conflict, pre-commit hook failure, unexpected working-tree state): surface to the user, pause further automatic commits in that repo, continue with other work. Do not force, amend, or retry destructively.
-- **Push failure at session end**: record in session log and summary; continue (don't block session close). User can re-invoke push next session.
-- **LFS-specific failures** (missing `git-lfs` binary, oversized object, remote-side disconnect mid-upload): surface with a remediation hint (e.g., install lfs, retry push — LFS uploads are resumable, prior objects are already on the server).
-
-## Interaction with the Obsidian bootstrap
-
-The Obsidian bootstrap produces changes inside `knowledge/` only. Under this protocol it is a single child-repo commit (`Bootstrap (obsidian): ...`), auto-committed per the child-repo rule above. The user reviews the diff in `knowledge/` before (or after) the session-end push.
-
-## Interaction with the git bootstrap
-
-The git bootstrap is a special case:
-
-- Initial commits in `knowledge/` and each `projects/*` are mechanical and safe to auto-commit (`Bootstrap (git): Initial hybrid monorepo setup`).
-- Root-repo scaffolding (root `.gitignore`, `.meta`, `.pka/` templates and scripts) is **staged but not committed**. The user reviews and commits.
-- No remotes are set; no push is attempted.
-
-## Invariants
-
-Things that MUST hold:
-
-1. **Root never auto-commits.** Every code path that touches root files must stop at "staged, ready for review" and surface the changes in the session summary.
-2. **Auto-commits in child repos are idempotent at the unit level.** A repeated semantic action (e.g., re-routing the same file with no change) does not produce an empty or duplicate commit.
-3. **Trailer is always `Co-Authored-By: Claude <noreply@anthropic.com>`** (verbatim) on auto-commits.
-4. **Session-end push is non-blocking.** Failures surface; session close still proceeds.
-5. **No remote operations during git bootstrap.** No `git push`, no `curl`, no origin URLs to user-specific orgs.
-"""
 
 
 # ---------------------------------------------------------------------------
@@ -1057,6 +902,7 @@ KNOWN_SECTION_HASHES = {
         "387e539222cb1a1b",
         "480c1093f80bc9a4",
         "934d75cb738d5168",
+        "e42a53ab3716e421",
         "fcadb8fab61ccda5",
     ],
     "_obsidian.md:## Rules for writing frontmatter": [
@@ -1081,6 +927,7 @@ KNOWN_SECTION_HASHES = {
         "acc2d758eff419d3",
     ],
     "librarian.md:## Obsidian coexistence (gated on `obsidian_present`)": [
+        "0cbe29a62772c6c9",
         "3a018531223ad484",
         "e8318781cac59a41",
         "ea5b5c5245088095",
@@ -1092,9 +939,11 @@ KNOWN_SECTION_HASHES = {
     ],
     "librarian.md:## Rename / graduate propagation": [
         "4c33bf525498ff00",
+        "6c63456f622fc66a",
         "aa6f7019518431e6",
     ],
     "orchestrator.md:## Bootstrap dispatch": [
+        "276233bbd5baa272",
         "5e90aed21362ad95",
         "7b69d81990957438",
         "d24f1dc6b3c43b6e",
@@ -1112,10 +961,14 @@ KNOWN_SECTION_HASHES = {
     "orchestrator.md:## Session-start checks (cached for the session)": [
         "2f287173daffc1c5",
         "84e84c3377a6019d",
+        "869f4908fcf2777e",
     ],
     "researcher.md:## Commit/push protocol (gated on `hybrid_monorepo_present`)": [
         "1aae6574f77242fb",
         "8513d149f6340902",
+    ],
+    "researcher.md:## Filing a brief": [
+        "382ec2998d1bc52f",
     ],
     "researcher.md:## Obsidian coexistence (gated on `obsidian_present`)": [
         "081c2181daa2fdbf",
@@ -1165,8 +1018,6 @@ def refreshable_sections(filename: str) -> list[tuple[str, str]]:
     """The sections of a seeded file that pka-skills owns and may refresh."""
     if filename == "_obsidian.md":
         return _seed_sections(OBSIDIAN_SEED)
-    if filename == "_git-protocol.md":
-        return _seed_sections(GIT_PROTOCOL_SEED)
     role = filename[:-3] if filename.endswith(".md") else filename
     return list(ROLE_SECTIONS.get(role, []))
 
@@ -1202,6 +1053,50 @@ def plan_refresh(filename: str, text: str, forced: set) -> tuple[str, list[dict]
     for start, end, body in sorted(replacements, reverse=True):
         text = text[:start] + body + text[end:]
     return text, findings
+
+
+def plan_obsolete(filename: str, text: str, forced: set) -> tuple[str, list[dict]]:
+    """Return (text without the removable obsolete sections, findings).
+
+    A finding is {heading, state}: `removed` when the section is exactly
+    what an earlier release seeded (or was named with --refresh-section),
+    `customised` when the user edited it, which leaves it in place."""
+    wanted = OBSOLETE_SECTIONS.get(filename, [])
+    if not wanted:
+        return text, []
+    findings = []
+    removals = []
+    for heading, offset, body_start, end in h2_sections(text):
+        if heading not in wanted:
+            continue
+        have = text[body_start:end]
+        known = section_hash(have) in KNOWN_SECTION_HASHES.get("%s:%s" % (filename, heading), [])
+        if known or heading in forced:
+            removals.append((offset, end))
+            findings.append({"heading": heading, "state": "removed" if known else "removed (customised)"})
+        else:
+            findings.append({"heading": heading, "state": "customised"})
+    at_end = any(end == len(text) for _, end in removals)
+    for start, end in sorted(removals, reverse=True):
+        text = text[:start] + text[end:]
+    if at_end:
+        # The file now ends with the blank line that separated the sections.
+        nl = detect_newline(text)
+        stripped = text.rstrip("\r\n")
+        text = stripped + nl if stripped else ""
+    return text, findings
+
+
+def obsolete_file_state(filename: str, text: str) -> str:
+    """`unchanged` when every H2 section of an obsolete shared-reference file
+    is exactly what an earlier release seeded; otherwise `customised`."""
+    sections = h2_sections(text)
+    if not sections:
+        return "customised"
+    for heading, _, body_start, end in sections:
+        if section_hash(text[body_start:end]) not in KNOWN_SECTION_HASHES.get("%s:%s" % (filename, heading), []):
+            return "customised"
+    return "unchanged"
 
 
 def unique_backup_root(parent: Path, stamp: str) -> Path:
@@ -1240,6 +1135,8 @@ def upgrade_workspace(workspace: Path, dry_run: bool = False, refresh: bool = Fa
         "roles_unchanged": [],
         "appended_at_end": [],
         "refresh": {},
+        "obsolete": {},
+        "obsolete_files": {},
         "refresh_applied": refresh,
         "dry_run": dry_run,
     }
@@ -1249,8 +1146,8 @@ def upgrade_workspace(workspace: Path, dry_run: bool = False, refresh: bool = Fa
         heading = heading.strip()
         if not heading.startswith("## "):
             raise SystemExit("ERROR: --refresh-section takes FILE:## Heading, e.g. "
-                             "'researcher.md:## Commit/push protocol (gated on `hybrid_monorepo_present`)'")
-        allowed = [h for h, _ in refreshable_sections(filename)]
+                             "'librarian.md:## Indexing pointer rows'")
+        allowed = [h for h, _ in refreshable_sections(filename)] + list(OBSOLETE_SECTIONS.get(filename, []))
         if heading not in allowed:
             listing = "\n  ".join(allowed) if allowed else "(none: not a seeded file)"
             raise SystemExit(f"ERROR: {filename}: {heading!r} is not a seeded section, so it cannot be "
@@ -1258,9 +1155,13 @@ def upgrade_workspace(workspace: Path, dry_run: bool = False, refresh: bool = Fa
         forced_by_file.setdefault(filename, set()).add(heading)
 
     def refreshed(filename: str, text: str) -> str:
-        new_text, findings = plan_refresh(filename, text, forced_by_file.get(filename, set()) if refresh else set())
+        forced_here = forced_by_file.get(filename, set()) if refresh else set()
+        new_text, findings = plan_refresh(filename, text, forced_here)
         if findings:
             summary["refresh"][filename] = findings
+        new_text, gone = plan_obsolete(filename, new_text, forced_here)
+        if gone:
+            summary["obsolete"][filename] = gone
         return new_text if refresh else text
 
     # 1. Backup .pka/roles/ to .pka/upgrade-backups/<timestamp>/roles/
@@ -1278,21 +1179,27 @@ def upgrade_workspace(workspace: Path, dry_run: bool = False, refresh: bool = Fa
         shutil.copytree(roles_dir, backup_root / "roles")
         summary["backup"] = str(backup_root / "roles")
 
-    # 2. Seed shared references if absent
+    # 2. Seed the shared reference if absent
     obsidian_target = roles_dir / "_obsidian.md"
-    git_target = roles_dir / "_git-protocol.md"
     if obsidian_target.exists():
         summary["shared_already_present"].append("_obsidian.md")
     else:
         if not dry_run:
             obsidian_target.write_text(OBSIDIAN_SEED, encoding="utf-8")
         summary["shared_seeded"].append("_obsidian.md")
-    if git_target.exists():
-        summary["shared_already_present"].append("_git-protocol.md")
-    else:
-        if not dry_run:
-            git_target.write_text(GIT_PROTOCOL_SEED, encoding="utf-8")
-        summary["shared_seeded"].append("_git-protocol.md")
+
+    # 2a. Shared references of a removed feature. An untouched one is removed
+    # on --refresh (the backup above has it); an edited one is left.
+    for filename in OBSOLETE_FILES:
+        target = roles_dir / filename
+        if not target.is_file() or target.is_symlink():
+            continue
+        state = obsolete_file_state(filename, read_text_exact(target))
+        if state == "unchanged" and refresh:
+            if not dry_run:
+                target.unlink()
+            state = "removed"
+        summary["obsolete_files"][filename] = state
 
     # 2b. Per-shared-reference section merge (v1.6.1+ additions). Runs against
     # both freshly-seeded files (which carry only the v1.6.0 baseline content)
@@ -1301,7 +1208,7 @@ def upgrade_workspace(workspace: Path, dry_run: bool = False, refresh: bool = Fa
         target = roles_dir / filename
         if not target.exists() and not dry_run:
             continue  # Should not happen — step 2 either seeded or skipped only when present
-        original = read_text_exact(target) if target.exists() else (OBSIDIAN_SEED if filename == "_obsidian.md" else GIT_PROTOCOL_SEED)
+        original = read_text_exact(target) if target.exists() else OBSIDIAN_SEED
         merged, added, anchored = merge_sections(original, sections, SHARED_REF_ANCHORS)
         already_present = [h for h, _ in sections if h not in added]
         summary["shared_sections_added"][filename] = added
@@ -1414,6 +1321,35 @@ def print_summary(s: dict) -> None:
             print("  Customised sections are never replaced automatically. Compare with --diff;")
             print("  to take the new text for one, pass --refresh --refresh-section 'FILE:## Heading'.")
         print()
+    gone = [(f, x) for f, items in s.get("obsolete", {}).items() for x in items]
+    gone_files = s.get("obsolete_files", {})
+    if gone or gone_files:
+        done = s.get("refresh_applied") and not s["dry_run"]
+        print("Obsolete (pka-skills no longer commits, pushes or sets up nested repositories):")
+        for filename, state in gone_files.items():
+            if state == "removed":
+                label = "removed (a copy is in the backup)" if done else "would be removed"
+            elif state == "unchanged":
+                label = "can be removed (unchanged since it was seeded)"
+            else:
+                label = "customised — left alone; delete it yourself when you no longer want it"
+            print(f"  {filename} (whole file)  — {label}")
+        for filename, item in gone:
+            state = item["state"]
+            if state == "removed":
+                label = ("removed" if done else "would be removed") if s.get("refresh_applied") else \
+                    "can be removed (unchanged since it was seeded)"
+            elif state == "removed (customised)":
+                label = "removed as requested" if done else "would be removed as requested"
+            else:
+                label = "customised — left alone"
+            print(f"  {filename}: {item['heading']}  — {label}")
+        if not s.get("refresh_applied"):
+            print("  Run again with --refresh to remove the unchanged ones (a backup is taken first).")
+        if any(item["state"] == "customised" for _, item in gone):
+            print("  A customised obsolete section stays until you remove it: edit the file, or pass")
+            print("  --refresh --refresh-section 'FILE:## Heading'.")
+        print()
     print("NOTE: Sections outside the seeded set (e.g. 'Key Competencies', 'Output")
     print("      Conventions', 'Invocation') are never modified. If you want later")
     print("      bullet-level additions there, see references/role-definitions.md and")
@@ -1437,14 +1373,15 @@ def print_diffs(s: dict) -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(
-        description="Merge v1.6 additions into existing .pka/roles/ files (idempotent)."
+        description="Bring existing .pka/roles/ files up to the current release (idempotent)."
     )
     ap.add_argument("--workspace", default=os.environ.get("WORKSPACE_ROOT", os.getcwd()))
     ap.add_argument("--dry-run", action="store_true", help="Report what would change; don't modify files.")
     ap.add_argument("--refresh", action="store_true",
-                    help="Also replace seeded sections that are unchanged since an earlier version seeded them.")
+                    help="Also replace seeded sections that are unchanged since an earlier version seeded them, "
+                         "and remove obsolete ones that are unchanged.")
     ap.add_argument("--refresh-section", action="append", default=[], metavar="FILE:## Heading",
-                    help="With --refresh: also replace this customised section (repeatable).")
+                    help="With --refresh: also replace (or, if obsolete, remove) this customised section (repeatable).")
     ap.add_argument("--diff", action="store_true", help="Print how each out-of-date section differs.")
     args = ap.parse_args()
     if args.refresh_section and not args.refresh:

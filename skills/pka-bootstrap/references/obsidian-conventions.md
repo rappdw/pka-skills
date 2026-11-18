@@ -237,7 +237,7 @@ With Obsidian the layer is on by default: MOCs are created as needed, the wikili
 1. **Rows are append-only at the row level.** Existing rows are extended (new files / new entities) but never deleted, reordered, or merged by the librarian.
 2. **Files column entries are wikilinks to actual files** — broken links inside Pointers tables are bugs, surfaced by the lint health check (rule 2: broken links).
 3. **A renamed/moved file triggers pointer-row updates** in every MOC where the file is referenced.
-4. **A graduated project's files do not lose their pointer-row entries** — `graduate.sh` rewrites the wikilinks to the new `knowledge/` paths.
+4. **A graduated project's files do not lose their pointer-row entries** — after the folder is moved, `pka-tools pointers rename projects/<name> knowledge/<subdir>/<name> --prefix --notes` rewrites the wikilinks to the new `knowledge/` paths.
 5. **Pointer rows are never read by an LLM at full-document scale** — they are FTS-targeted retrieval primitives. If a row is being rendered to a user verbatim, the data has been pulled into the wrong layer.
 
 ### What this is NOT

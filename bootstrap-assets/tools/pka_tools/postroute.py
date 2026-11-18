@@ -12,22 +12,23 @@ document. The steps, in order:
   4. timeline      a line on the timeline of each person the note belongs
                    to (see timeline.py for the evidence rules)
   5. index         the note and every MOC changed above  (index mode only)
-  6. commit        the note and every file changed above, in its child repo
-                                                        (hybrid monorepo only)
 
 A step that cannot do its work reports why and the later steps still run:
-filing must never be blocked by bookkeeping. Only a refused commit makes the
-command fail (exit 1), as `commit` does.
+filing must never be blocked by bookkeeping.
+
+Nothing is committed. `pka-tools` does not run git: what a route changed is
+left in the working tree for the user to commit. In a workspace that still
+has the `.meta` file of the removed nested-repository layout, the result says
+so in `notes`, because routes there used to end in a commit.
 """
 from __future__ import annotations
 
-import os
 from contextlib import closing
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from . import db as db_mod
-from . import gitops, indexer, mocs, obsidian, people, pointers, timeline
+from . import indexer, mocs, obsidian, people, pointers, timeline
 from .errors import EXIT_USAGE, ToolError
 from .markdown import block_mask, find_heading
 from .textio import NotText, read_text, split_lines
@@ -53,27 +54,14 @@ def _in_vault(ws: Workspace, path: Path) -> bool:
     return ws.vault != ws.root
 
 
-def default_message(ws: Workspace, path: Path, role: str) -> str:
-    if _in_vault(ws, path):
-        folder = ws.vault_rel(path.parent) if path.parent != ws.vault else ""
-        where = (folder + "/") if folder else ws.vault.name + "/"
-    else:
-        where = ws.rel(path.parent) + "/"
-    return "%s: Route %s to %s" % (role, path.name, where)
-
-
 def run(
     ws: Workspace,
     file_arg: str,
-    role: str = "Librarian",
-    message: Optional[str] = None,
-    body: str = "",
     topic: str = "",
     entities: Optional[List[str]] = None,
     context: str = "",
     section: Optional[str] = None,
     also: Optional[List[str]] = None,
-    do_commit: bool = True,
     create_mocs: Optional[bool] = None,
     dry_run: bool = False,
     do_timeline: bool = True,
@@ -96,8 +84,6 @@ def run(
             "Index its narrative with `pka-tools index` instead." % file_arg,
             EXIT_USAGE,
         )
-    if message is not None and (not message.strip() or "\n" in message):
-        raise ToolError("the commit subject must be one non-empty line", EXIT_USAGE)
     if topic and not pointers.slugify(topic):
         raise ToolError("--topic %r has no letters or digits to make a slug from" % topic, EXIT_USAGE)
     in_vault = _in_vault(ws, path)
@@ -111,28 +97,17 @@ def run(
                 raise ToolError("no person folder %r for the timeline" % slug, EXIT_USAGE)
 
     # Validate every --also path now: once step 1 has run, a usage error
-    # would leave the note edited and uncommitted.
-    committing = do_commit and ws.hybrid_monorepo_present
-    note_repo = gitops.toplevel(path.parent) if committing else None
+    # would leave the note half-processed.
     extra: List[str] = []
-    notes: List[str] = []
     for given in also or []:
         other = ws.resolve(given)
         if other.is_dir() and not other.is_symlink():
             raise ToolError("--also %s is a folder; name the files" % given, EXIT_USAGE)
-        other_rel = ws.rel(other)
-        if committing and note_repo is not None:
-            repo = gitops.toplevel(other.parent)
-            if repo != note_repo:
-                raise ToolError("--also %s is not in the same repository as the note" % given, EXIT_USAGE)
-            if not os.path.lexists(str(other)) and not gitops.is_tracked(repo, other):
-                if gitops.in_history(repo, other):
-                    notes.append("%s: already committed as removed" % other_rel)
-                    extra.append(other_rel)       # still re-indexed, not committed
-                    continue
-                raise ToolError("--also %s: no such file, and git has never tracked it" % given, EXIT_USAGE)
-        extra.append(other_rel)
-    skip_commit = {item.split(":", 1)[0] for item in notes}
+        extra.append(ws.rel(other))
+    notes: List[str] = []
+    if (ws.root / ".meta").is_file():
+        notes.append("not committed: pka-tools no longer commits (nested-repository support was removed); "
+                     "commit the changes yourself")
 
     steps: List[Dict[str, object]] = []
     touched: List[str] = []
@@ -143,8 +118,6 @@ def run(
         for rel in changed:
             if rel not in touched:
                 touched.append(rel)
-
-    related: List[str] = []       # MOCs that point at the note (for leftovers of earlier runs)
 
     # 1. frontmatter
     if not in_vault:
@@ -170,7 +143,6 @@ def run(
             result = mocs.add_link(ws, rel, section=section, create=create_mocs, dry_run=dry_run)
             record("moc-link", str(result["action"]), result["problem"] or str(result["moc"]),
                    list(result["changed"]))
-            related.append(str(result["moc"]))
         except ToolError as exc:
             if exc.code == EXIT_USAGE and section is not None:
                 raise
@@ -194,7 +166,6 @@ def run(
                     if result["mocs"] and all(entry["action"] == "no-moc" for entry in result["mocs"])
                     else "noop")
                 record("pointers", outcome, actions, list(result["changed"]))
-                related.extend(str(entry["moc"]) for entry in result["mocs"])
                 if result["over_cap"]:
                     steps[-1]["over_cap"] = result["over_cap"]
         except ToolError as exc:
@@ -203,7 +174,6 @@ def run(
             record("pointers", "skipped", exc.message)
 
     # 4. timeline
-    person_files: List[str] = []
     if not in_vault:
         record("timeline", "not-applicable", "outside the vault")
     elif not do_timeline:
@@ -223,7 +193,6 @@ def run(
             bits = []
             for entry in result["people"]:
                 bits.append("%s: %s" % (entry["slug"], entry["problem"] or entry["action"]))
-                person_files.append(entry["index"])
             if result["ambiguous"]:
                 bits.append("ambiguous: " + "; ".join("%s (%s)" % (a["text"], ", ".join(a["candidates"]))
                                                        for a in result["ambiguous"]))
@@ -243,34 +212,6 @@ def run(
             steps[-1]["ambiguous"] = result["ambiguous"]
             steps[-1]["unresolved"] = result["unresolved"]
 
-    # MOCs this note is recorded in, changed or not this time: a change left
-    # uncommitted by an earlier run (a refused commit, --no-commit) belongs
-    # to this note's unit too.
-    link = "[[" + (pointers.link_path_for(ws, path) if in_vault else rel)
-    leftovers = []
-    for moc_rel in related:
-        if moc_rel in touched or moc_rel in leftovers:
-            continue
-        try:
-            if link in read_text(ws.root / moc_rel):
-                leftovers.append(moc_rel)
-        except (NotText, OSError):
-            continue
-    if in_vault and reg is not None and reg.home is not None:
-        # Any person's timeline that lists the note, whoever put it there
-        # (an earlier run with --person, a run whose commit was refused).
-        key = timeline.note_key(ws, path)
-        for person in timeline.person_indexes(ws, reg):
-            index_rel = ws.rel(person.index)
-            if index_rel in touched or index_rel in leftovers or person.index.is_symlink():
-                continue
-            try:
-                lines = split_lines(read_text(person.index))
-            except (NotText, OSError):
-                continue
-            if key in timeline.block_keys(ws, person.index, lines, timeline.locate(lines)):
-                leftovers.append(index_rel)
-
     # 5. index
     if not ws.db_path.is_file():
         record("index", "not-applicable", "markdown-only mode (no index)")
@@ -285,39 +226,11 @@ def run(
         except ToolError as exc:
             record("index", "skipped", exc.message)
 
-    # 6. commit
-    commit_result = None
-    failed = False
-    paths = [rel] + [p for p in touched if p != rel]
-    paths += [p for p in leftovers if p not in paths]
-    paths += [p for p in extra if p not in paths and p not in skip_commit]
-    if not do_commit:
-        record("commit", "not-requested")
-    elif not ws.hybrid_monorepo_present:
-        record("commit", "not-applicable", "not a hybrid monorepo")
-    elif dry_run:
-        record("commit", "dry-run", ", ".join(paths))
-    else:
-        subject = message.strip() if message else default_message(ws, path, role)
-        try:
-            commit_result = gitops.commit(ws, subject, paths, body=body)
-        except ToolError as exc:
-            failed = True
-            record("commit", "failed", exc.message)
-        else:
-            if commit_result["committed"]:
-                record("commit", "committed", "%s in %s: %s" % ((commit_result["sha"] or "")[:10],
-                                                                 commit_result["repo"], subject))
-            else:
-                record("commit", str(commit_result["reason"]), str(commit_result["repo"] or ""))
-
     return {
         "file": rel,
         "notes": notes,
         "steps": steps,
         "touched": touched,
-        "commit": commit_result,
-        "failed": failed,
         "dry_run": dry_run,
     }
 

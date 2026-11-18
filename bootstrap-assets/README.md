@@ -1,31 +1,24 @@
 # bootstrap-assets
 
-Everything `pka-bootstrap` vendors into a target workspace's `.pka/` directory: the `pka-tools` helper (every bootstrap), `upgrade-roles.py` (every bootstrap), and the hybrid-monorepo templates and scripts (`bootstrap git` / `bootstrap all`).
+Everything `pka-bootstrap` vendors into a target workspace's `.pka/` directory: the `pka-tools` helper and `upgrade-roles.py`.
 
-These are **vendored** here so the bootstrap works for any user without reading from anyone's personal workspace at runtime. The scripts started as user-proven versions from a real PKA workspace and have been adjusted to remove user-specific topology (no hardcoded Gitea hosts, no embedded `/home/<user>/...` paths) and to enforce the contract below.
+These are **vendored** here so the bootstrap works for any user without reading from anyone's personal workspace at runtime.
 
 ## What gets installed where
 
-| Source (in this repo)                    | Destination in user workspace      | Component |
-|------------------------------------------|------------------------------------|-----------|
-| `tools/pka-tools`                        | `.pka/bin/pka-tools`               | core      |
-| `tools/pka_tools/*.py`                   | `.pka/bin/pka_tools/*.py`          | core      |
-| `scripts/upgrade-roles.py`               | `.pka/upgrade-roles.py`            | core      |
-| `gitattributes-template`                 | `.pka/gitattributes-template`      | git       |
-| `gitignore-template`                     | `.pka/gitignore-template`          | git       |
-| `scripts/graduate.sh`                    | `.pka/graduate.sh`                 | git       |
-| `scripts/init_project_repos.sh`          | `.pka/init_project_repos.sh`       | git       |
-| `scripts/reinit-project-with-lfs.sh`     | `.pka/reinit-project-with-lfs.sh`  | git       |
-| `scripts/push-all.sh`                    | `.pka/push-all.sh`                 | git       |
-| `scripts/build-repo-list.sh`             | `.pka/build-repo-list.sh`          | git       |
+| Source (in this repo)                    | Destination in user workspace      |
+|------------------------------------------|------------------------------------|
+| `tools/pka-tools`                        | `.pka/bin/pka-tools`               |
+| `tools/pka_tools/*.py`                   | `.pka/bin/pka_tools/*.py`          |
+| `scripts/upgrade-roles.py`               | `.pka/upgrade-roles.py`            |
 
 ## How it gets there
 
 ```
-python3 <plugin root>/bootstrap-assets/tools/pka-tools install --workspace <workspace> [--git]
+python3 <plugin root>/bootstrap-assets/tools/pka-tools install --workspace <workspace>
 ```
 
-`install` copies the files above and writes `.pka/manifest.json`: the plugin version and a SHA-256 of each file as last offered. The `git` component is installed with `--git`, and from then on whenever the workspace already has it (or has a `.meta`).
+`install` copies the files above and writes `.pka/manifest.json`: the plugin version and a SHA-256 of each file as last offered.
 
 On a later run the three hashes (plugin's copy, file on disk, manifest) decide what happens to each file:
 
@@ -36,9 +29,9 @@ On a later run the three hashes (plugin's copy, file on disk, manifest) decide w
 | Same as the manifest (untouched since install) | replaced |
 | Differs from both; the plugin's copy has not changed | kept |
 | Differs from both; the plugin's copy has changed | kept, and the plugin's copy is written beside it as `<name>.new` |
-| No manifest entry (a workspace from before v1.7): scripts and tools | replaced; the previous copy is saved under `.pka/upgrade-backups/<timestamp>/vendored/` |
-| No manifest entry: the two templates | kept; `<name>.new` written |
+| No manifest entry (a workspace from before v1.7), a file still shipped | replaced; the previous copy is saved under `.pka/upgrade-backups/<timestamp>/vendored/` |
 | In the manifest but no longer shipped | moved to the backup folder if untouched, left in place if edited |
+| A retired helper (below) with no manifest entry | left in place and listed in the report |
 
 Nothing is deleted. Running it twice changes nothing the second time. `--dry-run` reports without writing.
 
@@ -46,78 +39,32 @@ Nothing is deleted. Running it twice changes nothing the second time. `--dry-run
 
 ## Hard guarantees
 
-- **No network calls.** No `curl`, no `git push` of remote URLs that didn't already exist, no API calls to forges.
-- **No hardcoded user-specific topology.** No script embeds a single user's host, organization, or filesystem layout. Origin remotes are user choices, not bootstrap choices.
-- **Nothing is deleted.** `graduate.sh` and `reinit-project-with-lfs.sh` *move* the existing `.git` directory, whole, to `.pka/graduate-backups/` or `.pka/reinit-backups/` before doing anything else. That is the complete repository: every branch, the stash, the config and all LFS objects. `git clone <backup path>` restores the history. Both backup directories carry a `.gitignore` containing `*`, so they never appear as changes in the root repo.
-- **Failures roll back.** Every `git init`, `git lfs install`, `git add` and `git commit` result is checked. If a step fails after work has started, `graduate.sh` and `reinit-project-with-lfs.sh` put the repository, the moved files and any rewritten files back as they were and exit 1. `init_project_repos.sh` removes the half-made `.git` of the child that failed, carries on with the others, and exits 1.
-- **Targets are validated before anything is touched.** `graduate.sh` takes a single folder name under `projects/`; `reinit-project-with-lfs.sh` takes `knowledge` or `projects/<name>`. Empty strings, `.`, `..`, absolute paths and paths with `..` are usage errors (exit 64). Symbolic links, and children whose `.git` is a file (linked worktree, submodule), are refused or skipped: their repository lives elsewhere.
-- **Commits are staged by path.** `graduate.sh` commits only the graduated project and the `_MOC.md` files it rewrote. Other modified, staged or untracked files in `knowledge/` are left exactly as they were.
-- `init_project_repos.sh` and `build-repo-list.sh` are **idempotent**: re-running on the same workspace state produces the same final state.
-- `init_project_repos.sh` does **not** reinit existing child repos. Projects that have `.git` but no LFS are listed in the summary as **reinit candidates** (detected by a `filter=lfs` line in the repo's `.gitattributes`).
-- `reinit-project-with-lfs.sh` requires a typed-confirmation gate (the user must type the project basename). Pass `--yes`/`-y` only when an upstream caller has already collected explicit consent. Never runs unattended without that flag. All remotes (not just `origin`) are carried over to the new repository; an existing `.gitattributes` gets the LFS filter lines merged in.
-- `graduate.sh` commits in `knowledge/` (child repo) but only **stages** root-repo changes — never commits root.
-- **`.meta` is derived from the repos.** `build-repo-list.sh` rebuilds the "projects" map from each child's real `origin` remote (other top-level keys are preserved; an invalid `.meta` is left untouched and reported). `push-all.sh` pushes by the child repo's own remote and points out when `.meta` is out of date. Set remotes with `git -C <child> remote add origin <url>`, then re-run `build-repo-list.sh`.
+- **No network calls.**
+- **No git.** Nothing here runs `git`. `pka-tools` does not stage, commit or push; what it changes is left in the working tree.
+- **No hardcoded user-specific topology.** Nothing embeds a host, an organization or a filesystem layout.
+- **Nothing is deleted.** A replaced or retired file the user never edited is moved to `.pka/upgrade-backups/`; an edited one stays.
 
-## Notes for users
+## Retired: the nested-repository helpers
 
-### Optional opt-in: setting an origin during init
+Earlier releases also vendored the scripts and templates of a "hybrid monorepo" layout (a root repository coordinating separate repositories at `knowledge/` and each `projects/<name>/` through a `.meta` manifest):
 
-`init_project_repos.sh` does **not** set an `origin` remote by default. To opt in for a session:
-
-```bash
-ORIGIN_BASE='git@host.example.com:myorg/' bash .pka/init_project_repos.sh
+```
+.pka/graduate.sh   .pka/init_project_repos.sh   .pka/reinit-project-with-lfs.sh
+.pka/push-all.sh   .pka/build-repo-list.sh
+.pka/gitattributes-template   .pka/gitignore-template
 ```
 
-This sets each newly-initialized child repo's origin to `${ORIGIN_BASE}<slug>.git`, where `<slug>` is the slugified project name. When `ORIGIN_BASE` is unset (the default), no origin is added.
+They are no longer shipped, and `install --git`, which used to add them, is accepted and ignored. In a workspace that has them:
 
-This is the only place a script touches remote topology. The repo URL convention, the host, and the org are all the user's choice.
+- A copy the manifest records and the user never edited is moved to `.pka/upgrade-backups/<timestamp>/vendored/` on the next `install`.
+- A copy the user edited stays where it is.
+- A copy from before the manifest existed (a workspace bootstrapped before v1.7) stays where it is, because nothing says whether it was edited. The install report lists these.
 
-### Bulk reinit
+The copies that stay are the user's: unmaintained, theirs to keep running by hand or to delete. `install` never touches `.meta`, the nested repositories, the root `.gitignore`, `.pka/graduate-backups/` or `.pka/reinit-backups/`. The last two hold the complete former repositories of graduated or re-initialised projects (`git clone <backup path>` restores one) and must never be removed automatically.
 
-There is intentionally no `reinit-all-projects.sh` script. Bulk reinit is handled by `pka-bootstrap` itself (which collects consent for each candidate and then invokes `reinit-project-with-lfs.sh --yes <path>` per project). This keeps the per-project script as the single primitive.
+The scripts themselves, with their history and safety fixes, remain in this repository's history up to v1.7.0.
 
 ## Notes for implementers
 
-- Scripts assume `WORKSPACE_ROOT=$(pwd)` unless the env var `WORKSPACE_ROOT` overrides. They never use `$(dirname "$0")` to resolve workspace paths (so they work whether vendored to `.pka/` or invoked from a temp dir during testing).
-- All commit messages follow the structure in `.pka/roles/_git-protocol.md`:
-  ```
-  <Role>: <description>
-
-  Co-Authored-By: Claude <noreply@anthropic.com>
-  ```
-- Scripts require `git`, `git-lfs`, and (for the JSON-aware ones) `python3` on PATH. Each script does a preflight check at the top and exits with code 2 if a binary is missing. The scripts that run `git init -b` also require git 2.28 or newer and exit 2 on anything older.
-- Scripts target bash 3.2 (the version macOS ships) as well as current bash: no associative arrays, no `mapfile`, no `${var,,}`.
-- Scripts use the `--template=<empty>` trick on `git init` to suppress the default sample hooks. The empty template lives in a private `mktemp -d` directory that is removed when the script exits; nothing is written to a fixed path under `${TMPDIR}`.
-- Every fix in these scripts has a regression test in `tests/test_script_safety.sh`. Add one when you change behaviour.
-
-## Change log vs. user's source workspace
-
-| File                              | Change                                                                                                                |
-|-----------------------------------|-----------------------------------------------------------------------------------------------------------------------|
-| `graduate.sh`                     | Backup target moved from `knowledge/.graduated/` to `.pka/graduate-backups/` (out of the knowledge repo).             |
-| `graduate.sh`                     | Removed root-repo auto-commit. Root .meta change is staged only.                                                      |
-| `graduate.sh`                     | Removed Gitea-specific archival URL; printed instructions are forge-agnostic.                                          |
-| `graduate.sh`                     | Commit messages use `Graduate: <name> → knowledge/<subdir>/` with Co-Authored-By: Claude trailer.                      |
-| `init_project_repos.sh`           | Removed hardcoded `ssh://git@git.thatsarapp.org:9022/PKA/...` origin. Origin set only when `ORIGIN_BASE` env is given. |
-| `init_project_repos.sh`           | Added LFS detection for existing `.git` repos; flagged as reinit candidates without modification.                      |
-| `init_project_repos.sh`           | Removed Gitea-specific `NEXT STEPS` output block.                                                                     |
-| `init_project_repos.sh`           | Commit messages use `Bootstrap (git):` prefix with trailer.                                                            |
-| `reinit-project-with-lfs.sh`      | Added typed-confirmation gate (`--yes`/`-y` to bypass).                                                                |
-| `reinit-project-with-lfs.sh`      | Replaced hardcoded `/home/claude/pka/...` template paths with `$WORKSPACE_ROOT/.pka/...`.                              |
-| `reinit-project-with-lfs.sh`      | Added preflight binary check (exit 2 on missing git/git-lfs).                                                          |
-| `reinit-project-with-lfs.sh`      | Commit messages use `Bootstrap (git):` prefix with trailer.                                                            |
-| All scripts                       | Resolve workspace via `${WORKSPACE_ROOT:-$(pwd)}` rather than `$(dirname "$0")`.                                       |
-
-These changes resolve every gap flagged in the source workspace's `gaps.md`.
-
-## Changes in v1.6.3
-
-| File                              | Change                                                                                                                |
-|-----------------------------------|-----------------------------------------------------------------------------------------------------------------------|
-| `graduate.sh`                     | Backup is the moved `.git` directory (complete, includes LFS objects) instead of a `git bundle`; the old code deleted `.git` even when the bundle had not been written. |
-| `graduate.sh`                     | Validates the project name and subdir; refuses symlinks and `.git` files; stages and commits by path; rolls back on a failed commit. |
-| `reinit-project-with-lfs.sh`      | Accepts only `knowledge` or `projects/<name>`; keeps the old repository as a backup; merges LFS filters into an existing `.gitattributes`; preserves all remotes; rolls back on failure. |
-| `init_project_repos.sh`           | Requires git 2.28+; checks identity up front; verifies each `git init`; reports and cleans up failed children; skips symlinks and `.git` files; repairs a missing final newline before appending to `.gitignore`. |
-| `push-all.sh`                     | Uses the child repo's real `origin` remote rather than the URL recorded in `.meta`; reports the two disagreeing.        |
-| `build-repo-list.sh`              | Writes `.meta` with a JSON library, atomically; preserves other top-level keys; refuses to overwrite invalid JSON.      |
-| `upgrade-roles.py`                | Ignores headings inside fenced code blocks; preserves CRLF; warns when no anchor heading was found; unique backup names. |
+- `upgrade-roles.py` carries generated copies of the role seeds; edit the seeds in `skills/pka-bootstrap/references/` and run `python3 scripts/seeds.py --write`. See `skills/pka-bootstrap/references/upgrade.md`.
+- A new module under `tools/pka_tools/` is vendored automatically: `install.py` globs `pka_tools/*.py`.
