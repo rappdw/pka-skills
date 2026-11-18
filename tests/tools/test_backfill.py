@@ -315,8 +315,13 @@ class ReviewFindings(support.ToolsCase):
     def test_a_name_a_link_cannot_carry_is_left_out_not_fatal(self):    # medium
         self.write("knowledge/leadership/2026-05-02-Sync.MD", meeting("2026-05-02", ["Priya"]))
         result = self.json("timeline", "plan")
-        self.assertIn("knowledge/leadership/2026-05-02-Sync.MD", result["unlinkable"])
-        self.assertNotIn("leadership/2026-05-02-Sync", {e["key"] for e in result["entries"]})
+        keys = {e["key"] for e in result["entries"]}
+        if self.path("knowledge/leadership/2026-05-02-Sync.md").exists():
+            # Case-insensitive filesystem (macOS): the link reads back, so it is an entry.
+            self.assertNotIn("knowledge/leadership/2026-05-02-Sync.MD", result["unlinkable"])
+        else:
+            self.assertIn("knowledge/leadership/2026-05-02-Sync.MD", result["unlinkable"])
+            self.assertNotIn("leadership/2026-05-02-Sync", keys)
         self.assertTrue(self.json("timeline", "apply", result["plan_file"])["verified"])
 
     def test_angle_brackets_without_obsidian(self):
