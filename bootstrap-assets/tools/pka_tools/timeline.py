@@ -11,6 +11,13 @@ Line grammar: `- <date> · <kind> · <link>[ — <summary>]`, kind one of
 relative markdown link otherwise. A note is on a timeline when any link in
 the block points at it; that is the key, so adding is idempotent.
 
+What a timeline can link to (`Workspace.link_root`): in an Obsidian vault,
+notes in the vault, since a wikilink cannot leave it; otherwise any note in
+the workspace (`projects/`, `meeting-notes/`, …) except what is not filed
+yet (`owner-inbox/`, `team-inbox/`) and hidden folders. Keys are relative
+to that root. A wikilink written by hand in a workspace without Obsidian is
+still read the way Obsidian reads it, relative to the vault.
+
 The tool inserts a new line before the first line with an older date, and
 rewrites a link target when a note moves. It never moves, re-sorts or
 rewrites any other line, so a hand-edited summary, or text a user added
@@ -106,10 +113,34 @@ def _href_key(ws: Workspace, index: Path, href: str) -> Optional[str]:
         return None
     target = os.path.normpath(os.path.join(str(index.parent), href))
     try:
-        rel = Path(target).relative_to(ws.vault).as_posix()
+        rel = Path(target).relative_to(ws.link_root).as_posix()
     except ValueError:
         return None
     return rel[:-3] if rel.lower().endswith(".md") else rel
+
+
+def _find_bare(ws: Workspace, name: str, cache: dict) -> Optional[str]:
+    """The key of the one file in the vault called `name` (or `name.md`)."""
+    if name not in cache:
+        wanted = {name.casefold() + ".md", name.casefold()}
+        hits = [p for p in ws.walk(ws.vault, captures=False) if p.name.casefold() in wanted]
+        cache[name] = note_key(ws, hits[0]) if len(hits) == 1 and not ws.link_scope_problem(hits[0]) else None
+    return cache[name]
+
+
+def wiki_key(ws: Workspace, target: str, cache: Optional[dict] = None) -> str:
+    """A wikilink target as a key. Obsidian reads it relative to the vault,
+    and so do we; in a workspace whose keys are relative to the root, the
+    vault's folder is put in front (and a bare name is looked up now)."""
+    if ws.link_root == ws.vault:
+        return target           # bare names are resolved by the caller (resolve_bare)
+    cache = {} if cache is None else cache
+    if "/" not in target:
+        found = _find_bare(ws, target, cache)
+        if found:
+            return found
+    joined = os.path.normpath(os.path.join(ws.rel(ws.vault), target)).replace(os.sep, "/")
+    return joined
 
 
 def _encode_href(rel: str) -> str:
@@ -124,14 +155,10 @@ def _encode_href(rel: str) -> str:
 def resolve_bare(ws: Workspace, key: str, cache: Optional[dict] = None) -> str:
     """Obsidian's shortest form: `[[2026-11-12-sync]]` means the one file in
     the vault with that name. Return its full key, or the key unchanged."""
-    if "/" in key:
-        return key
+    if "/" in key or ws.link_root != ws.vault:
+        return key              # without Obsidian, keys_in has resolved bare wikilinks already
     cache = {} if cache is None else cache
-    if key not in cache:
-        wanted = {key.casefold() + ".md", key.casefold()}
-        hits = [p for p in ws.walk(ws.vault, captures=False) if p.name.casefold() in wanted]
-        cache[key] = note_key(ws, hits[0]) if len(hits) == 1 else key
-    return cache[key]
+    return _find_bare(ws, key, cache) or key
 
 
 def block_keys(ws: Workspace, index: Path, lines: List[str], block: Block, cache: Optional[dict] = None) -> List[str]:
@@ -144,15 +171,15 @@ def block_keys(ws: Workspace, index: Path, lines: List[str], block: Block, cache
     for idx in range(block.open + 1, block.close):
         body = line_body(lines[idx])
         match = _LINE_RE.match(body)
-        found = keys_in(ws, index, match.group("link") if match else body)
+        found = keys_in(ws, index, match.group("link") if match else body, cache)
         if found:
             keys.append(resolve_bare(ws, found[0], cache))
     return keys
 
 
-def keys_in(ws: Workspace, index: Path, text: str) -> List[str]:
-    """Note keys (vault-relative, no `.md`) of every link in some text."""
-    keys = [link_target(m.group("target")) for m in WIKILINK_RE.finditer(text)]
+def keys_in(ws: Workspace, index: Path, text: str, cache: Optional[dict] = None) -> List[str]:
+    """Note keys (relative to the link root, no `.md`) of every link in some text."""
+    keys = [wiki_key(ws, link_target(m.group("target")), cache) for m in WIKILINK_RE.finditer(text)]
     for match in _MD_LINK.finditer(text):
         key = _href_key(ws, index, match.group(1))
         if key:
@@ -177,8 +204,40 @@ def entries(ws: Workspace, index: Path, lines: List[str], block: Block) -> List[
 # ------------------------------------------------------------ one line
 
 def note_key(ws: Workspace, path: Path) -> str:
-    rel = ws.vault_rel(path)
+    rel = ws.link_rel(path)
     return rel[:-3] if rel.lower().endswith(".md") else rel
+
+
+def note_file(ws: Workspace, key: str) -> Optional[Path]:
+    """The file a key names, or None."""
+    base = ws.link_root / key
+    for candidate in (Path(str(base) + ".md"), base):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def ref_key(ws: Workspace, given: str) -> str:
+    """A key from a path the user (or a caller) gives: workspace-relative,
+    or vault-relative the way wikilinks and MOCs write it."""
+    ref = given.strip().replace("\\", "/").strip("/")
+    while ref.startswith("./"):
+        ref = ref[2:]
+    if ref.lower().endswith(".md"):
+        ref = ref[:-3]
+    vault_prefix = ws.rel(ws.vault)
+    if ws.link_root == ws.vault:
+        if vault_prefix and (ref == vault_prefix or ref.startswith(vault_prefix + "/")):
+            ref = ref[len(vault_prefix):].strip("/")
+    elif vault_prefix and ref != vault_prefix and not ref.startswith(vault_prefix + "/"):
+        first = ref.split("/", 1)[0]
+        in_root = (ws.root / first).exists() or (ws.root / (first + ".md")).exists()
+        in_vault = (ws.vault / first).exists() or (ws.vault / (first + ".md")).exists()
+        if in_vault and not in_root:
+            ref = vault_prefix + "/" + ref      # vault-relative, as a wikilink writes it
+    if not ref:
+        raise ToolError("empty path: %r" % given, EXIT_USAGE)
+    return ref
 
 
 def _joins_previous(char: str) -> bool:
@@ -504,7 +563,7 @@ def add(
     path = ws.resolve(file_arg)
     if not path.is_file():
         raise ToolError("no such file: %s" % file_arg, EXIT_USAGE)
-    ws.vault_rel(path)
+    ws.link_rel(path)
     if path.name in (MOC_NAME,) or (path.name == INDEX):
         raise ToolError("%s is not a note that goes on a timeline" % file_arg, EXIT_USAGE)
     if kind is not None and kind not in KINDS:
@@ -554,7 +613,11 @@ def person_indexes(ws: Workspace, reg: Optional[Registry] = None) -> List[Person
 
 def rename(ws: Workspace, old_ref: str, new_ref: str, prefix: bool = False, dry_run: bool = False) -> dict:
     """Rewrite timeline links after a note (or, with `prefix`, a folder)
-    moved. `old_ref` / `new_ref` are vault-relative keys without `.md`."""
+    moved. `old_ref` / `new_ref` are paths, workspace- or vault-relative
+    (see `ref_key`), with or without `.md`. A hand-written wikilink whose
+    note moved out of the vault is left alone (`timeline check` reports it)."""
+    old_ref, new_ref = ref_key(ws, old_ref), ref_key(ws, new_ref)
+    vault_prefix = ws.rel(ws.vault)
     changed: List[str] = []
     skipped: List[str] = []
     total = 0
@@ -587,9 +650,14 @@ def rename(ws: Workspace, old_ref: str, new_ref: str, prefix: bool = False, dry_
             def wiki(match: "re.Match[str]") -> str:
                 nonlocal count
                 raw = match.group("target")
-                target = moved(link_target(raw))
+                target = moved(wiki_key(ws, link_target(raw)))
                 if target is None:
                     return match.group(0)
+                if ws.link_root != ws.vault:
+                    # Back to the vault-relative form a wikilink uses.
+                    if not (vault_prefix and target.startswith(vault_prefix + "/")):
+                        return match.group(0)
+                    target = target[len(vault_prefix) + 1:]
                 count += 1
                 suffix = raw.strip()[-3:] if raw.strip().lower().endswith(".md") else ""
                 return "[[%s%s%s%s]]" % (target, suffix, match.group("anchor") or "", match.group("alias") or "")
@@ -603,7 +671,7 @@ def rename(ws: Workspace, old_ref: str, new_ref: str, prefix: bool = False, dry_
                     return match.group(0)
                 bare = href[1:-1] if href.startswith("<") else href
                 ext = ".md" if unquote(bare.split("#", 1)[0]).lower().endswith(".md") else ""
-                rel = _encode_href(os.path.relpath(str(ws.vault / (target + ext)),
+                rel = _encode_href(os.path.relpath(str(ws.link_root / (target + ext)),
                                                    str(person.index.parent)).replace(os.sep, "/"))
                 count += 1
                 whole = match.group(0)
@@ -649,7 +717,6 @@ def listing(ws: Workspace, slug: str) -> dict:
 def check(ws: Workspace) -> dict:
     """Unreadable blocks, links to missing notes, lines out of order or not
     in the grammar. Reports only."""
-    from .pointers import resolve_link
     problems = []
     for person in person_indexes(ws):
         rel = ws.rel(person.index)
@@ -672,7 +739,7 @@ def check(ws: Workspace) -> dict:
         cache: dict = {}
         for entry in found:
             key = resolve_bare(ws, entry["key"], cache) if entry["key"] else None
-            if key is None or resolve_link(ws, key) is None:
+            if key is None or note_file(ws, key) is None:
                 problems.append({"index": rel, "line": entry["line"] + 1,
                                  "problem": "links to a note that does not exist: %s" % entry["key"]})
         for first, second in zip(found, found[1:]):

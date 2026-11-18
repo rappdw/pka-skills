@@ -631,7 +631,7 @@ def rename(ws: Workspace, old: str, new: str, prefix: bool = False, dry_run: boo
 
     # Timeline blocks are tool-owned like pointer rows: always kept in step.
     from . import timeline as timeline_mod
-    timeline_result = timeline_mod.rename(ws, old_ref, new_ref, prefix=prefix, dry_run=dry_run)
+    timeline_result = timeline_mod.rename(ws, old, new, prefix=prefix, dry_run=dry_run)
     if notes:
         files = [path for path in ws.walk(ws.vault, captures=False)
                  if path.suffix.lower() in (".md", ".markdown")]

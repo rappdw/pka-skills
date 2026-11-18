@@ -14,6 +14,16 @@ Backfill: put the notes a workspace already has on people's timelines. Phase 5 o
 - An independent review of the first build found 1 high and 10 medium or low issues (9 reproduced, 2 found by reading the code). All are fixed, with regression tests (`ReviewFindings` in `test_backfill.py`, each failing on the first build). The high one: an interrupted apply (Ctrl-C, a crash) left pages half-written, and a later `restore` then overwrote the user's edits without `--force`. Now any interruption puts every page back, each page's new hash is recorded before it is written, and restore refuses a page whose state it cannot vouch for. The others: one note with an upper-case `.MD` (or `<`/`>` without Obsidian) failed every apply; plan and backup ids collided within one second; Obsidian writing `.obsidian/workspace.json` failed the check (it now covers the vault outside dot-folders, not the whole workspace); a note edited after planning (say, `no-backref: true` added) did not make the plan stale; a failed put-back stopped half way; a hand-edited plan or backup record could copy or delete files outside person pages; a malformed plan crashed with a traceback; a refused commit exited 0, and the user's own uncommitted edits to a page went into the backfill commit; a `wiki.md` near the vault root hid every note under it.
 - The librarian has a "Backfill person timelines" procedure: plan, help the user settle names (aliases only when they confirm), apply only on approval, report the undo command. Three new librarian eval scenarios.
 
+### Changed — what a timeline can link to, without Obsidian
+
+- **Without Obsidian, a timeline reaches the whole workspace.** v1.7.0 linked only to notes inside `knowledge/`, a rule that exists because an Obsidian wikilink cannot leave the vault. Plain relative links have no such limit, and in a workspace where most notes live in `projects/` or a root `meeting-notes/` the old rule left timelines nearly empty. Now `post-route`, `timeline add` and the backfill reach any note in the workspace except `owner-inbox/`, `team-inbox/` (not filed yet) and hidden folders. **Obsidian vaults are unchanged.** Existing timelines need no migration: their links are relative paths and read the same.
+- Keys (what `timeline list` shows) are workspace-relative without Obsidian: `knowledge/leadership/2026-11-14-sync` rather than `leadership/2026-11-14-sync`. A wikilink typed by hand is still read relative to the vault.
+- `timeline rename` and `pointers rename` take workspace paths; a vault-relative path still works.
+- When a filed note and the person pages it touches are in different repositories (a project with its own repo), `post-route` makes one commit in each.
+- `graduate.sh` prints the `timeline rename … --prefix` to run when person pages link into the graduated project.
+- No notes are moved to make them reachable: person pages link to notes where they are.
+- `status` reports `timeline_reach`: the vault with Obsidian, `.` (the workspace) without.
+
 ### Changed
 
 - `timeline.add_to` and the backfill share one insertion routine (`timeline.place`) and one set of checks on a person page (`timeline.prepare_index`).
@@ -22,6 +32,8 @@ Backfill: put the notes a workspace already has on people's timelines. Phase 5 o
 ### Tests
 
 - `tests/tools/test_backfill.py`: planning changes nothing but its two files; apply touches only person pages and is repeatable; hand-edited lines survive; stale plans are refused; restore (and its refusal after an edit); back-link sections as evidence; ambiguous, undated, large, opted-out and unmatched notes are reported, not added; MOCs, person pages and wikis are not candidates; `--since` / `--person`; an unwritable page is left out; Obsidian and plain-markdown links; one commit in a hybrid monorepo; a failed verification rolls back.
+- `tests/tools/test_timeline_scope.py`: without Obsidian, project and root meeting notes go on timelines with relative links; the inboxes and hidden folders are refused; hand-written wikilinks still match; rename follows a graduated project and accepts vault-relative paths; the backfill reaches project notes but not the inboxes or `node_modules/`; `post-route` commits the note and the person page in their own repositories. With Obsidian, notes outside the vault are still refused. 15 of its 18 tests fail on the code before the change (the other 3 pin the unchanged Obsidian behaviour).
+- `tests/test_git_bootstrap.sh` S22/S23: `graduate.sh` names the timeline follow-up only when a person page links into the project.
 
 ## v1.7.0 — 2026-11-17
 

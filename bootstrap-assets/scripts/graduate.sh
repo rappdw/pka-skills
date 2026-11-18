@@ -358,6 +358,18 @@ Previous repository (full history, all branches, LFS objects): ${backup_path}
 EOF
 fi
 
+# Without Obsidian, person timelines can link into projects/. Those links are
+# not rewritten here (person pages are outside this commit); say what to run.
+TIMELINE_PAGES=$(grep -rlF --include=index.md "projects/${NAME}/" "$KNOWLEDGE_DIR" 2>/dev/null || true)
+if [ -n "$TIMELINE_PAGES" ]; then
+  cat <<EOF
+
+Person pages still link into projects/${NAME}/. Follow the move with:
+  .pka/bin/pka-tools timeline rename projects/${NAME} knowledge/${REL_DEST} --prefix
+then commit the changed index.md files.
+EOF
+fi
+
 if [ ${#WARNINGS[@]} -gt 0 ]; then
   echo
   for w in "${WARNINGS[@]}"; do echo "WARNING: $w" >&2; done

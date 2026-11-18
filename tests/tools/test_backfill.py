@@ -322,22 +322,21 @@ class ReviewFindings(support.ToolsCase):
 
     def test_a_case_insensitive_filesystem_gives_the_same_plan(self):
         # macOS: the link's `Sync.md` opens `Sync.MD`. Simulated here, since CI's Linux cannot.
-        backfill, _timeline, ws = self.module()
-        from pka_tools import pointers
+        backfill, timeline, ws = self.module()
         self.write("knowledge/leadership/2026-05-02-Sync.MD", meeting("2026-05-02", ["Priya"]))
-        original = pointers.resolve_link
+        original = timeline.note_file
 
         def insensitive(ws_, target):
             found = original(ws_, target)
             if found is None and target.endswith("Sync"):
-                return ws_.vault / (target + ".md")
+                return ws_.link_root / (target + ".md")
             return found
 
-        pointers.resolve_link = insensitive
+        timeline.note_file = insensitive
         try:
             result = backfill.plan(ws, write=True)
         finally:
-            pointers.resolve_link = original
+            timeline.note_file = original
         self.assertIn("knowledge/leadership/2026-05-02-Sync.MD", result["unlinkable"])
         self.assertTrue(backfill.apply(ws, result["plan_file"], commit=False)["verified"])
 

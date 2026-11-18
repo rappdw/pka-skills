@@ -79,6 +79,7 @@ def cmd_status(args: argparse.Namespace) -> int:
         "vendored_files": vendored,
         "vault": ws.rel(ws.vault) or ".",
         "obsidian_present": ws.obsidian_present,
+        "timeline_reach": ws.rel(ws.link_root) or ".",
         "hybrid_monorepo_present": ws.hybrid_monorepo_present,
         "storage_mode": "index" if schema is not None else "markdown-only",
         "schema_version": schema,
@@ -93,6 +94,7 @@ def cmd_status(args: argparse.Namespace) -> int:
         "pka-tools:        %s (vendored: %s)" % (__version__, manifest_version or "no manifest"),
         "Vault:            %s" % data["vault"],
         "Obsidian:         %s" % ("present" if data["obsidian_present"] else "not present"),
+        "Timelines reach:  %s" % data["timeline_reach"],
         "Hybrid monorepo:  %s" % ("present" if data["hybrid_monorepo_present"] else "not present"),
         "Storage:          %s" % (
             "markdown-only (no index)" if schema is None
@@ -465,9 +467,7 @@ def cmd_timeline(args: argparse.Namespace) -> int:
         _emit(args, result, text)
         return EXIT_OK
     if command == "rename":
-        old = pointers._normalise_ref(ws, args.old)
-        new = pointers._normalise_ref(ws, args.new)
-        result = timeline_mod.rename(ws, old, new, prefix=args.prefix, dry_run=args.dry_run)
+        result = timeline_mod.rename(ws, args.old, args.new, prefix=args.prefix, dry_run=args.dry_run)
         text = ["%d timeline link(s) rewritten in %d file(s)%s" % (result["rewrites"], len(result["changed"]),
                                                                   " (dry run)" if args.dry_run else "")]
         text += ["  %s" % rel for rel in result["changed"]]

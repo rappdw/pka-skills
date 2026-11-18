@@ -101,11 +101,12 @@ def run(
     if topic and not pointers.slugify(topic):
         raise ToolError("--topic %r has no letters or digits to make a slug from" % topic, EXIT_USAGE)
     in_vault = _in_vault(ws, path)
+    scope_problem = ws.link_scope_problem(path)     # the timeline's reach is wider without Obsidian
     rel = ws.rel(path)
     if section is not None and in_vault:
         _check_section(ws, path, section)
-    reg = people.registry(ws) if (in_vault and do_timeline) else None
-    if do_timeline and in_vault:
+    reg = people.registry(ws) if (scope_problem is None and do_timeline) else None
+    if do_timeline and scope_problem is None:
         for slug in list(timeline_people or []) + list((summary_for or {}).keys()):
             if reg is None or reg.get(slug) is None:
                 raise ToolError("no person folder %r for the timeline" % slug, EXIT_USAGE)
@@ -204,8 +205,8 @@ def run(
 
     # 4. timeline
     person_files: List[str] = []
-    if not in_vault:
-        record("timeline", "not-applicable", "outside the vault")
+    if scope_problem is not None:
+        record("timeline", "not-applicable", scope_problem)
     elif not do_timeline:
         record("timeline", "not-requested")
     elif reg is None or reg.home is None:
@@ -256,7 +257,7 @@ def run(
                 leftovers.append(moc_rel)
         except (NotText, OSError):
             continue
-    if in_vault and reg is not None and reg.home is not None:
+    if scope_problem is None and reg is not None and reg.home is not None:
         # Any person's timeline that lists the note, whoever put it there
         # (an earlier run with --person, a run whose commit was refused).
         key = timeline.note_key(ws, path)
@@ -300,7 +301,7 @@ def run(
     else:
         subject = message.strip() if message else default_message(ws, path, role)
         try:
-            commit_result = gitops.commit(ws, subject, paths, body=body)
+            commit_result = _commit_by_repo(ws, subject, paths, body)
         except ToolError as exc:
             failed = True
             record("commit", "failed", exc.message)
@@ -310,6 +311,15 @@ def run(
                                                                  commit_result["repo"], subject))
             else:
                 record("commit", str(commit_result["reason"]), str(commit_result["repo"] or ""))
+            for other in commit_result["others"]:
+                # Person pages in another repository than the note.
+                if other["committed"]:
+                    record("commit", "committed", "%s in %s: %s" % ((other["sha"] or "")[:10], other["repo"], subject))
+                elif other["reason"] == "failed":
+                    failed = True
+                    record("commit", "failed", "%s: %s" % (", ".join(other["paths"]), other["error"]))
+                else:
+                    record("commit", str(other["reason"]), str(other["repo"] or ""))
 
     return {
         "file": rel,
@@ -320,6 +330,27 @@ def run(
         "failed": failed,
         "dry_run": dry_run,
     }
+
+
+def _commit_by_repo(ws: Workspace, subject: str, paths: List[str], body: str) -> dict:
+    """One commit per repository, the note's own first. Without Obsidian a
+    note in `projects/<name>/` can put lines on person pages in another
+    repository; each gets the same subject. Returns the note's result, with
+    `others` holding the rest."""
+    groups: Dict[str, List[str]] = {}       # insertion order: the note's repository first
+    for rel in paths:
+        repo = gitops.toplevel(gitops.physical(ws.resolve(rel)).parent)
+        groups.setdefault(str(repo), []).append(rel)
+    ordered = list(groups.values())
+    first = gitops.commit(ws, subject, ordered[0], body=body)
+    first["others"] = []
+    for group in ordered[1:]:
+        try:
+            first["others"].append(gitops.commit(ws, subject, group, body=body))
+        except ToolError as exc:
+            first["others"].append({"committed": False, "reason": "failed", "error": exc.message,
+                                    "repo": None, "sha": None, "paths": group})
+    return first
 
 
 def _check_section(ws: Workspace, path: Path, section: str) -> None:

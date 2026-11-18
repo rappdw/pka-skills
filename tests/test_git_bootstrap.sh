@@ -291,7 +291,33 @@ if echo "$out" | grep -qE "Gitea|GitHub|archive"; then
 else
   fail "graduation output lacks archival hint"
 fi
+if echo "$out" | grep -q "timeline rename"; then
+  fail "timeline hint printed although no person page links into the project"
+else
+  pass_step "no timeline hint when no person page links into the project"
+fi
 
+cleanup_workspace "$ws"
+
+# ----------- S23: graduation names the timeline follow-up -----------
+start_test "S23 — Graduation says how to follow person-timeline links"
+ws=$(make_workspace)
+mkdir -p "$ws/knowledge/personnel/priya" "$ws/projects/widget"
+echo "widget docs" > "$ws/projects/widget/DOC.md"
+printf '# Priya\n\n## Timeline\n- 2026-05-04 · doc · [Doc](../../../projects/widget/DOC.md)\n' \
+  > "$ws/knowledge/personnel/priya/index.md"
+install_pka_assets "$ws"
+run_init "$ws" >/dev/null 2>&1
+run_build_repo_list "$ws" >/dev/null 2>&1
+( cd "$ws" && git init -b main >/dev/null 2>&1 )
+out=$(cd "$ws" && WORKSPACE_ROOT="$ws" bash .pka/graduate.sh widget reference 2>&1)
+echo "$out" | sed 's/^/  > /'
+assert_dir_exists "$ws/knowledge/reference/widget" "destination created"
+if echo "$out" | grep -qF "pka-tools timeline rename projects/widget knowledge/reference/widget --prefix"; then
+  pass_step "output names the timeline rename to run"
+else
+  fail "output does not name the timeline rename"
+fi
 cleanup_workspace "$ws"
 
 end_run

@@ -1,6 +1,6 @@
-"""Timeline backfill: put the notes a vault already has on people's timelines.
+"""Timeline backfill: put the notes a workspace already has on people's timelines.
 
-Plan, then apply. Planning reads the vault and writes two files: a review
+Plan, then apply. Planning reads the notes and writes two files: a review
 report (`owner-inbox/timeline-backfill-plan-<id>.md`) and the exact lines to
 be written (`.pka/backfill/plan-<id>.json`). It changes nothing else and can
 be run as often as you like. A note whose name a link cannot carry is
@@ -15,7 +15,7 @@ Applying a plan:
     each page's new hash before writing it;
   - adds timeline lines only, through the same code `timeline add` uses;
   - verifies that every planned line is present, every link resolves, and
-    no other file in the vault changed. A failed check, an exception or an
+    no other file a timeline can link to changed. A failed check, an exception or an
     interrupt puts every page back;
   - in a hybrid monorepo, makes one commit with exactly those pages, unless
     one of them had uncommitted edits of the user's.
@@ -48,7 +48,7 @@ from .people import INDEX, Person, Registry, registry, require_home
 from .textio import (
     NotText, detect_newline, line_body, read_text, sha256_file, split_lines, write_text_atomic,
 )
-from .workspace import MOC_NAME, Workspace
+from .workspace import MOC_NAME, UNFILED_ROOTS, Workspace
 
 PLAN_VERSION = 1
 BACKLINK_SECTIONS = ("mentioned in", "related meetings", "inbound references", "references")
@@ -89,7 +89,7 @@ def backlinks(ws: Workspace, reg: Registry) -> Dict[str, Dict[str, str]]:
                 continue
             if section is None:
                 continue
-            for key in tl.keys_in(ws, person.index, line_body(line)):
+            for key in tl.keys_in(ws, person.index, line_body(line), cache):
                 key = tl.resolve_bare(ws, key, cache)
                 out.setdefault(key, {}).setdefault(person.slug, section)
     return out
@@ -105,12 +105,16 @@ def _in_wiki(path: Path, vault: Path) -> bool:
 
 
 def candidates(ws: Workspace, reg: Registry) -> List[Path]:
-    """The files a backfill considers: notes and documents in the vault,
-    not MOCs, person pages, wiki pages or capture directories."""
+    """The files a backfill considers: notes and documents a timeline can
+    link to (the vault in an Obsidian workspace, else the whole workspace
+    but the inboxes), not MOCs, person pages, wiki pages, capture
+    directories or anything under `node_modules/`."""
     out = []
     person_pages = {p.index for p in reg.people.values()}
-    for path in ws.walk(ws.vault, captures=False):
+    for path in ws.walk(ws.link_root, captures=False):
         if path.suffix.lower() not in NOTE_SUFFIXES:
+            continue
+        if ws.link_scope_problem(path) or "node_modules" in path.relative_to(ws.root).parts:
             continue
         if path.name == MOC_NAME or path in person_pages or path.name == "wiki.md":
             continue
@@ -127,11 +131,10 @@ def _link_reads_back(ws: Workspace, index: Path, link: str, key: str, path: Path
     Obsidian) is left out. Compared by name, not by what the filesystem
     opens: on a case-insensitive one (macOS) `Sync.md` opens `Sync.MD`, but
     `timeline apply` and `check` would not agree it is the same note."""
-    from .pointers import resolve_link
-    found = tl.keys_in(ws, index, link)
+    found = tl.keys_in(ws, index, link, cache)
     if not found or tl.resolve_bare(ws, found[0], cache) != key:
         return False
-    target = resolve_link(ws, key)
+    target = tl.note_file(ws, key)
     return target is not None and ws.rel(target) == ws.rel(path)
 
 
@@ -337,13 +340,17 @@ def report(result: dict) -> str:
 # ------------------------------------------------------------ apply
 
 def manifest(ws: Workspace) -> Dict[str, str]:
-    """sha256 of every regular file in the vault, not in dot-folders
-    (`.obsidian`, `.git`, `.trash`: editors and sync rewrite those at will)
-    and not symbolic links. Apply writes only inside the vault, so this is
-    the scope its "nothing else changed" check needs."""
+    """sha256 of every regular file a timeline can link to (see
+    `candidates`), not in dot-folders (`.obsidian`, `.git`, `.trash`:
+    editors and sync rewrite those at will), not in the inboxes (the plan's
+    report lives there) and not symbolic links. Apply writes only person
+    pages, so this is the scope its "nothing else changed" check needs."""
     out = {}
-    for folder, dirs, names in os.walk(str(ws.vault)):
-        dirs[:] = sorted(d for d in dirs if not d.startswith(".") and not os.path.islink(os.path.join(folder, d)))
+    top = str(ws.link_root)
+    for folder, dirs, names in os.walk(top):
+        skip = UNFILED_ROOTS if folder == top and ws.link_root == ws.root else ()
+        dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d not in skip
+                         and not os.path.islink(os.path.join(folder, d)))
         for name in names:
             path = os.path.join(folder, name)
             if name.startswith(".") or os.path.islink(path) or not os.path.isfile(path):
@@ -392,9 +399,8 @@ def _current_hash(path: Path) -> Optional[str]:
 
 def _check_plan(ws: Workspace, reg: Registry, data: dict) -> Dict[str, Person]:
     """Every target is a person page of this registry and every entry a
-    well-formed line for an existing note in the vault, before any file is
-    read or written. A plan file is data; it may have been edited."""
-    from .pointers import resolve_link
+    well-formed line for an existing note a timeline can link to, before
+    any file is read or written. A plan file is data; it may have been edited."""
     pages: Dict[str, Person] = {}
     for rel, target in data["targets"].items():
         person = reg.get(target["slug"])
@@ -411,12 +417,12 @@ def _check_plan(ws: Workspace, reg: Registry, data: dict) -> Dict[str, Person]:
             raise _bad_plan("the line for %s is not a timeline line" % entry["note"])
         if "\n" in entry["line"] or "\r" in entry["line"]:
             raise _bad_plan("the line for %s spans more than one line" % entry["note"])
-        found = tl.keys_in(ws, person.index, match.group("link"))
+        found = tl.keys_in(ws, person.index, match.group("link"), cache)
         if not found or tl.resolve_bare(ws, found[0], cache) != entry["key"]:
             raise _bad_plan("the line for %s does not link to it" % entry["note"])
-        note = resolve_link(ws, entry["key"])
-        if note is None or ws.rel(note) != entry["note"]:
-            raise _bad_plan("%s is not in the vault" % entry["note"])
+        note = tl.note_file(ws, entry["key"])
+        if note is None or ws.rel(note) != entry["note"] or ws.link_scope_problem(note):
+            raise _bad_plan("%s is not a note a timeline can link to" % entry["note"])
     return pages
 
 
@@ -457,11 +463,12 @@ def apply(ws: Workspace, plan_arg: str, dry_run: bool = False, commit: bool = Tr
     data = load_plan(ws, plan_arg)
     reg = registry(ws)
     require_home(reg)
-    pages = _check_plan(ws, reg, data)
     if bool(data.get("obsidian")) != ws.obsidian_present:
+        # First: with and without Obsidian, keys and links mean different things.
         raise ToolError("the plan was made %s Obsidian and the workspace is now %s; plan again"
                         % ("with" if data.get("obsidian") else "without",
                            "an Obsidian vault" if ws.obsidian_present else "not one"), EXIT_NOT_READY)
+    pages = _check_plan(ws, reg, data)
     targets: Dict[str, dict] = data["targets"]
     stale = [rel for rel, t in targets.items() if _current_hash(ws.root / rel) != t["sha256"]]
     stale += sorted({e["note"] for e in data["entries"] if _current_hash(ws.root / e["note"]) != e["note_sha256"]})
@@ -560,8 +567,7 @@ def tl_hash(content: str) -> str:
 
 def _verify(ws: Workspace, by_index: Dict[str, List[dict]], before: Dict[str, str]) -> List[str]:
     """Every planned line is there, every link resolves, nothing else in
-    the vault changed."""
-    from .pointers import resolve_link
+    the workspace changed."""
     problems = []
     for rel, items in sorted(by_index.items()):
         index = ws.root / rel
@@ -570,7 +576,7 @@ def _verify(ws: Workspace, by_index: Dict[str, List[dict]], before: Dict[str, st
         for entry in items:
             if entry["key"] not in keys:
                 problems.append("%s: the line for %s is missing" % (rel, entry["note"]))
-            elif resolve_link(ws, entry["key"]) is None:
+            elif tl.note_file(ws, entry["key"]) is None:
                 problems.append("%s: the link to %s does not resolve" % (rel, entry["note"]))
     after = manifest(ws)
     unexpected = sorted(rel for rel in set(before) | set(after)
