@@ -394,6 +394,7 @@ Each person's `index.md` carries a `## Timeline`: one line per note about them, 
 - **Who writes it:** `.pka/bin/pka-tools post-route` when a note is filed (any role). The role supplies the summary: at most 140 characters, drawn only from the note — decisions and what this person owns; for a 1-1, the topics only.
 - **Who is on a note's timeline:** the person whose folder holds the note; people its `person` / `attendees` frontmatter or `## Attendees` links name with high confidence; a person whose slug is in the filename. A body mention is not enough. Ambiguous names are never added. Meetings with more than 8 resolved attendees add none of them. A note with `no-backref: true` goes on nobody's timeline.
 - **Editing:** the user may rewrite any summary or add text inside the block; the tool never changes an existing line except to follow a renamed note. Do not reorder lines by hand if you want new ones to land in date order.
+- **Backfill:** notes filed before the timeline existed are added once, with `.pka/bin/pka-tools timeline plan` (a report to review) and then `timeline apply <plan>`, which backs up and verifies; `timeline restore <id>` undoes it. The librarian runs it on request.
 - **Rollback:** `.pka/bin/pka-tools timeline strip` removes the blocks.
 - The older `## Mentioned in` back-link sections are no longer written; existing ones stay.
 """,
@@ -663,6 +664,7 @@ Each person's `index.md` carries a `## Timeline`: one line per note about them, 
 - **Who writes it:** `.pka/bin/pka-tools post-route` when a note is filed (any role). The role supplies the summary: at most 140 characters, drawn only from the note — decisions and what this person owns; for a 1-1, the topics only.
 - **Who is on a note's timeline:** the person whose folder holds the note; people its `person` / `attendees` frontmatter or `## Attendees` links name with high confidence; a person whose slug is in the filename. A body mention is not enough. Ambiguous names are never added. Meetings with more than 8 resolved attendees add none of them. A note with `no-backref: true` goes on nobody's timeline.
 - **Editing:** the user may rewrite any summary or add text inside the block; the tool never changes an existing line except to follow a renamed note. Do not reorder lines by hand if you want new ones to land in date order.
+- **Backfill:** notes filed before the timeline existed are added once, with `.pka/bin/pka-tools timeline plan` (a report to review) and then `timeline apply <plan>`, which backs up and verifies; `timeline restore <id>` undoes it. The librarian runs it on request.
 - **Rollback:** `.pka/bin/pka-tools timeline strip` removes the blocks.
 - The older `## Mentioned in` back-link sections are no longer written; existing ones stay.
 
@@ -1051,6 +1053,7 @@ KNOWN_SECTION_HASHES = {
     ],
     "_obsidian.md:## Person timeline (added in v1.7.0)": [
         "14e620138389ca80",
+        "8fc559e5b5400e57",
     ],
     "_obsidian.md:## Pointer Layer (added in v1.6.1)": [
         "0828652fcbd3498a",

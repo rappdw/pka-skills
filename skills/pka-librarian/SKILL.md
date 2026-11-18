@@ -14,8 +14,9 @@ description: >
   processing instead of routing them). Also runs lint / health checks on the
   knowledge base (orphan files, broken links, stale wiki sources, contradiction
   candidates) — triggered by "run a health check", "lint my knowledge base",
-  "what needs attention", or "check for broken links". Works standalone or with
-  pka-bootstrap.
+  "what needs attention", or "check for broken links". Backfills person
+  timelines from existing notes ("backfill timelines"). Works standalone or
+  with pka-bootstrap.
 user-invocable: true
 argument-hint: "[file or command]"
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
@@ -102,6 +103,19 @@ The same command. It is incremental: unchanged files are skipped, changed files 
 ## Searching
 
 `.pka/bin/pka-tools search <words>` — never a hand-written `MATCH`. Pointer-row hits come first and list their files; read those before falling back to body matches.
+
+## Backfill Person Timelines
+
+**Trigger:** "backfill timelines", "put my old notes on people's timelines", "fill in the timelines".
+
+New notes reach timelines through `post-route`. Notes filed before v1.7.0 need a one-time backfill, which is plan-then-apply and never modifies a note:
+
+1. `.pka/bin/pka-tools timeline plan` (optionally `--since YYYY-MM-DD`, `--person <slug>`). It writes `owner-inbox/timeline-backfill-plan-<date>.md` and `.pka/backfill/plan-<id>.json` and changes nothing else. Show the user the report's counts and its lists: ambiguous names, frequent names with no person folder, undated notes, skipped large meetings, people whose page cannot be written, stubs to be created.
+2. Help the user act on the lists: `people alias` for a name they confirm, a person folder only when they ask for one, a date for an undated note only if they give it. Then plan again. Planning is cheap; never guess on their behalf.
+3. Only when the user approves the plan: `.pka/bin/pka-tools timeline apply <plan file>`. It refuses if a person page changed since the plan, backs up every page it touches to `.pka/backups/<id>/`, writes the lines, verifies them (every link resolves, nothing else in the workspace changed; a failed check puts the pages back) and, in a hybrid monorepo, makes one commit with exactly those pages.
+4. Report the line and page counts, the commit, and the undo command it prints: `.pka/bin/pka-tools timeline restore <id>` (it refuses pages edited after the backfill unless `--force`).
+
+The lines have no summaries. To add them, read the notes for one person or a recent window and propose summaries for the user to approve; never for the whole history at once.
 
 ## Lint / Health Check
 

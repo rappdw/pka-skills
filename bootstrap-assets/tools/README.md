@@ -45,6 +45,9 @@ The workspace is `--workspace`, else `$WORKSPACE_ROOT`, else the nearest folder 
 | `timeline rename OLD NEW [--prefix]` | Follow a moved note in every timeline (`pointers rename` does this too) | person `index.md` files |
 | `timeline check [--strict]` | Unreadable blocks, links to missing notes, lines out of order | nothing |
 | `timeline strip [--person S]` | Remove timeline blocks (rollback) | person `index.md` files |
+| `timeline plan [--since D] [--person S] [--include-large] [--no-write]` | Backfill: the timeline lines existing notes would get, as a review report and a plan file | `owner-inbox/timeline-backfill-plan-<date>.md`, `.pka/backfill/plan-<id>.json` |
+| `timeline apply PLAN [--no-commit] [--dry-run]` | Backfill: write a plan's lines, back up and verify; one commit in a hybrid monorepo | person `index.md` files, `.pka/backups/<id>/`, a git commit |
+| `timeline restore ID [--force] [--dry-run]` | Put the person pages back as they were before an apply | person `index.md` files |
 | `log add --role R --summary S [--open T] [--next N]` | Append one well-formed session-log entry | `.pka/session-log.md` |
 | `log open [--last N]` | Open threads of recent entries, newest first | nothing |
 | `log check [--strict]` | Entries that do not follow the grammar | nothing |
@@ -102,6 +105,7 @@ Every command that writes to a user's file follows these. The tests in `tests/to
 - Evidence: the note is in the person's folder (T1); or its `person` / `attendees` frontmatter, an `## Attendees` link, or a filename containing the slug names them with high confidence (T2). Body mentions do not count. More than 8 resolved attendees: none are added unless `--include-large`. `no-backref: true` opts a note out.
 - Summaries are at most 140 characters (cut without splitting a character); the role writes them from the note.
 - Without Obsidian the links are relative markdown links; `%` and `#` in a filename are percent-encoded.
+- **Backfill** (`timeline plan`, `apply`, `restore`). Planning walks the vault (not MOCs, person pages, wiki folders, capture directories or `.pkaignore` matches; markdown and office documents), decides who each note belongs to exactly as for a newly filed note, and also counts a link in the old back-link sections of a person's own page (`## Mentioned in`, `## Related meetings`, `## Inbound References`, `## References`) as T2 evidence. A note with no date (filename prefix or frontmatter `date`) is reported, never dated from its modification time. Lines get no summary. The plan records a hash of every page it will write; `apply` refuses if one changed (or a planned stub appeared) and plan again is the answer, refuses a plan made with Obsidian in a workspace without it (or the reverse), backs the pages up first, adds only lines whose note is not already on the timeline, then checks that every planned line is there, every link resolves, and a hash of every file in the workspace (not `.git`, not its own backup and plan folders) shows nothing else changed. Any failure puts the pages back. `restore` removes stubs the apply created and refuses a page edited after the apply unless `--force`.
 - `timeline strip` removes the blocks, the `## Timeline` heading when nothing else is under it, and an `index.md` that was only the stub the tool created. Text the user typed inside a block goes with it. Whitespace next to the block may differ by a line from before the first `add`.
 
 ## Git rules

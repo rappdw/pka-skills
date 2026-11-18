@@ -393,6 +393,59 @@ def _insert(lines: List[str], block: Block, entry_list: List[dict], new_line: st
     return out
 
 
+def place(ws: Workspace, index: Path, lines: List[str], new_line: str, date: str, newline: str) -> List[str]:
+    """`lines` with `new_line` in the timeline block: before the first line
+    with an older date, or in a new block (under an existing `## Timeline`
+    heading, else a new section at the end). The caller has checked that the
+    block is readable and that the note is not on it yet."""
+    block = locate(lines)
+    if block.open is not None:
+        return _insert(lines, block, entries(ws, index, lines, block), new_line, date, newline)
+    section = [OPEN_MARK + newline, new_line + newline, CLOSE_MARK + newline]
+    out = list(lines)
+    if block.heading is not None:
+        at = block.heading + 1
+        if not line_end(out[block.heading]):
+            out[block.heading] += newline
+        out[at:at] = section
+    else:
+        if out and not line_end(out[-1]):
+            out[-1] += newline
+        if out and line_body(out[-1]).strip():
+            out.append(newline)
+        out += [HEADING + newline] + section
+    return out
+
+
+def prepare_index(person: Person) -> Tuple[Optional[str], Optional[str], bool]:
+    """(problem, text, created) for writing to a person's index.md. `text`
+    is the stub when the file does not exist yet; `problem` says why the
+    file must be left alone."""
+    if person.index.is_symlink():
+        return "index.md is a symbolic link; its timeline lives elsewhere", None, False
+    created = not person.index.exists()
+    if created:
+        text = stub_text(person.name)
+    else:
+        try:
+            text = read_text(person.index)
+        except NotText:
+            return "index.md is not valid UTF-8", None, False
+        except OSError as exc:
+            return str(exc), None, False
+    if has_bare_cr(text):
+        return "index.md uses bare carriage returns as line endings", None, created
+    lines = split_lines(text)
+    if unclosed_fence(lines):
+        return "index.md has a code fence that is never closed", None, created
+    if not created and not os.access(str(person.index), os.W_OK):
+        return "index.md is read-only", None, created
+    block = locate(lines)
+    if block.problem:
+        return block.problem, None, created
+    return None, text, created
+
+
 def add_to(
     ws: Workspace,
     reg: Registry,
@@ -411,60 +464,20 @@ def add_to(
     if obsidian and _UNLINKABLE & set(key):
         result.update(action="skipped", problem="the note's path contains a character a wikilink cannot express")
         return result
-    if person.index.is_symlink():
-        result.update(action="skipped", problem="index.md is a symbolic link; its timeline lives elsewhere")
-        return result
-    created = not person.index.exists() and not person.index.is_symlink()
-    if created:
-        text = stub_text(person.name)      # written together with the first line
-    else:
-        try:
-            text = read_text(person.index)
-        except NotText:
-            result.update(action="skipped", problem="index.md is not valid UTF-8")
-            return result
-        except OSError as exc:
-            result.update(action="skipped", problem=str(exc))
-            return result
-    if has_bare_cr(text):
-        result.update(action="skipped", problem="index.md uses bare carriage returns as line endings")
+    problem, text, created = prepare_index(person)     # a stub is written together with the first line
+    if problem:
+        result.update(action="skipped", problem=problem)
         return result
     lines = split_lines(text)
-    if unclosed_fence(lines):
-        result.update(action="skipped", problem="index.md has a code fence that is never closed")
-        return result
-    if not created and not os.access(str(person.index), os.W_OK):
-        result.update(action="skipped", problem="index.md is read-only")
-        return result
     block = locate(lines)
-    if block.problem:
-        result.update(action="skipped", problem=block.problem)
-        return result
     newline = detect_newline(text)
     link = format_link(ws, person.index, note.path, label, obsidian)
     new_line = format_line(date, kind, link, summary)
     result["line"] = new_line
-
-    if block.open is not None:
-        if key in block_keys(ws, person.index, lines, block):
-            return result
-        out = _insert(lines, block, entries(ws, person.index, lines, block), new_line, date, newline)
-        action = "added"
-    else:
-        section = [OPEN_MARK + newline, new_line + newline, CLOSE_MARK + newline]
-        out = list(lines)
-        if block.heading is not None:
-            at = block.heading + 1
-            if not line_end(out[block.heading]):
-                out[block.heading] += newline
-            out[at:at] = section
-        else:
-            if out and not line_end(out[-1]):
-                out[-1] += newline
-            if out and line_body(out[-1]).strip():
-                out.append(newline)
-            out += [HEADING + newline] + section
-        action = "added"
+    if block.open is not None and key in block_keys(ws, person.index, lines, block):
+        return result
+    out = place(ws, person.index, lines, new_line, date, newline)
+    action = "added"
     if not dry_run:
         try:
             write_text_atomic(person.index, "".join(out))

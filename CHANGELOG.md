@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.7.1 — unreleased
+
+Backfill: put the notes a workspace already has on people's timelines. Phase 5 of the v1.7 plan.
+
+**Existing workspaces:** run `bootstrap upgrade` to get the new `pka-tools`; it offers to refresh the "Person timeline" section of `.pka/roles/_obsidian.md` if you never edited it. Then ask the librarian to "backfill timelines".
+
+### Added — `timeline plan`, `apply`, `restore`
+
+- **`timeline plan`** walks the vault and works out, for every dated note, whose timeline it belongs on, with the same evidence rules as a newly filed note. A link in the old back-link sections of a person's own page (`## Mentioned in`, `## Related meetings`, `## Inbound References`, `## References`) also counts. It writes a review report, `owner-inbox/timeline-backfill-plan-<date>.md`, and the exact lines, `.pka/backfill/plan-<id>.json`, and changes nothing else. The report has entries per person with first and last dates, a sample of 20 entries with their evidence, ambiguous names with candidates, names with no person folder that appear in 3 or more notes, undated notes, skipped large meetings, people whose page cannot be written, and the `index.md` stubs it would create. `--since`, `--person`, `--include-large`, `--no-write`.
+- **`timeline apply <plan>`** refuses if a person page changed since the plan (or a planned stub appeared), or if the workspace gained or lost Obsidian. It backs every page up to `.pka/backups/<id>/` and adds only lines whose note is not already on the timeline, so hand-edited lines stay as they are. Then it verifies: every planned line is present, every link resolves, and a hash of every file in the workspace shows nothing outside those pages changed. A failed check puts the pages back. In a hybrid monorepo it makes one commit with exactly those pages.
+- **`timeline restore <id>`** puts the pages back and removes stubs the apply created. It refuses a page edited after the backfill unless `--force`.
+- The librarian has a "Backfill person timelines" procedure: plan, help the user settle names (aliases only when they confirm), apply only on approval, report the undo command. Three new librarian eval scenarios.
+
+### Changed
+
+- `timeline.add_to` and the backfill share one insertion routine (`timeline.place`) and one set of checks on a person page (`timeline.prepare_index`).
+- The `_obsidian.md` "Person timeline" seed gains a Backfill bullet.
+
+### Tests
+
+- `tests/tools/test_backfill.py`: planning changes nothing but its two files; apply touches only person pages and is repeatable; hand-edited lines survive; stale plans are refused; restore (and its refusal after an edit); back-link sections as evidence; ambiguous, undated, large, opted-out and unmatched notes are reported, not added; MOCs, person pages and wikis are not candidates; `--since` / `--person`; an unwritable page is left out; Obsidian and plain-markdown links; one commit in a hybrid monorepo; a failed verification rolls back.
+
 ## v1.7.0 — 2026-11-17
 
 The mechanics move into a tool, every skill files notes the same way, and people get timelines. This release includes the two pre-releases below (v1.7.0-alpha.1 and v1.7.0-beta.1), which were not released separately; read all three entries.
