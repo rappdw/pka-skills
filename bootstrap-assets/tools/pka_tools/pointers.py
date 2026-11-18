@@ -587,7 +587,9 @@ def _normalise_ref(ws: Workspace, given: str) -> str:
 def rename(ws: Workspace, old: str, new: str, prefix: bool = False, dry_run: bool = False,
            notes: bool = False) -> dict:
     """Rewrite wikilinks after a file or folder moved: in every `_MOC.md`,
-    and with `notes` in every markdown note of the vault too.
+    and with `notes` in every markdown note of the vault too, plus the notes
+    of the moved folder itself when it is outside the vault (a project moved
+    back out of `knowledge/` still holds links to its archive location).
 
     Only the link target changes: an alias or a `#heading` is kept. Links in
     fenced blocks, inline code, HTML comments and escaped `\\[[...]]` are
@@ -635,6 +637,21 @@ def rename(ws: Workspace, old: str, new: str, prefix: bool = False, dry_run: boo
     if notes:
         files = [path for path in ws.walk(ws.vault, captures=False)
                  if path.suffix.lower() in (".md", ".markdown")]
+        seen = set(files)
+        for given in (old, new):
+            try:
+                folder = ws.resolve(given)
+            except ToolError:
+                continue
+            if not folder.is_dir() or folder == ws.vault or ws.vault in folder.parents:
+                continue
+            # The whole moved folder, not only what `.pkaignore` lets the index
+            # see: by default a project is indexed two levels deep, and a note
+            # below that still has to follow the move.
+            for path in ws.walk(folder, use_ignore=False, captures=False):
+                if path.suffix.lower() in (".md", ".markdown") and path not in seen:
+                    seen.add(path)
+                    files.append(path)
     else:
         files = ws.moc_files()
     for moc in files:

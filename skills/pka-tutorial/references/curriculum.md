@@ -269,7 +269,7 @@ You say "transition `<project>` to knowledge." What happens:
 3. **Artifact cleanup.** I list build artifacts (`node_modules/`, temp files)
    and confirm before deleting
 4. **Move.** Directory moves from `projects/<name>/` to your archive destination,
-   and every link that pointed at the old location is rewritten to the new one.
+   and every wikilink that pointed at the old location is rewritten to the new one.
    If the project folder is its own git repository, I stop and ask first: what
    happens to that history is your decision. Nothing is committed for you
 5. **Re-index.** Librarian runs a full content index pass on the moved directory

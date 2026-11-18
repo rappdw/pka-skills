@@ -272,7 +272,9 @@ class Versions(unittest.TestCase):
         start a process, so no command can stage, commit or push."""
         import ast
         banned = {"subprocess", "pty", "multiprocessing"}
-        for path in sorted((support.ASSETS / "tools").rglob("*.py")) + [support.PLUGIN_TOOL]:
+        scanned = sorted((support.ASSETS / "tools").rglob("*.py")) + [support.PLUGIN_TOOL]
+        scanned += sorted((support.ASSETS / "scripts").glob("*.py"))
+        for path in scanned:
             tree = ast.parse(path.read_text(encoding="utf-8"))
             for node in ast.walk(tree):
                 names = []

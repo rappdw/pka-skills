@@ -163,7 +163,7 @@ To undo: replace `.pka/knowledge.db` with the backup file named in the output. D
 
 After running `upgrade`, the user may want to:
 
-1. **Bring the unseeded sections up to date by hand.** The upgrade never touches `## Key Competencies`, `## Output Conventions` or `## Invocation`. Compare them against `references/role-definitions.md`. In a workspace bootstrapped on v1.6 or v1.7.0 the orchestrator's copies still mention the removed push protocol: "Session-end consolidated push for hybrid-monorepo workspaces" (Key Competencies), "Never auto-commits root repo…" (Output Conventions) and "push coordination" (Invocation). Offer to show the user those three lines; they delete or reword them.
+1. **Bring the unseeded sections up to date by hand.** The upgrade never touches `## Key Competencies`, `## Output Conventions` or `## Invocation`. Compare them against `references/role-definitions.md`. In a workspace bootstrapped on v1.6 or v1.7.0 the orchestrator's copies still mention the removed push protocol: "Session-end consolidated push for hybrid-monorepo workspaces" (Key Competencies), "Bootstrap dispatch (obsidian / git / all)…" (Key Competencies), "Never auto-commits root repo…" (Output Conventions) and "push coordination" (Invocation). A customised section that was kept may also still point at `.pka/roles/_git-protocol.md`, which a refresh removes. Offer to show the user those lines; they delete or reword them.
 2. **Update role frontmatter** if a new model is preferred. Upgrade preserves existing frontmatter; users decide whether to switch (`claude-opus-4-5` → `claude-opus-4-7` etc.).
 3. **Re-run `bootstrap obsidian`** if they want the mechanical retrofit on an existing vault.
 

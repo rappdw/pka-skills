@@ -34,7 +34,7 @@ Ingest, OCR, categorize, and index documents for a Personal Knowledge Assistance
 5. **Cache the detection predicate** (used by the Obsidian behavior below):
    - `obsidian_present := directory_exists("./knowledge/.obsidian")`
    It is evaluated once per session and gates the additive behaviors at the end of routing. `.pka/bin/pka-tools status` prints it, with the index roots and the schema version.
-6. **Check the toolkit.** The mechanical steps below run through `.pka/bin/pka-tools` (Python 3.9+, no network). If it is missing, install it from the plugin (`python3 "<plugin root>/bootstrap-assets/tools/pka-tools" install --workspace .`, where the plugin root is two directories above this skill's folder) or ask the user to run `bootstrap upgrade`. If `status` says the index needs `db migrate`, tell the user and offer `bootstrap upgrade`; do not migrate from here without asking.
+6. **Check the toolkit.** The mechanical steps below run through `.pka/bin/pka-tools` (Python 3.9+, no network). If it is missing, install it from the plugin (`python3 "<plugin root>/bootstrap-assets/tools/pka-tools" install --workspace .`, where the plugin root is two directories above this skill's folder) or ask the user to run `bootstrap upgrade`. If it is there but older than the plugin (`.pka/bin/pka-tools version` against `python3 "<plugin root>/bootstrap-assets/tools/pka-tools" version`), say so and ask the user to run `bootstrap upgrade` before filing anything: an older copy behaves as its own release did (one from before v1.8.0 still commits into nested repositories). If `status` says the index needs `db migrate`, tell the user and offer `bootstrap upgrade`; do not migrate from here without asking.
 
 ## Transcript Awareness
 

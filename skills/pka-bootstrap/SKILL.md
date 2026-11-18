@@ -315,11 +315,11 @@ Triggered by: "transition `<folder>` to knowledge"
 5. Move the folder and carry its links along:
    - **First check for a nested repository.** If `<project>/.git` exists, stop and ask. A plain move would carry the project's whole repository into the destination, and pka-skills no longer manages nested repositories: the user decides whether to keep that history somewhere (move `.git` aside first) or let it travel with the folder.
    - `mv <project>/ <archive-destination>/<folder>/`
-   - Rewrite every link that pointed at the old location, in MOCs and notes:
+   - Rewrite the wikilinks that pointed at the old location, in the vault's MOCs and notes and in the moved folder's own notes:
      ```
      .pka/bin/pka-tools pointers rename <project path> <new path> --prefix --notes
      ```
-     Both paths are relative to the workspace root (`projects/orion`, `knowledge/archive/orion`). It prints how many links it rewrote and in which files; running it again changes nothing.
+     Both paths are relative to the workspace root (`projects/orion`, `knowledge/archive/orion`). It prints how many links it rewrote and in which files; running it again changes nothing. It rewrites `[[wikilinks]]` only. Search for the old path afterwards (`grep -rn "<project path>" --include='*.md' .`) and show the user what is left: relative markdown links, and mentions in `CLAUDE.md` or other projects, are theirs to fix. Then run `.pka/bin/pka-tools index`.
 
    Then copy the approved summary into the moved directory as `project-summary.md`. Nothing is committed: the move, the rewritten links and the summary are left in the working tree for the user.
 6. Update Repo Map: status → archived, Priority → Reference
@@ -328,7 +328,7 @@ Triggered by: "transition `<folder>` to knowledge"
 
 ### Reverse Transition
 
-1. Move back from archive destination to original location, then run `.pka/bin/pka-tools pointers rename <archive path> <original path> --prefix --notes` so links follow it. If the project was graduated by an earlier release's `graduate.sh`, its original repository is still at `.pka/graduate-backups/<folder>-<timestamp>.git`: tell the user it is there and that restoring it (`mv <backup> projects/<folder>/.git`) is theirs to do. Never delete anything under `.pka/graduate-backups/`.
+1. Move back from archive destination to original location, then run `.pka/bin/pka-tools pointers rename <archive path> <original path> --prefix --notes` so wikilinks follow it, in the vault and inside the project's own notes, then `.pka/bin/pka-tools index`. If the project was graduated by an earlier release's `graduate.sh`, its original repository is still at `.pka/graduate-backups/<folder>-<timestamp>.git`: tell the user it is there and that restoring it (`mv <backup> projects/<folder>/.git`) is theirs to do. Never delete anything under `.pka/graduate-backups/`.
 2. Update Repo Map: status → active
 3. Remove from full-text index; add back to shallow index
 4. `project-summary.md` stays in project directory as context
@@ -427,7 +427,7 @@ Full step-by-step algorithm in `references/upgrade.md`. Summary:
    - Lists **sections seeded by an earlier version**: "can be refreshed" (the text is exactly what an earlier version shipped, so the user never edited it) or "customised — left alone"
    - Lists **obsolete** sections and files, left by the removed commit/push protocol (`.pka/roles/_git-protocol.md`, the "Commit/push protocol" sections, the orchestrator's push sections): "can be removed" or "customised — left alone"
 4. **Print the helper's summary** to the user.
-5. **Offer the refresh, if the summary lists sections that can be refreshed or removed.** These carry superseded instructions (the pre-v1.7 pointer-row rule, for example). Ask once, naming both kinds; on a yes run `python3 .pka/upgrade-roles.py --workspace <root> --refresh`. It takes a new backup, replaces the refreshable sections, removes the obsolete ones that were never edited, and leaves customised ones alone. Until the obsolete sections are gone the role files still tell the roles to commit and push, which no longer happens.
+5. **Offer the refresh, if the summary lists sections that can be refreshed or removed.** These carry superseded instructions (the pre-v1.7 pointer-row rule, for example). Ask once, naming both kinds; on a yes run `python3 .pka/upgrade-roles.py --workspace <root> --refresh`. It takes a new backup, replaces the refreshable sections, removes the obsolete ones that were never edited, and leaves customised ones alone. Until the obsolete sections are gone the role files still tell the roles to commit, to push and to run helper scripts the upgrade has just moved to the backup folder. Say this plainly if the user declines the refresh or a section is customised and stays: those instructions must not be followed, and they should remove or reword them.
    - For a **customised** section, show the difference with `--diff` and let the user decide. Replace one (or remove an obsolete one) only on an explicit yes for that section: `--refresh --refresh-section '<file>:## <Heading>'`. Never pass `--refresh-section` on your own judgement — it overwrites or removes the user's text (the backup keeps it). A customised `_git-protocol.md` is never removed by the helper; the user deletes it when they no longer want it.
 6. **Suggest follow-ups** based on what's now present:
    - If `knowledge/.obsidian/` exists and the user hasn't already, suggest `bootstrap obsidian` for the mechanical retrofit.

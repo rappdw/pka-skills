@@ -31,7 +31,7 @@ The workspace is `--workspace`, else `$WORKSPACE_ROOT`, else the nearest folder 
 | `moc add-link FILE [--section H]` | Add a `- [[note]]` bullet to the nearest `_MOC.md` | one `_MOC.md` |
 | `pointers add FILE [--topic S] [--entities A,B] [--context T] [--moc M] [--dry-run]` | Record a routed file in its domain MOC's Pointers table | `_MOC.md` files |
 | `pointers init [FOLDER…]` | Opt in to the pointer layer without Obsidian: a `_MOC.md` with an empty Pointers table per folder | new `_MOC.md` files |
-| `pointers rename OLD NEW [--prefix] [--notes] [--dry-run]` | Rewrite links after a file or folder moved (MOCs; with `--notes`, every note) | `_MOC.md` files, notes |
+| `pointers rename OLD NEW [--prefix] [--notes] [--dry-run]` | Rewrite links after a file or folder moved (MOCs; with `--notes`, every note in the vault, and every note of OLD or NEW when that folder is outside the vault). Wikilinks only | `_MOC.md` files, notes |
 | `pointers check [--strict]` | Broken pointer links, unreadable tables, rows over the soft cap | nothing |
 | `pointers list [MOC]` | Pointer rows as data | nothing |
 | `obsidian bootstrap [--dry-run]` | The one-time mechanical retrofit of `knowledge/` | MOC and index stubs, frontmatter |
