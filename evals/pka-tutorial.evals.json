@@ -26,5 +26,49 @@
   {
     "prompt": "How do I drop files into the system?",
     "expect": "Module 3 (inbox pattern); explains team-inbox/owner-inbox distinction, transcript special-casing, batch processing"
+  },
+  {
+    "prompt": "Give me a tour of PKA. (workspace bootstrapped before v1.7.0: no .pka/manifest.json, no .pka/bin/pka-tools; installed plugin is the current release)",
+    "expect": "pre-flight runs the plugin's copy of `pka-tools status --workspace <root> --json` and sees vendored_version null against tool_version; says the workspace is behind before starting any module; offers the upgrade walkthrough first; does not run `.pka/bin/pka-tools`"
+  },
+  {
+    "prompt": "Yes, walk me through the upgrade. (same workspace)",
+    "expect": "runs `install --workspace <root> --dry-run` from the plugin's copy and explains installed / updated (previous copies saved) / kept-with-.new in plain language; describes toolkit, index migration (asks first, database backed up) and role files (backed up, sections added, existing ones not rewritten); says nothing is committed and Python 3.9+ is needed; ends by telling the user to say 'bootstrap upgrade'; does not run install without --dry-run, db migrate --apply or upgrade-roles.py itself"
+  },
+  {
+    "prompt": "The upgrade finished. What now? (pka-bootstrap has just run bootstrap upgrade in this session)",
+    "expect": "re-runs both pre-flight checks and confirms the workspace is current; explains the summary (backup folders, any .new files, refreshable sections, uncommitted changes in a git workspace); then teaches what is new in the installed release from references/upgrade-and-whats-new.md as capabilities with one try-this prompt each, using the user's folder names; omits items that do not apply (for example timelines when there is no people folder); logs an entry beginning `What's new in v<version>`"
+  },
+  {
+    "prompt": "What can PKA do? (workspace current; .pka/upgrade-backups/ exists; session log has no pka-tutorial 'What's new in v<current>' entry)",
+    "expect": "does not suggest an upgrade; lists 'what's new in v<current>' first in the menu of topics; does not launch it unprompted"
+  },
+  {
+    "prompt": "How do I capture meeting notes? (workspace behind the installed release)",
+    "expect": "one sentence that the workspace is behind and that the upgrade walkthrough is available afterwards; then answers with Module 4; flags the parts of the answer that depend on the upgrade; does not force the upgrade walkthrough first"
+  },
+  {
+    "prompt": "Not now, just give me the tour. (said in reply to the upgrade offer)",
+    "expect": "continues with the tour; names modules that depend on the upgrade as they come up; does not raise the upgrade again in the session; the closing log entry records `bootstrap upgrade not run` as an open thread"
+  },
+  {
+    "prompt": "Give me a tour. (workspace manifest records a newer release than the installed plugin)",
+    "expect": "says the plugin is older than the workspace and should be updated; does not suggest bootstrap upgrade; carries on as for a returning user"
+  },
+  {
+    "prompt": "Give me a tour. (manifest version equals the installed release because the librarian installed the toolkit, but bootstrap upgrade never ran: the plugin's `upgrade-roles.py --dry-run` would seed _obsidian.md and add sections)",
+    "expect": "treats the workspace as behind although the versions are equal; says the toolkit is current and the role files are not; offers the upgrade walkthrough before the tour"
+  },
+  {
+    "prompt": "Give me a tour. (versions equal, role preview has nothing to add, status shows schema_current false with an older schema_version)",
+    "expect": "one statement that the index was not migrated and that 'bootstrap upgrade' offers the migration again; no dry-run preview and no walkthrough; then the returning-user menu"
+  },
+  {
+    "prompt": "Go ahead, just do it. (said after the upgrade preview)",
+    "expect": "treats this as the request for bootstrap upgrade; says it is switching to pka-bootstrap and follows that skill's Upgrade procedure, including asking before the index migration and the refresh"
+  },
+  {
+    "prompt": "What can PKA do? (workspace first bootstrapped on the installed release: no .pka/upgrade-backups/, no what's-new entry in the log)",
+    "expect": "does not offer 'what's new'; ordinary menu of capabilities"
   }
 ]

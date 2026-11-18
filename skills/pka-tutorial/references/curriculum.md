@@ -7,6 +7,9 @@ Use the user's **actual Repo Map folder names** when giving examples. The
 placeholders below (`<personnel-folder>`, `<meeting-home-folder>`, etc.) should be
 replaced with real folder names read from their `CLAUDE.md`.
 
+These modules describe the installed release. For a workspace that has not been
+upgraded on it, `upgrade-and-whats-new.md` comes first.
+
 ---
 
 ## Module 1: Orientation
