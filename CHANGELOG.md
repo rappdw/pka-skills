@@ -1,10 +1,18 @@
 # Changelog
 
-## v1.7.0 — unreleased
+## v1.7.0 — 2026-11-17
 
-People and their timelines. Phase 4 of the v1.7 plan.
+The mechanics move into a tool, every skill files notes the same way, and people get timelines. This release includes the two pre-releases below (v1.7.0-alpha.1 and v1.7.0-beta.1), which were not released separately; read all three entries.
 
-**Existing workspaces:** run `bootstrap upgrade`. It adds the "Person timeline" section to `.pka/roles/_obsidian.md` and offers to refresh the librarian's role sections that describe person back-links. Timelines then fill in as notes are filed; Phase 5's backfill adds the history.
+- **`pka-tools`** (alpha.1): one Python command, vendored to `.pka/bin/pka-tools`, does the indexing, search, pointer rows, Obsidian retrofit and commits that the skills used to describe in prose.
+- **One filing pipeline** (beta.1): every skill that files a note runs `pka-tools post-route`; one session-log grammar; role seeds have a single source and can be refreshed where you never edited them.
+- **People and timelines** (this entry): a people registry that links a name only when it is certain, and a `## Timeline` in each person's `index.md`, written as notes are filed.
+
+**Requires Python 3.9 or newer** (`python3` on PATH). Standard library only; no network calls.
+
+**Existing workspaces:** run `bootstrap upgrade` once. It installs `.pka/bin/pka-tools`, refreshes the helper scripts, offers to migrate the index (nothing is migrated without a yes, and the database is backed up first), adds the new role-file sections, and reports seeded sections you can refresh. Sections you edited are left alone unless you name them. Timelines fill in as notes are filed; the history comes with the Phase 5 backfill.
+
+**People and their timelines** — Phase 4 of the v1.7 plan. The sections below, up to v1.7.0-beta.1, are this part.
 
 ### Added — the people registry
 
@@ -40,7 +48,7 @@ Decided with Dan on 2026-11-17: newest first, the 8-attendee cutoff, topics-only
 - `tests/tools/test_timeline.py`, including the Phase 4 acceptance tests: filing a note twice changes nothing; a hand-edited summary (and text the user typed inside the block) survives ten further routes; a rename updates every timeline that cites the note. 273 tests in `tests/tools/`.
 - An independent review of the first build reproduced 1 high and 10 medium issues, all fixed with regression tests (`ReviewFindings` in `test_timeline.py`, each failing on the first build). The high one: `pointers rename --prefix --notes` into a subfolder of the old folder rewrote timeline links twice (`archive/archive/…`). The others: a link inside a summary made its note count as present; a symlinked person folder was written through; a `## Timeline` heading inside an HTML comment was used; a one-word slug won over someone else's identical first name; without Obsidian a `#` in a filename added a duplicate line on every run; a short `[[name]]` the user wrote was not recognised; `strip` deleted a heading the user wrote; a timeline line left by an earlier `--person` run was not committed; `timeline list` crashed on a non-UTF-8 index; `people alias` accepted a name that could mean someone else. Also: summary truncation split characters, decomposed Unicode slugs did not resolve, and a `people-home` tag on the vault root made every folder a person.
 
-## v1.7.0-beta.1 — unreleased
+## v1.7.0-beta.1 — not released separately (part of v1.7.0)
 
 One filing pipeline for every skill, one session-log grammar, single-source seeds. Phase 3 of the v1.7 plan.
 
@@ -92,7 +100,7 @@ One grammar for every role: `## YYYY-MM-DD HH:MM | role | summary | open threads
 - `graduate.sh` keeps its own link rewrite: it is covered by the rollback tests, and it already preserves aliases and anchors.
 - Person back-links (`## Mentioned in`) are still written by the librarian by hand; the person timeline replaces them in v1.7.0.
 
-## v1.7.0-alpha.1 — unreleased
+## v1.7.0-alpha.1 — not released separately (part of v1.7.0)
 
 Toolkit foundation: the first step of v1.7. No change to what the skills are for; a change to how the mechanical parts get done.
 
