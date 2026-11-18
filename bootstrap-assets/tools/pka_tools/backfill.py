@@ -120,13 +120,19 @@ def candidates(ws: Workspace, reg: Registry) -> List[Path]:
     return out
 
 
-def _link_reads_back(ws: Workspace, index: Path, link: str, key: str, cache: dict) -> bool:
+def _link_reads_back(ws: Workspace, index: Path, link: str, key: str, path: Path, cache: dict) -> bool:
     """The link, as it will be written, is read back as this note and
-    resolves to a file. A name that cannot survive the round trip (an
-    upper-case `.MD`, angle brackets without Obsidian) is left out."""
+    resolves to this very file, by the name it has. A name that cannot
+    survive the round trip (an upper-case `.MD`, angle brackets without
+    Obsidian) is left out. Compared by name, not by what the filesystem
+    opens: on a case-insensitive one (macOS) `Sync.md` opens `Sync.MD`, but
+    `timeline apply` and `check` would not agree it is the same note."""
     from .pointers import resolve_link
     found = tl.keys_in(ws, index, link)
-    return bool(found) and tl.resolve_bare(ws, found[0], cache) == key and resolve_link(ws, key) is not None
+    if not found or tl.resolve_bare(ws, found[0], cache) != key:
+        return False
+    target = resolve_link(ws, key)
+    return target is not None and ws.rel(target) == ws.rel(path)
 
 
 # ------------------------------------------------------------ plan
@@ -216,7 +222,7 @@ def plan(
                 continue
             p = page["person"]
             link = tl.format_link(ws, p.index, path, label, obsidian)
-            if not _link_reads_back(ws, p.index, link, key, cache):
+            if not _link_reads_back(ws, p.index, link, key, path, cache):
                 if rel not in unlinkable:
                     unlinkable.append(rel)
                 continue
