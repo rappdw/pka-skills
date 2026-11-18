@@ -154,8 +154,8 @@ once, it can be saved as an alias and is recognised from then on.
 **3. Every note is filed the same way.** *(Applies to all workspaces.)*
 Meeting notes and wiki pages used to skip steps that routed documents got. Now
 anything a skill files gets the same treatment in one pass: frontmatter and a
-MOC link in an Obsidian vault, a pointer row, the index, and one commit in a
-hybrid monorepo. Mention only the parts this workspace has.
+MOC link in an Obsidian vault, a pointer row, a timeline line and the index.
+Mention only the parts this workspace has.
 
 > "File this meeting note" — then look at what the summary says was done.
 
@@ -198,6 +198,39 @@ edited can be replaced with the current wording in one step. Edited sections are
 shown as a difference for the user to decide.
 
 > "Refresh the role sections I haven't edited"
+
+### Unreleased (the release after v1.7.0; give this section its version number at release)
+
+Teach this for any installed release later than v1.7.0.
+
+**1. PKA no longer commits or pushes.** *(Applies to every workspace; matters
+most to one with a `.meta` file at its root.)*
+Earlier releases could set a workspace up as a root repository with separate
+repositories at `knowledge/` and each `projects/<name>/`, and committed into
+them after every filed note. That is gone. Filing a note still does everything
+else; the changed files are left for the user to commit, in whatever repository
+they keep the workspace in. For a workspace with nested repositories, say it
+plainly: their repositories, their `.meta` and their history are untouched, but
+nothing is committed or pushed for them any more, and the helper scripts in
+`.pka/` (`push-all.sh`, `graduate.sh` and the others) are no longer maintained.
+The filing summary reminds them with a "not committed" line.
+
+> "File this note" — then look at `git status` in the folder it went to.
+
+**2. Role files lose their commit and push instructions.** *(Applies when the
+role preview lists anything under "Obsolete".)*
+The upgrade reports the commit/push sections of the role files and
+`.pka/roles/_git-protocol.md` as obsolete. The ones they never edited can be
+removed in one step, with a backup; edited ones are left for them to decide.
+
+> "Refresh my role files and remove the obsolete sections"
+
+**3. Moving a finished project keeps its links.** *(Applies to all
+workspaces.)*
+Transitioning a project into `knowledge/` now rewrites every link that pointed
+at it, in MOCs and in notes, so nothing is left pointing at the old folder.
+
+> "Transition `<a finished project>` to knowledge"
 
 ### After the last item
 

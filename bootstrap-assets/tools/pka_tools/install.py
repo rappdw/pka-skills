@@ -17,6 +17,11 @@ from one the user has edited:
 
 Nothing is ever deleted. A file the plugin no longer ships is moved to the
 same backup folder if untouched, and left alone otherwise.
+
+The scripts and templates of the nested-repository layout (RETIRED below) are
+no longer shipped. Where the manifest records them they follow that rule. In
+a workspace installed before the manifest existed there is nothing to compare
+them with, so they are left in place and listed in the report.
 """
 from __future__ import annotations
 
@@ -33,14 +38,16 @@ from .textio import sha256_file
 
 MANIFEST_NAME = "manifest.json"
 MANIFEST_VERSION = 1
-GIT_SCRIPTS = (
+# Helpers of the removed nested-repository layout, as they were vendored under .pka/.
+RETIRED = (
     "graduate.sh",
     "init_project_repos.sh",
     "reinit-project-with-lfs.sh",
     "push-all.sh",
     "build-repo-list.sh",
+    "gitattributes-template",
+    "gitignore-template",
 )
-GIT_TEMPLATES = ("gitattributes-template", "gitignore-template")
 
 
 class Item:
@@ -49,7 +56,7 @@ class Item:
     def __init__(self, source: Path, dest: str, component: str, kind: str, executable: bool):
         self.source = source
         self.dest = dest            # POSIX path relative to .pka/
-        self.component = component  # "core" or "git"
+        self.component = component  # "core"
         self.kind = kind            # "code" or "template"
         self.executable = executable
 
@@ -73,10 +80,6 @@ def catalogue(assets: Path) -> List[Item]:
     for module in sorted(package.glob("*.py")):
         items.append(Item(module, "bin/pka_tools/" + module.name, "core", "code", False))
     items.append(Item(scripts / "upgrade-roles.py", "upgrade-roles.py", "core", "code", True))
-    for name in GIT_SCRIPTS:
-        items.append(Item(scripts / name, name, "git", "code", True))
-    for name in GIT_TEMPLATES:
-        items.append(Item(assets / name, name, "git", "template", False))
     for item in items:
         if not item.source.is_file():
             raise ToolError("missing plugin asset: %s" % item.source, EXIT_FAIL)
@@ -144,7 +147,6 @@ class _Backups:
 def install(
     root: Path,
     assets: Optional[Path] = None,
-    with_git: bool = False,
     dry_run: bool = False,
 ) -> dict:
     root = Path(os.path.realpath(str(root)))
@@ -162,20 +164,15 @@ def install(
 
     manifest_path = pka / MANIFEST_NAME
     recorded = _load_manifest(manifest_path)
-    git_wanted = (
-        with_git
-        or (root / ".meta").is_file()
-        or any((pka / name).exists() for name in GIT_SCRIPTS + GIT_TEMPLATES)
-        or any(entry.get("component") == "git" for entry in recorded.values() if isinstance(entry, dict))
-    )
-    selected = [item for item in items if item.component == "core" or git_wanted]
+    selected = items
 
     report = {
         "workspace": str(root),
         "plugin_version": __version__,
-        "components": ["core", "git"] if git_wanted else ["core"],
+        "components": ["core"],
         "installed": [], "updated": [], "current": [], "kept": [], "conflicts": [],
-        "obsolete_moved": [], "obsolete_kept": [], "backups": None, "dry_run": dry_run,
+        "obsolete_moved": [], "obsolete_kept": [], "retired_unmanaged": [],
+        "backups": None, "dry_run": dry_run,
     }
     backups = _Backups(pka)
     new_files: Dict[str, dict] = {}
@@ -239,6 +236,12 @@ def install(
         else:
             report["obsolete_kept"].append(dest_rel)
             new_files[dest_rel] = entry
+
+    # Retired helpers the manifest never recorded (a workspace from before the
+    # manifest): nothing says whether they were edited, so they stay.
+    for name in RETIRED:
+        if name not in recorded and (pka / name).is_file():
+            report["retired_unmanaged"].append(name)
 
     if backups.root is not None:
         report["backups"] = backups.root.relative_to(root).as_posix()

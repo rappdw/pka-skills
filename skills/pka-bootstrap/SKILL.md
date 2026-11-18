@@ -6,17 +6,15 @@ description: >
   notes and files into a unified system, adding roles to their AI team, project
   lifecycle management, transitioning or archiving projects, restoring archived
   projects, checking which projects are stale or winding down, bootstrapping
-  any kind of personal knowledge assistant, OR setting up Obsidian coexistence
-  / a hybrid monorepo (root .git + child repos at knowledge/ and projects/*
-  coordinated via .meta). Triggers also include: "bootstrap obsidian", "bootstrap
-  vault", "MOC stubs", "frontmatter retrofit", "bootstrap git", "initialize the
-  hybrid repo", "set up the meta monorepo", "bootstrap all", "bootstrap
-  everything". This skill handles first-run setup (scanning folders, inferring
+  any kind of personal knowledge assistant, OR setting up Obsidian coexistence,
+  OR upgrading an existing workspace. Triggers also include: "bootstrap obsidian",
+  "bootstrap vault", "MOC stubs", "frontmatter retrofit", "bootstrap upgrade",
+  "bootstrap all", "bootstrap everything". This skill handles first-run setup (scanning folders, inferring
   structure, writing CLAUDE.md, creating SQLite indexes, defining roles) AND
   ongoing management (updating the repo map, adding team roles, transitioning
   completed projects to a knowledge archive, checking project activity) AND
-  the additive Obsidian / hybrid-monorepo bootstraps (idempotent, user-triggered,
-  never auto-run). Use it even if the user doesn't say "PKA" explicitly — if
+  the additive Obsidian bootstrap and the upgrade (idempotent, user-triggered,
+  never auto-run). It never runs git: nothing is committed or pushed. Use it even if the user doesn't say "PKA" explicitly — if
   they want to unify scattered notes, set up AI-powered file organization, or
   manage workspace lifecycle, this is the right skill.
 user-invocable: true
@@ -50,7 +48,6 @@ Everything related to PKA setup and management:
 - "Restore `<project>` to active"
 - "What projects are winding down?"
 - "Bootstrap obsidian / the vault / the MOCs"
-- "Bootstrap git / the hybrid repo / the meta monorepo"
 - "Bootstrap all / bootstrap everything"
 - Any mention of "personal knowledge assistance", "PKA", "repo map", "CLAUDE.md orchestrator"
 
@@ -58,35 +55,34 @@ Everything related to PKA setup and management:
 
 ## Bootstrap targets
 
-`pka-bootstrap` is a single skill that handles three independent bootstrap procedures. The user picks one (or `all`):
+`pka-bootstrap` is a single skill that handles several independent bootstrap procedures. The user picks one (or `all`):
 
 | Target     | What it does                                                                                  | Idempotent? | Reference                              |
 |------------|-----------------------------------------------------------------------------------------------|-------------|-----------------------------------------|
 | (default)  | Original PKA setup: Repo Map, `.pka/`, roles, SQLite, `CLAUDE.md`. Phase 1–3 below.            | Yes         | This document                          |
 | `obsidian` | One-time mechanical retrofit of an Obsidian vault at `knowledge/`: MOC stubs, person indexes, filename-pattern frontmatter, domain tags. | Yes | `references/obsidian-bootstrap.md`     |
-| `git`      | One-time setup of a hybrid monorepo: root `.git`, `knowledge/.git`, each `projects/*/.git` with LFS, `.meta` manifest, `.pka/` templates and helper scripts. | Yes | `references/git-bootstrap.md`          |
-| `upgrade`  | For a workspace already bootstrapped on an earlier version of pka-skills: backs up `.pka/roles/`, seeds missing shared-reference files (`_obsidian.md`, `_git-protocol.md`), structured-merges new H2 sections into existing role files. Never overwrites user customizations. | Yes | `references/upgrade.md`                |
-| `all`      | Run `upgrade` if a previous bootstrap exists, else base PKA setup; then `obsidian` if `knowledge/.obsidian/` exists; then `git`. | Yes         | All four references                    |
+| `upgrade`  | For a workspace already bootstrapped on an earlier version of pka-skills: backs up `.pka/roles/`, seeds the shared-reference file `_obsidian.md` if missing, structured-merges new H2 sections into existing role files, and reports sections left over from removed features. Never overwrites user customizations. | Yes | `references/upgrade.md`                |
+| `all`      | Run `upgrade` if a previous bootstrap exists, else base PKA setup; then `obsidian` if `knowledge/.obsidian/` exists. | Yes         | All three references                   |
 
 **Resolution rules** (the orchestrator dispatches; this skill is the executor):
 
 | Phrasing the user used                                       | Target     |
 |--------------------------------------------------------------|------------|
 | "bootstrap obsidian", "bootstrap the vault", "moc stubs", "frontmatter retrofit" | `obsidian` |
-| "bootstrap git", "bootstrap the hybrid repo", "bootstrap the monorepo", "set up meta" | `git`      |
 | "upgrade", "upgrade my pka", "bootstrap upgrade", "update my role files", "refresh the addendum behavior" | `upgrade`  |
 | "bootstrap all", "bootstrap everything", or all vocabularies appear              | `all`      |
 | Generic "bootstrap" without a target qualifier                                  | base PKA setup (existing behavior) |
 
 If the orchestrator can't tell, it asks the user before delegating here.
 
+**"Bootstrap git", "the hybrid repo", "the meta monorepo"**: that target was removed. Earlier releases could set a workspace up as a root repository coordinating separate repositories at `knowledge/` and each `projects/<name>/`, and committed into them after every route. pka-skills no longer creates that layout, commits or pushes. Say so, and that a workspace lives in one ordinary repository (or none) which the user commits themselves. A workspace that already has the layout keeps working; see "Workspaces with nested repositories" below.
+
 **Hard rules across all targets**:
 
 - Bootstraps run **only on explicit user request**. Detection (e.g., finding `knowledge/.obsidian/`) is **not** a trigger.
 - Bootstraps are **idempotent**. Re-running on an already-bootstrapped state produces no further changes.
-- The `git` bootstrap **never** creates remote repos, sets `origin` URLs, or pushes. Remote topology is the user's decision.
-- The `git` bootstrap **never** auto-commits the root repo. Root scaffolding is staged for the user's review only.
-- Both `obsidian` and `git` bootstraps **fail soft** — non-critical errors log and continue; the primary task isn't blocked.
+- No bootstrap runs git. Nothing is initialised, staged, committed or pushed; whatever a bootstrap changes is left in the working tree for the user to review and commit.
+- The `obsidian` bootstrap **fails soft** — non-critical errors log and continue; the primary task isn't blocked.
 
 ---
 
@@ -216,7 +212,7 @@ Written in Phase 1 if absent. See `references/pkaignore-defaults.md`.
 
 #### Installing the toolkit
 
-`pka-tools` is a Python 3.9+ standard-library command that does the mechanical work for every skill: the index schema, indexing, search, pointer rows, the Obsidian retrofit, path-scoped commits. It makes no network calls. Install it into the workspace from the plugin's copy:
+`pka-tools` is a Python 3.9+ standard-library command that does the mechanical work for every skill: the index schema, indexing, search, pointer rows, person timelines, the Obsidian retrofit. It makes no network calls and never runs git. Install it into the workspace from the plugin's copy:
 
 ```
 python3 "<plugin root>/bootstrap-assets/tools/pka-tools" install --workspace .
@@ -224,7 +220,7 @@ python3 "<plugin root>/bootstrap-assets/tools/pka-tools" install --workspace .
 
 `<plugin root>` is the folder that holds this plugin's `skills/` and `bootstrap-assets/` — `${CLAUDE_PLUGIN_ROOT}` when the environment provides it, otherwise two directories above this skill's folder. After that, every skill runs the workspace's own copy: `.pka/bin/pka-tools <command>`.
 
-The same command is how a workspace is brought up to date later: it replaces vendored files the user has not changed, keeps ones they have (writing the plugin's version beside them as `<name>.new`), and records the result in `.pka/manifest.json`. It never deletes anything. Add `--git` to include the hybrid-monorepo scripts and templates.
+The same command is how a workspace is brought up to date later: it replaces vendored files the user has not changed, keeps ones they have (writing the plugin's version beside them as `<name>.new`), and records the result in `.pka/manifest.json`. It never deletes anything: a file the plugin no longer ships is moved to `.pka/upgrade-backups/<timestamp>/vendored/` if the user never edited it and left in place otherwise.
 
 If `python3 --version` reports older than 3.9, stop and tell the user; do not fall back to doing the tool's work by hand.
 
@@ -251,11 +247,10 @@ Also seed two shared-reference files in `.pka/roles/` (these are **not roles** �
 | Target file                    | Source seed                              | Notes                                                    |
 |--------------------------------|------------------------------------------|----------------------------------------------------------|
 | `.pka/roles/_obsidian.md`      | `references/obsidian-conventions.md`     | Inert when `knowledge/.obsidian/` is absent              |
-| `.pka/roles/_git-protocol.md`  | `references/git-protocol.md`             | Inert when no `.meta` / hybrid monorepo                  |
 
-Both files are seeded verbatim from the fenced `markdown` block inside their source seeds. **Do not overwrite if the file already exists** — the user may have customized it. If absent, write it.
+The file is seeded verbatim from the fenced `markdown` block inside its source seed. **Do not overwrite if the file already exists** — the user may have customized it. If absent, write it.
 
-Seeding these in the base bootstrap is benign — they only document conventions that activate when the relevant predicate is true. It also means role-file references like "see `.pka/roles/_obsidian.md`" don't dangle.
+Seeding it in the base bootstrap is benign — it only documents conventions that activate when `knowledge/.obsidian/` exists. It also means role-file references like "see `.pka/roles/_obsidian.md`" don't dangle.
 
 ### 3g — `session-log.md`
 
@@ -317,22 +312,23 @@ Triggered by: "transition `<folder>` to knowledge"
 2. Read project `CLAUDE.md` + top-level markdown → generate `project-summary.md` draft using `references/project-summary-template.md` → save to `owner-inbox/<folder>-summary-draft.md`
 3. **Mandatory pause** for user review and approval regardless of autonomy level
 4. Show artifact cleanup list (`.pkaignore` matches) → confirm deletion
-5. Move — the method depends on whether git child repos are involved:
-   - **Child repos present** (the workspace has `.meta` and a root `.git`, **or** the project folder contains `.git`): do **not** `mv`. A plain move would carry the project's whole repository, `.git` included, into the `knowledge/` repo. Run the helper instead:
+5. Move the folder and carry its links along:
+   - **First check for a nested repository.** If `<project>/.git` exists, stop and ask. A plain move would carry the project's whole repository into the destination, and pka-skills no longer manages nested repositories: the user decides whether to keep that history somewhere (move `.git` aside first) or let it travel with the folder.
+   - `mv <project>/ <archive-destination>/<folder>/`
+   - Rewrite every link that pointed at the old location, in MOCs and notes:
      ```
-     .pka/graduate.sh <folder> [<archive destination relative to knowledge/>]
+     .pka/bin/pka-tools pointers rename <project path> <new path> --prefix --notes
      ```
-     It sets the project's repository aside under `.pka/graduate-backups/` (full history, nothing deleted), moves the content, rewrites pointer-row links, commits in `knowledge/` by path, and stages the `.meta` change in the root for the user to commit. If it exits non-zero it has already rolled everything back: report its error and stop the workflow here. The helper only handles `projects/<folder>` → `knowledge/[<subdir>/]<folder>`; if the project lives elsewhere or the archive destination is outside `knowledge/`, stop and ask the user how to proceed rather than falling back to `mv`.
-   - **No git involved**: `mv <project>/ <archive-destination>/<folder>/`.
+     Both paths are relative to the workspace root (`projects/orion`, `knowledge/archive/orion`). It prints how many links it rewrote and in which files; running it again changes nothing.
 
-   Then copy the approved summary into the moved directory as `project-summary.md`. With child repos present, commit that one file by path in `knowledge/` (`Orchestrator: Add project summary for <folder>` plus the trailer).
+   Then copy the approved summary into the moved directory as `project-summary.md`. Nothing is committed: the move, the rewritten links and the summary are left in the working tree for the user.
 6. Update Repo Map: status → archived, Priority → Reference
 7. Librarian runs content index pass on moved directory
 8. Append to `session-log.md`
 
 ### Reverse Transition
 
-1. Move back from archive destination to original location. If the project was graduated with `graduate.sh`, its original repository is still at `.pka/graduate-backups/<folder>-<timestamp>.git`: after moving the content back, tell the user it can be restored as the project's `.git` (`mv <backup> projects/<folder>/.git`), commit the removal in `knowledge/` by path, and run `.pka/build-repo-list.sh` to put the project back in `.meta`. Ask before doing any of these.
+1. Move back from archive destination to original location, then run `.pka/bin/pka-tools pointers rename <archive path> <original path> --prefix --notes` so links follow it. If the project was graduated by an earlier release's `graduate.sh`, its original repository is still at `.pka/graduate-backups/<folder>-<timestamp>.git`: tell the user it is there and that restoring it (`mv <backup> projects/<folder>/.git`) is theirs to do. Never delete anything under `.pka/graduate-backups/`.
 2. Update Repo Map: status → active
 3. Remove from full-text index; add back to shallow index
 4. `project-summary.md` stays in project directory as context
@@ -348,7 +344,7 @@ A one-time, user-triggered mechanical retrofit of an existing Obsidian vault at 
 
 - `knowledge/.obsidian/` exists (vault is opted in).
 - The user has explicitly requested the bootstrap.
-- (Recommended) the vault is in a clean git state so the resulting diff is reviewable.
+- (Recommended) if the vault is in a git repository, it is in a clean state so the resulting diff is reviewable.
 
 If `knowledge/.obsidian/` is absent, refuse with a clear message: *"No Obsidian vault detected at `knowledge/.obsidian/`. The Obsidian bootstrap is a no-op outside an Obsidian vault."*
 
@@ -359,7 +355,7 @@ Full procedure in `references/obsidian-bootstrap.md`. The retrofit is one comman
 1. **Seed `.pka/roles/_obsidian.md`** from `references/obsidian-conventions.md` if absent.
 2. **Make sure `.pka/bin/pka-tools` is installed** (see "Installing the toolkit").
 3. **Preview**: `.pka/bin/pka-tools obsidian bootstrap --dry-run`, and show the counts.
-4. **Run**: `.pka/bin/pka-tools obsidian bootstrap --commit` when `hybrid_monorepo_present`, otherwise without `--commit`.
+4. **Run**: `.pka/bin/pka-tools obsidian bootstrap`. It commits nothing; the user reviews the diff and commits it.
 5. **Relay the summary**, including every skipped file and note.
 
 What the command guarantees:
@@ -368,7 +364,7 @@ What the command guarantees:
 - **Merge, never overwrite** — existing frontmatter lines are not rewritten; missing keys are inserted as new lines and the domain tag is added to `tags`.
 - **Skips what it cannot read safely** — malformed or unsupported frontmatter, non-UTF-8 and read-only notes are listed and left untouched.
 - **Existing `_MOC.md` and person `index.md` files are never edited.**
-- **One commit by path** in `knowledge/` with `--commit`: `Bootstrap (obsidian): N MOCs, N person indexes, N frontmatter additions`. Never commits the root.
+- **Nothing is committed.** The changes are left in the working tree.
 
 ### Output summary
 
@@ -378,7 +374,7 @@ Print before finishing:
 - N files given frontmatter
 - N files with malformed existing frontmatter (skipped, listed by path)
 - Total files touched
-- Whether a commit was made (and in which repo)
+- That nothing was committed, and the changes are theirs to review
 
 ### Idempotency
 
@@ -386,56 +382,15 @@ Re-running produces no changes. The bootstrap detects existing MOCs, indexes, an
 
 ---
 
-## Git/Meta Hybrid Monorepo Bootstrap (target: `git`)
+## Workspaces with nested repositories
 
-A one-time, user-triggered setup of a hybrid monorepo: root `.git` coordinating independent child repos at `knowledge/` and each `projects/<name>/`, tied together by a `.meta` manifest.
+Earlier releases offered a `git` target that made the workspace a "hybrid monorepo": a root repository, separate repositories at `knowledge/` and each `projects/<name>/`, a `.meta` manifest listing them, helper scripts under `.pka/` (`graduate.sh`, `init_project_repos.sh`, `reinit-project-with-lfs.sh`, `push-all.sh`, `build-repo-list.sh`) and a commit after every route. That support has been removed. In a workspace that still has the layout:
 
-### Preconditions
-
-- User has explicitly requested the bootstrap.
-- `git` and `git-lfs` binaries are on PATH (else fail with a remediation hint).
-- `python3` is 3.9 or newer.
-- The skill has access to `bootstrap-assets/` (vendored templates, scripts and `tools/pka-tools` in this plugin).
-
-### Procedure
-
-Full step-by-step algorithm in `references/git-bootstrap.md`. Summary:
-
-1. **Install the `.pka/` templates and helper scripts** with the installer (see "Installing the toolkit"):
-   ```
-   python3 "<plugin root>/bootstrap-assets/tools/pka-tools" install --workspace . --git
-   ```
-   This installs `pka-tools` itself, `gitattributes-template`, `gitignore-template`, and `graduate.sh`, `init_project_repos.sh`, `reinit-project-with-lfs.sh`, `push-all.sh`, `build-repo-list.sh` (executable). Do not copy them by hand.
-2. **Relay what the installer reports**: installed, updated, kept, and any conflicts. A helper script the user has not edited is replaced when the plugin's copy is newer. One they have edited is kept, with the plugin's version written beside it as `<name>.new`; tell them, because an old helper keeps old bugs. The two templates are meant to be edited and are treated the same way.
-3. **Seed `.pka/roles/_git-protocol.md`** from `references/git-protocol.md` if absent.
-4. **Root `.gitignore`**: create or augment to exclude child-repo content (`knowledge/`, `projects/`), inboxes (`owner-inbox/`, `team-inbox/`), meeting captures (`meeting-notes/`), local artifacts (`.pka/knowledge.db*`, `.pka/*-log.txt`, `.pka/*-backups/`), and secrets (`.gitea-pat*`, `*.token`, `*.secret`). Merge — never replace.
-5. **Root `.git`**: initialize if absent. Stage the scaffolding **by path** (never `git add -A` at the root). **Do not commit.** Root commits are the user's review gate.
-6. **`knowledge/` child repo**: if `knowledge/.git` is absent, initialize with `init_project_repos.sh`'s pattern (templates → `git init -b main` → `git lfs install --local` → initial commit `Bootstrap (git): Initial hybrid monorepo setup`).
-7. **Each `projects/*/`**: same as `knowledge/` for any directory lacking `.git`. Projects with `.git` but no LFS are **flagged** in the summary as reinit candidates — never modified silently.
-8. **`.meta` generation**: walk `knowledge/` and `projects/*/`, read each child's origin remote (or empty if none), write `.meta` JSON at root. Use `build-repo-list.sh` after the init pass.
-
-### Hard rules
-
-- **No remotes are created or set.** Bootstrap never calls `git remote add origin`, never makes network requests.
-- **No pushes.** Bootstrap never calls `git push`.
-- **Root never auto-commits.** Stage scaffolding, surface in summary.
-- **Existing child repos with `.git` but no LFS are NOT reinitialized.** They are flagged with a pointer to `reinit-project-with-lfs.sh` (an opt-in operation that replaces the history and keeps the old repository as a backup).
-- **Run the helpers; do not re-implement them.** `init_project_repos.sh`, `reinit-project-with-lfs.sh` and `graduate.sh` check every step and undo their own partial work on failure. Report a non-zero exit and the script's "Failed" list to the user as they are — never as success.
-
-### Output summary
-
-Print before finishing:
-- Vendored files: N installed, N updated, N current; any kept or conflicting files by name
-- Root repo: initialized (uncommitted, awaiting review) / already present
-- `knowledge/`: initialized with LFS / already present
-- N projects initialized with LFS
-- N projects flagged as reinit candidates (have `.git` but no LFS)
-- `.meta` generated/updated with N entries
-- Root working-tree changes staged for user review (listed)
-
-### Idempotency
-
-Re-running produces no changes. Each step checks "is this already done?" before acting.
+- **Leave it alone.** Never delete or edit `.meta`, the nested `.git` directories, the root `.gitignore` (its `knowledge/` and `projects/` lines keep the root repository from swallowing the nested ones), `.pka/graduate-backups/` or `.pka/reinit-backups/` (the only copies of some project histories).
+- **Nothing is committed or pushed any more.** Filing a note changes files; the user commits them in whichever repository holds them. `post-route` says so in its summary when it sees `.meta`. Tell the user once per session; do not offer to commit for them.
+- **The helper scripts are no longer shipped or maintained.** `bootstrap upgrade` reports what it does with the copies in `.pka/`: ones recorded in the manifest and never edited are moved to `.pka/upgrade-backups/<timestamp>/vendored/`; edited ones, and ones from before the manifest existed, stay where they are for the user to keep running by hand or delete.
+- **Do not run those scripts**, and do not re-create the layout. If the user asks for a push across their repositories, that is theirs to run.
+- **Turning the workspace into one repository** is a decision about their history and remotes. Do not attempt it as part of any bootstrap; if asked, plan it with the user step by step.
 
 ---
 
@@ -458,7 +413,7 @@ Full step-by-step algorithm in `references/upgrade.md`. Summary:
    ```
    python3 "<plugin root>/bootstrap-assets/tools/pka-tools" install --workspace .
    ```
-   It installs or updates `.pka/bin/pka-tools`, `.pka/upgrade-roles.py` and, where the workspace already has them, the hybrid-monorepo scripts and templates. In a workspace from before v1.7 (no `.pka/manifest.json`) the old helper scripts are replaced and the previous copies are saved under `.pka/upgrade-backups/<timestamp>/vendored/`; relay that path. An old `upgrade-roles.py` only knows the sections of its own version and silently skips whatever was added since, so this step always comes first.
+   It installs or updates `.pka/bin/pka-tools` and `.pka/upgrade-roles.py`, and reports what it did with files the plugin no longer ships (see "Workspaces with nested repositories"). In a workspace from before v1.7 (no `.pka/manifest.json`) the old helper scripts are replaced and the previous copies are saved under `.pka/upgrade-backups/<timestamp>/vendored/`; relay that path. An old `upgrade-roles.py` only knows the sections of its own version and silently skips whatever was added since, so this step always comes first.
 2. **Migrate the index, if there is one and it is behind.** `.pka/bin/pka-tools status` shows the schema version. When it says the index needs `db migrate`:
    - run `.pka/bin/pka-tools db migrate` and show the user the plan (it changes nothing);
    - **ask before applying** — it is a schema change, whatever the autonomy level;
@@ -466,23 +421,24 @@ Full step-by-step algorithm in `references/upgrade.md`. Summary:
    - on a no, carry on: the rest of the upgrade does not depend on it, but `index` and `search` stay unavailable until the index is migrated.
 3. **Run the helper** with `python3 .pka/upgrade-roles.py --workspace <root>`. The helper:
    - Backs up `.pka/roles/` to `.pka/upgrade-backups/<timestamp>/`
-   - Seeds `.pka/roles/_obsidian.md` and `.pka/roles/_git-protocol.md` if absent
+   - Seeds `.pka/roles/_obsidian.md` if absent
    - Structured-merges new H2 sections into orchestrator/librarian/researcher role files
    - Never modifies the body of existing sections on this run
    - Lists **sections seeded by an earlier version**: "can be refreshed" (the text is exactly what an earlier version shipped, so the user never edited it) or "customised — left alone"
+   - Lists **obsolete** sections and files, left by the removed commit/push protocol (`.pka/roles/_git-protocol.md`, the "Commit/push protocol" sections, the orchestrator's push sections): "can be removed" or "customised — left alone"
 4. **Print the helper's summary** to the user.
-5. **Offer the refresh, if the summary lists sections that can be refreshed.** These carry superseded instructions (the pre-v1.7 pointer-row rule, for example). Ask once; on a yes run `python3 .pka/upgrade-roles.py --workspace <root> --refresh`. It takes a new backup, replaces only those sections, and leaves customised ones alone.
-   - For a **customised** section, show the difference with `--diff` and let the user decide. Replace one only on an explicit yes for that section: `--refresh --refresh-section '<file>:## <Heading>'`. Never pass `--refresh-section` on your own judgement — it overwrites the user's text (the backup keeps it).
+5. **Offer the refresh, if the summary lists sections that can be refreshed or removed.** These carry superseded instructions (the pre-v1.7 pointer-row rule, for example). Ask once, naming both kinds; on a yes run `python3 .pka/upgrade-roles.py --workspace <root> --refresh`. It takes a new backup, replaces the refreshable sections, removes the obsolete ones that were never edited, and leaves customised ones alone. Until the obsolete sections are gone the role files still tell the roles to commit and push, which no longer happens.
+   - For a **customised** section, show the difference with `--diff` and let the user decide. Replace one (or remove an obsolete one) only on an explicit yes for that section: `--refresh --refresh-section '<file>:## <Heading>'`. Never pass `--refresh-section` on your own judgement — it overwrites or removes the user's text (the backup keeps it). A customised `_git-protocol.md` is never removed by the helper; the user deletes it when they no longer want it.
 6. **Suggest follow-ups** based on what's now present:
    - If `knowledge/.obsidian/` exists and the user hasn't already, suggest `bootstrap obsidian` for the mechanical retrofit.
    - If there is no Obsidian vault and no `_MOC.md` anywhere in `knowledge/`, mention that the pointer layer is opt-in (step 3j of base bootstrap).
-   - If no `.meta` file at root, suggest `bootstrap git` if the user wants the hybrid monorepo.
+   - If the workspace has a `.meta` file at root, tell the user what changed for it (see "Workspaces with nested repositories").
    - Mention the manual bullet-merges into `## Key Competencies` and `## Output Conventions` (the upgrade does not touch these — see `references/upgrade.md` for the rationale).
 
 ### Hard rules
 
-- **Never auto-commits.** Even when run inside a hybrid monorepo, leaves changes in the working tree for human review.
-- **Never modifies the body of existing H2 sections.** Only ADDS new sections.
+- **Never commits.** Changes are left in the working tree for human review.
+- **Never modifies the body of existing H2 sections** unless `--refresh` is given. Without it, only ADDS new sections.
 - **Never modifies frontmatter** in role files.
 - **Always creates a backup** before any modification (even if the upgrade ends up being a no-op, the backup is created — cheap insurance).
 
@@ -505,7 +461,7 @@ orchestrator: added K section(s):
   ...
 librarian:    added K section(s):
   + ## Obsidian coexistence (gated on `obsidian_present`)
-  + ## Commit/push protocol (gated on `hybrid_monorepo_present`)
+  + ## Pointer-row maintenance (…)
 researcher:   added K section(s):
   ...
 
@@ -523,5 +479,4 @@ If the user requests `bootstrap all` or `bootstrap everything`:
 
 1. If `.pka/roles/` already exists (bootstrapped previously), run the `upgrade` target first to refresh roles. Otherwise run base bootstrap (Phase 1–3).
 2. If `knowledge/.obsidian/` exists, run the Obsidian bootstrap. (If absent, skip with a one-line note in the summary.)
-3. Run the git bootstrap.
-4. Print one consolidated summary across all phases.
+3. Print one consolidated summary across all phases.

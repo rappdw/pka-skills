@@ -1,16 +1,3 @@
-# Git/Push Protocol Conventions (seed)
-
-This file is the **source of truth** for the `_git-protocol.md` shared-reference that `pka-bootstrap` writes to `.pka/roles/_git-protocol.md` in a user's workspace. The content below is what gets seeded verbatim.
-
-`.pka/roles/_git-protocol.md` is **shared reference** for pka roles (orchestrator, librarian, researcher). It is not a role itself. Roles link here instead of duplicating these rules.
-
-The protocol applies whether or not Obsidian is present. It activates only in a workspace that has been bootstrapped as a hybrid monorepo (root `.git` + child repos coordinated via `.meta`). In a single-repo or no-repo workspace, roles continue their pre-protocol behavior.
-
----
-
-## Seed content (copied verbatim into `.pka/roles/_git-protocol.md`)
-
-```markdown
 ---
 title: Commit/Push Protocol
 type: shared-reference
@@ -139,14 +126,3 @@ Things that MUST hold:
 3. **Trailer is always `Co-Authored-By: Claude <noreply@anthropic.com>`** (verbatim) on auto-commits.
 4. **Session-end push is non-blocking.** Failures surface; session close still proceeds.
 5. **No remote operations during git bootstrap.** No `git push`, no `curl`, no origin URLs to user-specific orgs.
-```
-
----
-
-## Notes for `pka-bootstrap`
-
-- This seed is written by `pka-bootstrap` during base bootstrap (Phase 3f) **and** as part of `bootstrap git` / `bootstrap all` (so users on older base bootstraps get it backfilled).
-- **Do not overwrite** if the file already exists in the target workspace — the user may have customized it. Skip silently and report "already present" in the summary.
-- The seed has no placeholders. Copy verbatim from the fenced block above.
-- After seeding, the orchestrator/librarian/researcher role files reference this file by path: `.pka/roles/_git-protocol.md`. Do not duplicate the rules in the role files.
-- This file is **inert** when the workspace is not a hybrid monorepo (`hybrid_monorepo_present` is false). Its presence in `.pka/roles/` is harmless until detection turns true.

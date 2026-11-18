@@ -23,64 +23,6 @@ def running_as_root() -> bool:
     return hasattr(os, "geteuid") and os.geteuid() == 0
 
 
-class CommitScope(support.ToolsCase):
-    """`commit` contains exactly the named paths, in the child repo."""
-
-    def setUp(self):
-        super().setUp()
-        self.repo = self.init_child_repo("knowledge")
-
-    def test_git_dir_in_the_environment_does_not_redirect_the_commit(self):
-        # As when the tool is run from a hook of the root repository.
-        self.git(self.ws, "init", "-q", "-b", "main")
-        self.write(".gitignore", "knowledge/\n")
-        self.write("knowledge/AI/x.md", "x\n")
-        self.env["GIT_DIR"] = str(self.ws / ".git")
-        self.env["GIT_WORK_TREE"] = str(self.ws)
-        self.env["GIT_INDEX_FILE"] = str(self.ws / ".git" / "index")
-        try:
-            result = self.json("commit", "-m", "Librarian: Route x.md to AI/", "knowledge/AI/x.md")
-        finally:
-            for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"):
-                self.env.pop(name)
-        self.assertEqual((result["committed"], result["repo"]), (True, "knowledge"))
-        self.assertEqual(self.git(self.repo, "log", "-1", "--format=%s").strip(), "Librarian: Route x.md to AI/")
-        self.assertEqual(self.git(self.repo, "show", "--name-only", "--format=", "HEAD").split(), ["AI/x.md"])
-        code = self._rc(self.ws, "rev-parse", "--verify", "HEAD")
-        self.assertNotEqual(code, 0, "nothing may be committed in the root repository")
-
-    def _rc(self, repo, *args):
-        import subprocess
-        return subprocess.run(["git", "-C", str(repo)] + list(args), env=self.env,
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE).returncode
-
-    def test_pathspec_magic_and_globs_are_not_patterns(self):
-        self.write("knowledge/AI/ab.md", "owner's untracked note\n")
-        self.write("knowledge/AI/ac.md", "another\n")
-        head = self.git(self.repo, "rev-parse", "HEAD")
-        for path in ("knowledge/:(top)", "knowledge/AI/*.md", "knowledge/AI/a?.md", "knowledge/:/"):
-            code, _out, err = self.tool("commit", "-m", "x", "--", path)
-            self.assertEqual(code, 64, path)
-            self.assertIn("no such file", err)
-        self.assertEqual(self.git(self.repo, "rev-parse", "HEAD"), head)
-        self.assertEqual(sorted(self.git(self.repo, "status", "--porcelain").splitlines()),
-                         ["?? AI/ab.md", "?? AI/ac.md"])
-
-    def test_a_file_whose_name_looks_like_a_pattern_is_committed_literally(self):
-        self.write("knowledge/AI/what?.md", "odd name\n")
-        self.write("knowledge/AI/whatX.md", "must stay untracked\n")
-        result = self.json("commit", "-m", "Librarian: Route what?.md to AI/", "--", "knowledge/AI/what?.md")
-        self.assertTrue(result["committed"])
-        self.assertEqual(self.git(self.repo, "status", "--porcelain").strip(), "?? AI/whatX.md")
-
-    def test_a_folder_is_refused(self):
-        self.write("knowledge/AI/owner-draft.md", "x\n")
-        code, _out, err = self.tool("commit", "-m", "x", "knowledge/AI")
-        self.assertEqual(code, 64)
-        self.assertIn("is a folder", err)
-        self.assertEqual(self.git(self.repo, "status", "--porcelain").strip(), "?? AI/owner-draft.md")
-
-
 class Frontmatter(unittest.TestCase):
     def merge(self, text):
         lines = split_lines(text)

@@ -3,12 +3,10 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
 import unittest
 
 import support
 
-TRAILER = "Co-Authored-By: Claude <noreply@anthropic.com>"
 HEADER = "| Topic | Entities | Files |\n|---|---|---|\n"
 
 
@@ -165,58 +163,55 @@ class MocLink(support.ToolsCase):
 
 
 class PostRoute(support.ToolsCase):
-    """In a hybrid monorepo with an index: the whole pipeline."""
+    """With an index: the whole pipeline. The vault is a git repository so
+    the tests can show that nothing is staged or committed."""
 
     def setUp(self):
         super().setUp()
-        self.git(self.ws, "init", "-q", "-b", "main")
-        self.write(".gitignore", "knowledge/\nprojects/\n")
-        self.write(".meta", '{"projects": {}}\n')
-        self.repo = self.init_child_repo("knowledge")
+        self.repo = self.init_repo("knowledge")
         self.ok("db", "init")
         self.ok("index")
 
-    def head(self, repo=None):
-        return self.git(repo or self.repo, "rev-parse", "HEAD").strip()
+    def head(self):
+        return self.git(self.repo, "rev-parse", "HEAD").strip()
 
-    def file_note(self, rel, text):
-        self.write(rel, text)
-        return self.json("post-route", rel, "--role", "Meetings")
+    def status(self):
+        return sorted(self.git(self.repo, "status", "--porcelain").splitlines())
 
     def steps(self, result):
         return {step["step"]: step["action"] for step in result["steps"]}
 
-    def test_a_meeting_note_gets_everything_in_one_commit(self):
+    def test_a_meeting_note_gets_every_step_and_no_commit(self):
         rel = "knowledge/leadership/2026-06-02-roadmap-review.md"
-        self.write("knowledge/AI/owner-draft.md", "the owner's work in progress\n")
-        result = self.file_note(rel, note(["type: meeting", "topic: roadmap-review", "attendees: [priya]",
-                                           "tags: [meeting, ai]"], "# Roadmap\n- [ ] Draft plan @Sam\n"))
+        head = self.head()
+        self.write(rel, note(["type: meeting", "topic: roadmap-review", "attendees: [priya]",
+                              "tags: [meeting, ai]"], "# Roadmap\n- [ ] Draft plan @Sam\n"))
+        result = self.json("post-route", rel)
         self.assertEqual(self.steps(result), {"frontmatter": "merged", "moc-link": "added", "pointers": "written",
-                                              "timeline": "written", "index": "indexed", "commit": "committed"})
-        names = sorted(self.git(self.repo, "show", "--name-only", "--format=", "HEAD").split())
-        self.assertEqual(names, ["AI/_MOC.md", "leadership/2026-06-02-roadmap-review.md", "leadership/_MOC.md",
-                                 "personnel/priya/index.md"])
-        message = self.git(self.repo, "log", "-1", "--format=%B").strip().splitlines()
-        self.assertEqual((message[0], message[-1]),
-                         ("Meetings: Route 2026-06-02-roadmap-review.md to leadership/", TRAILER))
-        self.assertEqual(self.git(self.repo, "status", "--porcelain").strip(), "?? AI/owner-draft.md")
+                                              "timeline": "written", "index": "indexed"})
+        self.assertEqual(sorted(result["touched"]),
+                         ["knowledge/AI/_MOC.md", "knowledge/leadership/2026-06-02-roadmap-review.md",
+                          "knowledge/leadership/_MOC.md", "knowledge/personnel/priya/index.md"])
+        self.assertEqual(result["notes"], [])
+        # nothing staged, nothing committed: the changes are the user's to commit
+        self.assertEqual(self.head(), head)
+        self.assertEqual(self.status(), [" M AI/_MOC.md", " M leadership/_MOC.md", " M personnel/priya/index.md",
+                                         "?? leadership/2026-06-02-roadmap-review.md"])
         text = self.text(rel)
         self.assertIn("date: 2026-06-02\n", text)
         self.assertIn("tags: [meeting, ai, leadership]\n", text)
         self.assertIn("- [[leadership/2026-06-02-roadmap-review]]", self.text("knowledge/leadership/_MOC.md"))
         hits = self.json("search", "roadmap-review")["results"]
         self.assertTrue(hits and hits[0]["is_pointer"])
-        # second run: nothing changes, no commit
-        head = self.head()
+        # second run: nothing changes
         snap = self.snapshot()
-        again = self.json("post-route", rel, "--role", "Meetings")
-        self.assertEqual(self.steps(again)["commit"], "no-changes")
-        self.assertEqual(self.head(), head)
+        again = self.json("post-route", rel)
+        self.assertEqual(again["touched"], [])
         self.assertEqual(self.snapshot(), snap)
 
-    def test_same_result_as_a_librarian_route(self):
+    def test_same_result_whichever_skill_files_the_note(self):
         """Phase 3 acceptance: a note filed by pka-meetings and one routed by
-        the librarian end up the same, apart from the commit prefix."""
+        the librarian end up the same. `--role` no longer changes anything."""
         text = note(["type: meeting", "topic: roadmap-review", "tags: [meeting]"], "x\n")
         self.write("knowledge/leadership/2026-06-02-a.md", text)
         self.write("knowledge/leadership/2026-06-02-b.md", text)
@@ -224,56 +219,74 @@ class PostRoute(support.ToolsCase):
         b = self.json("post-route", "knowledge/leadership/2026-06-02-b.md")
         self.assertEqual(self.steps(a), self.steps(b))
         self.assertEqual(self.text("knowledge/leadership/2026-06-02-a.md"), self.text("knowledge/leadership/2026-06-02-b.md"))
-        subjects = self.git(self.repo, "log", "-2", "--format=%s").splitlines()
-        self.assertEqual(subjects, ["Librarian: Route 2026-06-02-b.md to leadership/",
-                                    "Meetings: Route 2026-06-02-a.md to leadership/"])
 
-    def test_moved_note_commits_the_old_location_too(self):
+    def test_deprecated_commit_flags_are_accepted_and_change_nothing(self):
+        """Role files written for earlier releases pass these."""
+        head = self.head()
+        self.write("knowledge/AI/x.md", "x\n")
+        self.write("knowledge/AI/y.md", "x\n")
+        plain = self.json("post-route", "knowledge/AI/x.md")
+        flagged = self.json("post-route", "knowledge/AI/y.md", "--role", "Researcher",
+                            "-m", "Researcher: brief on y", "--body", "Side effects: none.", "--no-commit")
+        self.assertEqual(self.steps(plain), self.steps(flagged))
+        self.assertNotIn("commit", self.steps(flagged))
+        self.assertEqual(self.head(), head)
+        # even a subject the old command refused is ignored, not an error
+        self.ok("post-route", "knowledge/AI/y.md", "-m", "two\nlines")
+        self.ok("post-route", "knowledge/AI/y.md", "-m", "")
+        out = self.tool("post-route", "--help")[1]
+        for flag in ("--role", "--message", "--body", "--no-commit"):
+            self.assertIn(flag, out)
+        self.assertGreaterEqual(out.count("deprecated, ignored"), 4)
+
+    def test_a_workspace_with_the_old_manifest_is_told_nothing_was_committed(self):
+        self.git(self.ws, "init", "-q", "-b", "main")
+        self.write(".gitignore", "knowledge/\nprojects/\n")
+        self.write(".meta", '{"projects": {}}\n')
+        head = self.head()
+        self.write("knowledge/AI/x.md", "x\n")
+        result = self.json("post-route", "knowledge/AI/x.md", "--role", "Meetings")
+        self.assertEqual(len(result["notes"]), 1)
+        self.assertIn("not committed", result["notes"][0])
+        self.assertIn("no longer commits", result["notes"][0])
+        self.assertEqual(self.head(), head)
+        self.assertEqual(self.status(), [" M AI/_MOC.md", "?? AI/x.md"])
+        self.assertIn("Note: not committed", self.ok("post-route", "knowledge/AI/x.md"))
+        self.assertEqual(self.read(".meta"), b'{"projects": {}}\n')
+        # the root repository is untouched too
+        self.assertEqual(self.git(self.ws, "status", "--porcelain", "--", ".meta").strip(), "?? .meta")
+
+    def test_moved_note_drops_the_old_location_from_the_index(self):
         old = "knowledge/AI/ai-adoption-research.md"
         new = "knowledge/AI/research/ai-adoption-research.md"
         os.makedirs(str(self.path("knowledge/AI/research")))
         os.rename(str(self.path(old)), str(self.path(new)))
         self.ok("pointers", "rename", old, new)
-        result = self.json("post-route", new, "--also", old, "--also", "knowledge/AI/_MOC.md",
-                           "-m", "Librarian: Move ai-adoption-research.md to AI/research/")
-        self.assertEqual(self.steps(result)["commit"], "committed")
-        self.assertEqual(self.git(self.repo, "status", "--porcelain").strip(), "")
-        self.assertEqual(self.json("search", "Body text")["results"][0]["path"], new)
+        result = self.json("post-route", new, "--also", old, "--also", "knowledge/AI/_MOC.md")
+        self.assertEqual(self.steps(result)["index"], "indexed")
+        paths = [hit["path"] for hit in self.json("search", "Body text")["results"]]
+        self.assertIn(new, paths)
+        self.assertNotIn(old, paths)
+        # running it again is a no-op
+        snap = self.snapshot()
+        self.ok("post-route", new, "--also", old)
+        self.assertEqual(self.snapshot(), snap)
 
-    def test_failed_commit_exits_1_after_the_other_steps(self):
-        hook = self.repo / ".git" / "hooks" / "pre-commit"
-        hook.parent.mkdir(exist_ok=True)
-        hook.write_text("#!/bin/sh\necho no >&2\nexit 1\n")
-        os.chmod(str(hook), 0o755)
-        self.write("knowledge/AI/x.md", "x\n")
-        code, out, err = self.tool("post-route", "knowledge/AI/x.md", "--json")
-        self.assertEqual(code, 1, err)
-        import json
-        result = json.loads(out)
-        steps = {step["step"]: step for step in result["steps"]}
-        self.assertEqual(steps["commit"]["action"], "failed")
-        self.assertEqual(steps["pointers"]["action"], "written")
-        self.assertIn("- [[AI/x]]", self.text("knowledge/AI/_MOC.md"))
-
-    def test_no_commit_and_dry_run(self):
+    def test_dry_run_changes_nothing(self):
         self.write("knowledge/AI/x.md", "x\n")
         snap = self.snapshot()
-        head = self.head()
         result = self.json("post-route", "knowledge/AI/x.md", "--dry-run")
         self.assertEqual(self.snapshot(), snap)
-        self.assertEqual(self.steps(result)["commit"], "dry-run")
-        result = self.json("post-route", "knowledge/AI/x.md", "--no-commit")
-        self.assertEqual(self.steps(result)["commit"], "not-requested")
-        self.assertEqual(self.head(), head)
+        self.assertEqual(self.steps(result)["index"], "dry-run")
 
-    def test_project_file_is_indexed_and_committed_without_vault_steps(self):
-        project = self.init_child_repo("projects/orion")
+    def test_project_file_is_indexed_without_vault_steps(self):
+        project = self.init_repo("projects/orion")
         self.write("projects/orion/notes.md", "orion planning notes\n")
-        result = self.json("post-route", "projects/orion/notes.md", "-m", "Librarian: Add notes.md to orion")
+        result = self.json("post-route", "projects/orion/notes.md")
         self.assertEqual(self.steps(result), {"frontmatter": "not-applicable", "moc-link": "not-applicable",
                                               "pointers": "not-applicable", "timeline": "not-applicable",
-                                              "index": "indexed", "commit": "committed"})
-        self.assertEqual(self.git(project, "log", "-1", "--format=%s").strip(), "Librarian: Add notes.md to orion")
+                                              "index": "indexed"})
+        self.assertEqual(self.git(project, "status", "--porcelain").strip(), "?? notes.md")
 
     def test_refusals(self):
         self.write("knowledge/leadership/2026-01-05_sync/meeting.json", "{}\n")
@@ -281,8 +294,7 @@ class PostRoute(support.ToolsCase):
         for args in (("post-route", "knowledge/leadership/2026-01-05_sync/narrative.md"),
                      ("post-route", "knowledge/AI/_MOC.md"),
                      ("post-route", ".pka/session-log.md"),
-                     ("post-route", "knowledge/AI/nope.md"),
-                     ("post-route", "knowledge/AI/ai-adoption-research.md", "-m", "two\nlines")):
+                     ("post-route", "knowledge/AI/nope.md")):
             code, _out, err = self.tool(*args)
             self.assertEqual(code, 64, (args, err))
         code, _out, err = self.tool("post-route", "knowledge/leadership/2026-01-05_sync/narrative.md")
@@ -298,7 +310,8 @@ class PostRoutePlain(Plain):
         self.assertEqual(steps["moc-link"][0], "not-applicable")
         self.assertEqual(steps["pointers"][0], "no MOC, pointer row not written")
         self.assertEqual(steps["index"][0], "not-applicable")
-        self.assertEqual(steps["commit"], ("not-applicable", "not a hybrid monorepo"))
+        self.assertNotIn("commit", steps)
+        self.assertEqual(result["notes"], [])
         self.assertEqual(self.text("knowledge/planning/x.md"), "x\n")
         self.assertFalse(self.path("knowledge/planning/_MOC.md").exists())
 
@@ -357,15 +370,6 @@ class SessionLog(support.ToolsCase):
 class ReviewFindings(support.ToolsCase):
     """Regression tests for the review of the first Phase 3 build."""
 
-    def hybrid(self):
-        self.git(self.ws, "init", "-q", "-b", "main")
-        self.write(".gitignore", "knowledge/\nprojects/\n")
-        self.write(".meta", '{"projects": {}}\n')
-        self.repo = self.init_child_repo("knowledge")
-
-    def status(self):
-        return self.git(self.repo, "status", "--porcelain").strip()
-
     # high: frontmatter written into non-markdown files
     def test_frontmatter_only_for_markdown(self):
         for rel, data in (("knowledge/AI/scores.csv", "name,score\nPriya,3\n"),
@@ -391,34 +395,25 @@ class ReviewFindings(support.ToolsCase):
             self.assertEqual(code, 64, (args, err))
         self.assertEqual(self.snapshot(), before)
 
-    def test_bad_also_touches_nothing(self):
-        self.hybrid()
+    def test_a_folder_given_as_also_touches_nothing(self):
         self.write("knowledge/AI/northwind-a.md", "x\n")
         before = self.snapshot()
-        for also in ("knowledge/reference", "knowledge/AI/gone.md", ".meta"):
-            code, _out, err = self.tool("post-route", "knowledge/AI/northwind-a.md", "--also", also)
-            self.assertEqual(code, 64, (also, err))
+        code, _out, err = self.tool("post-route", "knowledge/AI/northwind-a.md", "--also", "knowledge/reference")
+        self.assertEqual(code, 64, err)
+        self.assertIn("is a folder", err)
         self.assertEqual(self.snapshot(), before)
 
-    def test_a_later_run_commits_what_an_earlier_run_left(self):
-        self.hybrid()
-        self.write("knowledge/AI/northwind-a.md", "x\n")
-        self.ok("post-route", "knowledge/AI/northwind-a.md", "--no-commit")
-        self.assertIn("M AI/_MOC.md", self.status().splitlines()[0] + "\n" + self.status())
-        self.ok("post-route", "knowledge/AI/northwind-a.md")
-        self.assertEqual(self.status(), "")
-        names = sorted(self.git(self.repo, "show", "--name-only", "--format=", "HEAD").split())
-        self.assertEqual(names, ["AI/_MOC.md", "AI/northwind-a.md"])
-
-    def test_rerun_after_a_move_is_a_no_op(self):
-        self.hybrid()
+    def test_also_may_name_a_path_that_is_gone(self):
+        """The old location of a moved note: named so the index drops it."""
+        self.ok("db", "init")
+        self.ok("index")
         os.rename(str(self.path("knowledge/AI/ai-adoption-research.md")), str(self.path("knowledge/AI/moved.md")))
         args = ("post-route", "knowledge/AI/moved.md", "--also", "knowledge/AI/ai-adoption-research.md")
         self.ok(*args)
-        head = self.git(self.repo, "rev-parse", "HEAD")
+        snap = self.snapshot()
         result = self.json(*args)
-        self.assertEqual(result["notes"], ["knowledge/AI/ai-adoption-research.md: already committed as removed"])
-        self.assertEqual(self.git(self.repo, "rev-parse", "HEAD"), head)
+        self.assertEqual(result["notes"], [])
+        self.assertEqual(self.snapshot(), snap)
 
     # medium: moc add-link
     def test_bullet_not_hidden_in_a_comment_or_under_a_subsection(self):

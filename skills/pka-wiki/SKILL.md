@@ -136,7 +136,7 @@ is named `wiki.md`); see `references/wiki-page-schema.md`.
 
 ## Filing and Session Log Entries
 
-After writing or changing a `wiki.md`, run `.pka/bin/pka-tools post-route <wiki.md> --role Wiki -m "Wiki: …" [--also <moved source>]` (frontmatter, MOC bullet, pointer row, index, one commit). See `references/ingest-workflow.md` step 7b.
+After writing or changing a `wiki.md`, run `.pka/bin/pka-tools post-route <wiki.md> [--also <moved source>]` (frontmatter, MOC bullet, pointer row, index). Nothing is committed; the page is left in the working tree for the user. See `references/ingest-workflow.md` step 7b.
 
 Session-log entries are written with `.pka/bin/pka-tools log add --role pka-wiki …`, giving:
 

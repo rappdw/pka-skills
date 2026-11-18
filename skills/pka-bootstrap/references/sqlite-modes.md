@@ -23,7 +23,7 @@ Present as a recommendation already made, with a one-sentence rationale. User ca
 
 ## Mode 1: Markdown-Only
 
-No database. Claude reads files directly via Repo Map navigation. Practical to ~300–400 indexable files. No `.pka/knowledge.db` created. `pka-tools index` and `pka-tools search` exit 3 with "no index" in this mode; `pka-tools actions`, `pointers`, `commit` and `obsidian` work without a database.
+No database. Claude reads files directly via Repo Map navigation. Practical to ~300–400 indexable files. No `.pka/knowledge.db` created. `pka-tools index` and `pka-tools search` exit 3 with "no index" in this mode; `pka-tools actions`, `pointers`, `timeline` and `obsidian` work without a database.
 
 ---
 

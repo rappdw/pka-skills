@@ -46,20 +46,22 @@ class Install(support.ToolsCase):
         code, out, _err = self.tool("version")
         self.assertEqual((code, out.strip()), (0, "pka-tools %s" % __version__))
 
-    def test_git_component_on_request_and_remembered(self):
+    def test_git_flag_is_accepted_and_installs_nothing_extra(self):
+        """`--git` used to add the nested-repository scripts. Old instructions still pass it."""
         report = self.run_install("--git")
-        self.assertEqual(report["components"], ["core", "git"])
+        self.assertEqual(report["components"], ["core"])
         for name in ("graduate.sh", "init_project_repos.sh", "reinit-project-with-lfs.sh", "push-all.sh",
                      "build-repo-list.sh", "gitattributes-template", "gitignore-template"):
-            self.assertTrue(self.path(".pka/" + name).is_file(), name)
-        self.assertTrue(os.access(str(self.path(".pka/graduate.sh")), os.X_OK))
-        again = self.run_install()                       # no --git: still maintained
-        self.assertEqual(again["components"], ["core", "git"])
+            self.assertFalse(self.path(".pka/" + name).exists(), name)
+        self.assertEqual(sorted(self.manifest()["files"]), sorted(report["installed"]))
+        code, out, _err = self._run(self.tool_path, ("install", "--workspace", str(self.ws), "--git"), None)
+        self.assertEqual(code, 0)
+        self.assertIn("--git is deprecated and ignored", out)
 
     def test_second_run_is_a_no_op(self):
-        self.run_install("--git")
+        self.run_install()
         before = {p: p.read_bytes() for p in self.path(".pka").rglob("*") if p.is_file()}
-        report = self.run_install("--git")
+        report = self.run_install()
         self.assertEqual((report["installed"], report["updated"], report["conflicts"]), ([], [], []))
         self.assertFalse(report["manifest_changed"])
         after = {p: p.read_bytes() for p in self.path(".pka").rglob("*") if p.is_file()}
@@ -71,54 +73,106 @@ class Install(support.ToolsCase):
         self.assertEqual(list(self.path(".pka/bin").rglob("__pycache__")), [])
 
     def test_untouched_file_is_replaced_when_the_plugin_changes(self):
-        self.run_install("--git")
-        with open(self.assets / "scripts" / "push-all.sh", "a") as handle:
+        self.run_install()
+        with open(self.assets / "scripts" / "upgrade-roles.py", "a") as handle:
             handle.write("# a fix from a later plugin version\n")
         report = self.run_install()
-        self.assertEqual(report["updated"], ["push-all.sh"])
-        self.assertIn("a fix from a later plugin version", self.text(".pka/push-all.sh"))
+        self.assertEqual(report["updated"], ["upgrade-roles.py"])
+        self.assertIn("a fix from a later plugin version", self.text(".pka/upgrade-roles.py"))
         self.assertIsNone(report["backups"])
 
     def test_locally_edited_file_is_kept(self):
-        self.run_install("--git")
-        self.write(".pka/gitignore-template", "my own ignore rules\n")
+        self.run_install()
+        self.write(".pka/upgrade-roles.py", "# my own version\n")
         report = self.run_install()
-        self.assertEqual(report["kept"], ["gitignore-template"])
-        self.assertEqual(self.text(".pka/gitignore-template"), "my own ignore rules\n")
-        self.assertFalse(self.path(".pka/gitignore-template.new").exists())
+        self.assertEqual(report["kept"], ["upgrade-roles.py"])
+        self.assertEqual(self.text(".pka/upgrade-roles.py"), "# my own version\n")
+        self.assertFalse(self.path(".pka/upgrade-roles.py.new").exists())
 
     def test_edited_locally_and_changed_in_plugin_writes_dot_new(self):
-        self.run_install("--git")
-        self.write(".pka/push-all.sh", "#!/bin/sh\n# my local version\n")
-        with open(self.assets / "scripts" / "push-all.sh", "a") as handle:
+        self.run_install()
+        self.write(".pka/upgrade-roles.py", "# my local version\n")
+        with open(self.assets / "scripts" / "upgrade-roles.py", "a") as handle:
             handle.write("# plugin v2\n")
         report = self.run_install()
-        self.assertEqual(report["conflicts"], ["push-all.sh"])
-        self.assertEqual(self.text(".pka/push-all.sh"), "#!/bin/sh\n# my local version\n")
-        self.assertIn("# plugin v2", self.text(".pka/push-all.sh.new"))
+        self.assertEqual(report["conflicts"], ["upgrade-roles.py"])
+        self.assertEqual(self.text(".pka/upgrade-roles.py"), "# my local version\n")
+        self.assertIn("# plugin v2", self.text(".pka/upgrade-roles.py.new"))
         # and the next run does not nag again or overwrite
         again = self.run_install()
-        self.assertEqual((again["conflicts"], again["kept"]), ([], ["push-all.sh"]))
-        self.assertEqual(self.text(".pka/push-all.sh"), "#!/bin/sh\n# my local version\n")
+        self.assertEqual((again["conflicts"], again["kept"]), ([], ["upgrade-roles.py"]))
+        self.assertEqual(self.text(".pka/upgrade-roles.py"), "# my local version\n")
 
-    def test_pre_manifest_workspace_code_is_replaced_with_a_backup_templates_kept(self):
+    def test_pre_manifest_workspace_code_is_replaced_with_a_backup(self):
         """A v1.6.x workspace: helpers present, no manifest. (Finding B6.)"""
         pka = self.path(".pka")
         pka.mkdir(exist_ok=True)
-        self.write(".pka/graduate.sh", "#!/bin/sh\n# the v1.6.0 copy with the data-loss bug\n")
         self.write(".pka/upgrade-roles.py", "# old helper that knows nothing of later sections\n")
-        self.write(".pka/gitattributes-template", "*.psd filter=lfs diff=lfs merge=lfs -text\n")
         report = self.run_install()
-        self.assertEqual(report["components"], ["core", "git"])       # detected from the files present
-        self.assertIn("graduate.sh (previous copy saved)", report["updated"])
         self.assertIn("upgrade-roles.py (previous copy saved)", report["updated"])
-        self.assertEqual(report["conflicts"], ["gitattributes-template"])
-        self.assertNotIn("data-loss bug", self.text(".pka/graduate.sh"))
+        self.assertNotIn("old helper", self.text(".pka/upgrade-roles.py"))
         saved = self.path(report["backups"])
-        self.assertIn("data-loss bug", (saved / "graduate.sh").read_text())
-        self.assertEqual(self.text(".pka/gitattributes-template"), "*.psd filter=lfs diff=lfs merge=lfs -text\n")
-        self.assertTrue(self.path(".pka/gitattributes-template.new").is_file())
+        self.assertIn("old helper", (saved / "upgrade-roles.py").read_text())
         self.assertEqual(self.text(".pka/upgrade-backups/.gitignore"), "*\n")
+
+    # ---- the helpers of the removed nested-repository layout ----------
+
+    RETIRED = ("graduate.sh", "init_project_repos.sh", "reinit-project-with-lfs.sh", "push-all.sh",
+               "build-repo-list.sh", "gitattributes-template", "gitignore-template")
+
+    def vendor_retired(self, recorded):
+        """Put the retired helpers in .pka/ as an earlier release left them."""
+        import hashlib
+        self.run_install()
+        manifest = self.manifest()
+        for name in self.RETIRED:
+            data = ("# %s as shipped by an earlier release\n" % name).encode()
+            self.write(".pka/" + name, data)
+            if recorded:
+                manifest["files"][name] = {"sha256": hashlib.sha256(data).hexdigest(), "component": "git"}
+        self.write(".pka/manifest.json", json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+
+    def test_retired_helpers_never_recorded_are_left_in_place_and_named(self):
+        """A workspace from before the manifest: nothing says whether the
+        owner edited them, and they may still be in use by hand."""
+        self.vendor_retired(recorded=False)
+        self.write(".pka/graduate-backups/orion-20260101.git/HEAD", "ref: refs/heads/main\n")
+        self.write(".meta", '{"projects": {}}\n')
+        report = self.run_install()
+        self.assertEqual(sorted(report["retired_unmanaged"]), sorted(self.RETIRED))
+        self.assertEqual((report["obsolete_moved"], report["obsolete_kept"]), ([], []))
+        for name in self.RETIRED:
+            self.assertEqual(self.text(".pka/" + name), "# %s as shipped by an earlier release\n" % name)
+        self.assertTrue(self.path(".pka/graduate-backups/orion-20260101.git/HEAD").is_file())
+        self.assertEqual(self.text(".meta"), '{"projects": {}}\n')
+        code, out, _err = self._run(self.tool_path, ("install", "--workspace", str(self.ws)), None)
+        self.assertEqual(code, 0)
+        self.assertIn("removed nested-repository support", out)
+        self.assertIn("push-all.sh", out)
+
+    def test_retired_helpers_recorded_and_untouched_move_to_the_backup(self):
+        self.vendor_retired(recorded=True)
+        report = self.run_install()
+        self.assertEqual(sorted(report["obsolete_moved"]), sorted(self.RETIRED))
+        self.assertEqual(report["retired_unmanaged"], [])
+        saved = self.path(report["backups"])
+        for name in self.RETIRED:
+            self.assertFalse(self.path(".pka/" + name).exists(), name)
+            self.assertEqual((saved / name).read_text(), "# %s as shipped by an earlier release\n" % name)
+            self.assertNotIn(name, self.manifest()["files"])
+        again = self.run_install()
+        self.assertEqual((again["obsolete_moved"], again["retired_unmanaged"]), ([], []))
+
+    def test_retired_helper_recorded_but_edited_stays(self):
+        self.vendor_retired(recorded=True)
+        self.write(".pka/push-all.sh", "#!/bin/sh\n# the owner's own push script\n")
+        report = self.run_install()
+        self.assertEqual(report["obsolete_kept"], ["push-all.sh"])
+        self.assertEqual(self.text(".pka/push-all.sh"), "#!/bin/sh\n# the owner's own push script\n")
+        self.assertEqual(len(report["obsolete_moved"]), len(self.RETIRED) - 1)
+        again = self.run_install()                      # and it is not moved on a later run either
+        self.assertEqual(again["obsolete_kept"], ["push-all.sh"])
+        self.assertTrue(self.path(".pka/push-all.sh").is_file())
 
     def test_file_the_plugin_no_longer_ships(self):
         extra = self.assets / "tools" / "pka_tools" / "retired.py"
@@ -143,7 +197,7 @@ class Install(support.ToolsCase):
         self.assertEqual(self.text(".pka/bin/pka_tools/retired.py"), "# the owner changed this\n")
 
     def test_dry_run_writes_nothing(self):
-        report = self.run_install("--dry-run", "--git")
+        report = self.run_install("--dry-run")
         self.assertGreater(len(report["installed"]), 20)
         self.assertEqual([p for p in self.path(".pka").rglob("*")], [])
 
@@ -212,6 +266,26 @@ class Versions(unittest.TestCase):
             source = path.read_text(encoding="utf-8")
             for name in banned:
                 self.assertNotIn("import " + name, source, path.name)
+
+    def test_nothing_can_run_git(self):
+        """pka-tools edits files and nothing else: no module may be able to
+        start a process, so no command can stage, commit or push."""
+        import ast
+        banned = {"subprocess", "pty", "multiprocessing"}
+        for path in sorted((support.ASSETS / "tools").rglob("*.py")) + [support.PLUGIN_TOOL]:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                names = []
+                if isinstance(node, ast.Import):
+                    names = [alias.name for alias in node.names]
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    names = [node.module]
+                for name in names:
+                    self.assertNotIn(name.split(".")[0], banned, "%s imports %s" % (path.name, name))
+                if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "os":
+                    self.assertFalse(node.attr in ("system", "popen") or node.attr.startswith(("exec", "spawn")),
+                                     "%s calls os.%s" % (path.name, node.attr))
+        self.assertFalse((support.ASSETS / "tools" / "pka_tools" / "gitops.py").exists())
 
 
 if __name__ == "__main__":

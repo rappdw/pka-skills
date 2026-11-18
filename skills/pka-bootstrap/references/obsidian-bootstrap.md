@@ -32,7 +32,6 @@ A vault diff with:
 - Verify `knowledge/.obsidian/` exists. If absent, stop with: *"No Obsidian vault detected at `knowledge/.obsidian/`. The Obsidian bootstrap is a no-op outside an Obsidian vault."* (The command refuses too, with exit code 3.)
 - Verify `.pka/roles/_obsidian.md` exists. If absent, seed it from `references/obsidian-conventions.md` first.
 - Verify `.pka/bin/pka-tools` exists. If absent, install it (see "Installing the toolkit" in `SKILL.md`).
-- Note `hybrid_monorepo_present`.
 
 ### Step 1 — Preview (recommended)
 
@@ -45,11 +44,10 @@ Prints the same summary as a real run and writes nothing. Show the counts to the
 ### Step 2 — Run
 
 ```
-.pka/bin/pka-tools obsidian bootstrap --commit      # hybrid monorepo: one commit in knowledge/
-.pka/bin/pka-tools obsidian bootstrap               # otherwise: the diff is left for the user
+.pka/bin/pka-tools obsidian bootstrap
 ```
 
-With `--commit`, the files the run created or changed are staged and committed **by path** in the `knowledge/` child repo with the message `Bootstrap (obsidian): N MOCs, M person indexes, K frontmatter additions` and the standard trailer. Notes the user is in the middle of editing are not swept in. The root repo is untouched. Without a child repo at `knowledge/`, `--commit` reports that nothing was committed and why.
+Nothing is committed. The files the run created or changed are left in the working tree; if the vault is in a git repository, the user reviews the diff and commits it. (`--commit` is still accepted so older instructions do not fail. It is deprecated and does nothing.)
 
 ### Step 3 — Summary
 
@@ -68,7 +66,7 @@ Files SKIPPED (malformed or unsupported frontmatter, left untouched): J
   - <path>: <reason>
 Notes (…):
   - <path>: tags are not a simple list; domain tag not added
-Commit: <sha> in knowledge        OR   No commit …
+Nothing was committed: review the changes and commit them yourself.
 ```
 
 Always pass on the skipped list and the notes: those are the files the user may want to fix by hand.

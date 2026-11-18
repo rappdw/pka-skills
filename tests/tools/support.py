@@ -145,7 +145,8 @@ class ToolsCase(unittest.TestCase):
         names = sorted(set(before) | set(after))
         return [name for name in names if before.get(name) != after.get(name)]
 
-    def init_child_repo(self, rel: str = "knowledge") -> Path:
+    def init_repo(self, rel: str = "knowledge") -> Path:
+        """A git repository with everything committed, to prove a command leaves it alone."""
         repo = self.path(rel)
         self.git(repo, "init", "-q", "-b", "main")
         self.git(repo, "add", "-A")

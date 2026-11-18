@@ -4,7 +4,7 @@
 # Usage in test scripts:
 #   source "$(dirname "$0")/lib.sh"
 #   ws=$(make_workspace)
-#   install_pka_assets "$ws"
+#   install_pka_tools "$ws"
 #   ...
 #   pass
 
@@ -67,18 +67,7 @@ make_scratch_dir() {
   echo "$dir"
 }
 
-# Install the plugin's helpers into a workspace the way `bootstrap git` does:
-# through `pka-tools install --git`, which also writes .pka/manifest.json.
-install_pka_assets() {
-  local ws="$1"
-  mkdir -p "$ws/.pka"
-  python3 "${ASSETS_DIR}/tools/pka-tools" install --workspace "$ws" --git >/dev/null || {
-    echo "${RED}pka-tools install failed for $ws${RESET}" >&2
-    return 1
-  }
-}
-
-# The core helpers only (no hybrid-monorepo scripts), as base bootstrap does.
+# Install the plugin's helpers into a workspace, as bootstrap does.
 install_pka_tools() {
   local ws="$1"
   mkdir -p "$ws/.pka"
@@ -185,63 +174,6 @@ assert_eq() {
   fi
 }
 
-assert_clean_worktree() {
-  local repo_dir="$1" msg="${2:-}"
-  local out
-  out=$(cd "$repo_dir" && git status --porcelain 2>/dev/null)
-  if [ -z "$out" ]; then
-    pass_step "clean worktree: $repo_dir ${msg:+— $msg}"
-  else
-    fail "$repo_dir has uncommitted changes:
-$out
-${msg:+— $msg}"
-  fi
-}
-
-assert_commit_count() {
-  local repo_dir="$1" expected="$2" msg="${3:-}"
-  local actual
-  actual=$(cd "$repo_dir" && git rev-list --count HEAD 2>/dev/null || echo "no-head")
-  if [ "$expected" = "$actual" ]; then
-    pass_step "commit count $expected: $repo_dir ${msg:+— $msg}"
-  else
-    fail "$repo_dir: expected $expected commits, got $actual ${msg:+— $msg}"
-  fi
-}
-
-assert_no_commit() {
-  local repo_dir="$1" msg="${2:-}"
-  local has_head
-  has_head=$(cd "$repo_dir" && git rev-parse --verify HEAD 2>/dev/null || echo "")
-  if [ -z "$has_head" ]; then
-    pass_step "no commits in $repo_dir ${msg:+— $msg}"
-  else
-    fail "$repo_dir unexpectedly has at least one commit: $has_head ${msg:+— $msg}"
-  fi
-}
-
-assert_last_commit_message_starts_with() {
-  local repo_dir="$1" prefix="$2" msg="${3:-}"
-  local subject
-  subject=$(cd "$repo_dir" && git log -1 --format='%s' 2>/dev/null || echo "")
-  if [[ "$subject" == "$prefix"* ]]; then
-    pass_step "last commit subject starts with '$prefix' in $repo_dir"
-  else
-    fail "$repo_dir: last commit subject is '$subject', expected to start with '$prefix' ${msg:+— $msg}"
-  fi
-}
-
-assert_last_commit_has_trailer() {
-  local repo_dir="$1" trailer="$2"
-  local body
-  body=$(cd "$repo_dir" && git log -1 --format='%B' 2>/dev/null || echo "")
-  if echo "$body" | grep -qF -- "$trailer"; then
-    pass_step "last commit has trailer '$trailer' in $repo_dir"
-  else
-    fail "$repo_dir: last commit lacks trailer '$trailer'"
-  fi
-}
-
 # ---------- runners ----------
 start_test() {
   TEST_NAME="$1"
@@ -261,25 +193,6 @@ end_run() {
     echo "  - $d"
   done
   return 1
-}
-
-# Parse origin from .meta for a child repo (uses python3)
-meta_origin_of() {
-  local meta="$1" rel="$2"
-  python3 - "$meta" "$rel" <<'PY'
-import json, sys
-data = json.load(open(sys.argv[1]))
-print((data.get("projects") or {}).get(sys.argv[2], "<MISSING>"))
-PY
-}
-
-meta_count() {
-  local meta="$1"
-  python3 - "$meta" <<'PY'
-import json, sys
-data = json.load(open(sys.argv[1]))
-print(len(data.get("projects") or {}))
-PY
 }
 
 # Give the tests a git identity WITHOUT touching the developer's own config.
@@ -304,6 +217,4 @@ configure_test_git_identity() {
   git config --global init.defaultBranch main
   git config --global commit.gpgsign false
   git config --global protocol.file.allow always
-  # LFS filters, as a machine with git-lfs installed would have them.
-  git lfs install --skip-repo >/dev/null 2>&1 || true
 }

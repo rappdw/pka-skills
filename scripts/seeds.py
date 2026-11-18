@@ -6,7 +6,6 @@ references, as markdown:
 
   skills/pka-bootstrap/references/role-definitions.md   the three role files
   skills/pka-bootstrap/references/obsidian-conventions.md   .pka/roles/_obsidian.md
-  skills/pka-bootstrap/references/git-protocol.md           .pka/roles/_git-protocol.md
 
 `bootstrap-assets/scripts/upgrade-roles.py` runs inside a workspace, where
 the plugin's references may not be readable, so it carries copies: whole
@@ -26,6 +25,11 @@ append-only, so the record survives a shallow clone; `upgrade-roles.py
 --refresh` replaces a workspace's section only when its text matches one of
 them (the user never edited it). --check fails if a current section is not
 recorded. Hashes are only ever taken from this repository's public history.
+
+Hashes of sections that are no longer seeded stay in the table (the sections
+of the removed `_git-protocol.md`, the commit/push sections of the role
+files): `upgrade-roles.py` uses them to tell an untouched obsolete section,
+which `--refresh` removes, from one the user edited, which it leaves.
 
 A seed is found by its heading range, not by its fence: the seeds contain
 fenced examples of their own, so the outer fence is the first ```` or
@@ -50,8 +54,7 @@ UPGRADE = REPO / "bootstrap-assets" / "scripts" / "upgrade-roles.py"
 ROLE_SEEDS = {"orchestrator": "## Seed Role: @orchestrator",
               "researcher": "## Seed Role: @researcher",
               "librarian": "## Seed Role: @librarian"}
-SHARED_SEEDS = {"OBSIDIAN_SEED": REFS / "obsidian-conventions.md",
-                "GIT_PROTOCOL_SEED": REFS / "git-protocol.md"}
+SHARED_SEEDS = {"OBSIDIAN_SEED": REFS / "obsidian-conventions.md"}
 # Which upgrade-roles.py list carries which role's (or shared file's) sections.
 SECTION_LISTS = {
     "ORCHESTRATOR_SECTIONS": ("role", "orchestrator"),
@@ -190,6 +193,7 @@ def _upgrade_module():
 FILE_OF_LIST = {"ORCHESTRATOR_SECTIONS": "orchestrator.md", "LIBRARIAN_SECTIONS": "librarian.md",
                 "LIBRARIAN_SECTIONS_V161": "librarian.md", "RESEARCHER_SECTIONS": "researcher.md",
                 "OBSIDIAN_SECTIONS_V161": "_obsidian.md", "OBSIDIAN_SECTIONS_V170": "_obsidian.md"}
+# GIT_PROTOCOL_SEED is no longer in upgrade-roles.py; the entry is for reading history.
 FILE_OF_SEED = {"OBSIDIAN_SEED": "_obsidian.md", "GIT_PROTOCOL_SEED": "_git-protocol.md"}
 ROLE_FILES = {"orchestrator": "orchestrator.md", "librarian": "librarian.md", "researcher": "researcher.md"}
 

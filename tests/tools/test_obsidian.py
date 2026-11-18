@@ -181,16 +181,20 @@ class Bootstrap(support.ToolsCase):
         self.assertTrue(self.text("knowledge/planning/2026-06-01-roadmap review.md").startswith(
             "---\ntype: meeting\ndate: 2026-06-01\ntopic: roadmap review\nattendees: []\ntags: [meeting, planning]\n---\n"))
 
-    def test_commit_flag_commits_exactly_the_touched_files(self):
-        repo = self.init_child_repo("knowledge")
-        self.write("knowledge/AI/half-written.txt", "the owner is in the middle of this\n")
-        summary = self.json("obsidian", "bootstrap", "--commit")
-        self.assertTrue(summary["commit"]["committed"])
-        subject = self.git(repo, "log", "-1", "--format=%s").strip()
-        self.assertEqual(subject, "Bootstrap (obsidian): 6 MOCs, 2 person indexes, 13 frontmatter additions")
-        self.assertIn("Co-Authored-By: Claude <noreply@anthropic.com>", self.git(repo, "log", "-1", "--format=%B"))
-        status = self.git(repo, "status", "--porcelain").strip()
-        self.assertEqual(status, "?? AI/half-written.txt")
+    def test_commit_flag_is_accepted_and_commits_nothing(self):
+        """`--commit` is deprecated: the retrofit leaves its changes for the user."""
+        repo = self.init_repo("knowledge")
+        head = self.git(repo, "rev-parse", "HEAD")
+        code, out, _err = self.tool("obsidian", "bootstrap", "--commit")
+        self.assertEqual(code, 0)
+        self.assertIn("Nothing was committed", out)
+        self.assertIn("--commit is deprecated and ignored", out)
+        self.assertEqual(self.git(repo, "rev-parse", "HEAD"), head)
+        status = self.git(repo, "status", "--porcelain").splitlines()
+        self.assertTrue(status)
+        self.assertEqual([line for line in status if line[0] != " " and not line.startswith("??")], [],
+                         "nothing may be staged")
+        self.assertNotIn("commit", self.json("obsidian", "bootstrap"))
 
 
 class RoundTrip(support.ToolsCase):

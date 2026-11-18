@@ -11,22 +11,21 @@ Procedure for the `upgrade` bootstrap target. Invoked when a user with an alread
 | `.pka/` exists with v1.6 role files already (re-running)          | `upgrade` (idempotent — no changes) |
 | `.pka/` not present                                               | NOT this target — refuse |
 
-`upgrade` is also safe to combine with `obsidian` and `git` targets: a user who runs `bootstrap all` on an already-bootstrapped v1.5 workspace gets upgrade + obsidian retrofit + git monorepo init.
+`upgrade` is also safe to combine with the `obsidian` target: a user who runs `bootstrap all` on an already-bootstrapped v1.5 workspace gets upgrade + obsidian retrofit.
 
 ## What it does
 
-1. **Backup `.pka/roles/`** to `.pka/upgrade-backups/<timestamp>/roles/` (a second run in the same second gets `<timestamp>-2`). The backup directory carries its own `.gitignore`, so backups never show up as changes in the root repo.
-2. **Seed shared references** if absent:
+1. **Backup `.pka/roles/`** to `.pka/upgrade-backups/<timestamp>/roles/` (a second run in the same second gets `<timestamp>-2`). The backup directory carries its own `.gitignore`, so backups never show up as changes in a repository that holds the workspace.
+2. **Seed the shared reference** if absent:
    - `.pka/roles/_obsidian.md` ← `references/obsidian-conventions.md`
-   - `.pka/roles/_git-protocol.md` ← `references/git-protocol.md`
-   Skipped silently if the user already has them (e.g., from a partial earlier run).
+   Skipped silently if the user already has it (e.g., from a partial earlier run). `.pka/roles/_git-protocol.md` is no longer seeded (see "Obsolete sections and files").
 3. **Structured-merge new H2 sections** into existing role files (orchestrator, librarian, researcher).
    - Inserts BEFORE the first `## Output Conventions` or `## Invocation` heading found.
    - Only adds sections whose H2 heading text is not already present.
    - Headings inside fenced code blocks (``` or ~~~) are examples, not structure: they are neither counted as "already present" nor used as the insertion point.
    - Keeps each file's line endings (a CRLF file stays CRLF).
    - Never modifies the body of existing sections.
-4. **Report sections seeded by an earlier version** (see "Refreshing seeded sections" below). Nothing is replaced unless `--refresh` is given.
+4. **Report sections seeded by an earlier version** (see "Refreshing seeded sections" below) **and obsolete ones** (see "Obsolete sections and files"). Nothing is replaced or removed unless `--refresh` is given.
 5. **Print a summary** listing:
    - Backup path
    - Shared references seeded vs. already present
@@ -35,10 +34,10 @@ Procedure for the `upgrade` bootstrap target. Invoked when a user with an alread
 
 ## What it does NOT do
 
-- **Never modifies the body of existing H2 sections.** If the user has customized `## Working Style` or `## Output Conventions`, those bytes stay byte-identical. The v1.6 additions to those sections (e.g., the new "never auto-commits root" bullet on orchestrator's Output Conventions) are NOT applied automatically — they're documented in `references/role-definitions.md` for the user to merge manually.
+- **Never modifies the body of existing H2 sections.** If the user has customized `## Working Style` or `## Output Conventions`, those bytes stay byte-identical. Changes to those sections (e.g., the "never commits, stages or pushes" bullet on orchestrator's Output Conventions) are NOT applied automatically — they're documented in `references/role-definitions.md` for the user to merge manually.
 - **Never modifies frontmatter** in role files. Existing `model:`, `tools:`, etc. are preserved.
-- **Never deletes** content. The whole upgrade is additive.
-- **Never auto-commits.** Even when run inside a hybrid monorepo, the upgrade leaves changes in the working tree for human review.
+- **Never deletes** content without `--refresh`. A plain run is additive. `--refresh` replaces unedited seeded sections and removes unedited obsolete ones, after the backup.
+- **Never commits.** The upgrade leaves changes in the working tree for human review.
 - **Never touches files outside `.pka/`.** Only the role files and shared references are modified.
 
 ## Refreshing seeded sections
@@ -51,20 +50,46 @@ Adding missing sections is not enough on its own: a section seeded by an earlier
 | Exactly a version an earlier pka-skills release shipped | can be refreshed | replaced with the current text |
 | Anything else (the user edited it) | customised — left alone | left alone, unless named with `--refresh-section 'FILE:## Heading'` |
 
-"Seeded sections" are the sections the helper itself adds to role files (the list in `upgrade-roles.py`) and every section of `_obsidian.md` and `_git-protocol.md`. Other sections of a role file (`## Purpose`, `## Output Conventions`, …) are never compared or touched.
+"Seeded sections" are the sections the helper itself adds to role files (the list in `upgrade-roles.py`) and every section of `_obsidian.md`. Other sections of a role file (`## Purpose`, `## Output Conventions`, …) are never compared or touched.
 
 The record of shipped versions is `KNOWN_SECTION_HASHES` in `upgrade-roles.py`: one SHA-256 per version of each section, taken from this repository's history. It is maintained by `scripts/seeds.py` (see below) and only ever grows.
 
 ```
 python3 .pka/upgrade-roles.py                         # report
 python3 .pka/upgrade-roles.py --diff                  # report, with what changed in each section
-python3 .pka/upgrade-roles.py --refresh               # replace the unedited ones (backup first)
-python3 .pka/upgrade-roles.py --refresh --refresh-section 'researcher.md:## Commit/push protocol (gated on `hybrid_monorepo_present`)'
+python3 .pka/upgrade-roles.py --refresh               # replace the unedited ones, remove unedited obsolete ones (backup first)
+python3 .pka/upgrade-roles.py --refresh --refresh-section 'librarian.md:## Indexing pointer rows'
 ```
 
-`--refresh-section` accepts only seeded sections; any other heading is an error that lists the ones it can take.
+`--refresh-section` accepts only seeded and obsolete sections; any other heading is an error that lists the ones it can take.
 
 The skill asks before `--refresh`, and passes `--refresh-section` only for a section the user has said yes to.
+
+## Obsolete sections and files
+
+Earlier releases seeded instructions for a nested-repository layout (a root repository coordinating repositories at `knowledge/` and each `projects/<name>/`) and its commit/push protocol. pka-skills no longer sets that layout up, commits or pushes, so these are no longer seeded:
+
+| Where | What |
+|---|---|
+| `.pka/roles/_git-protocol.md` | the whole file |
+| `orchestrator.md` | `## Session-end protocol (extended)`, `## Mid-session push handling` |
+| `librarian.md` | ``## Commit/push protocol (gated on `hybrid_monorepo_present`)`` |
+| `researcher.md` | ``## Commit/push protocol (gated on `hybrid_monorepo_present`)`` |
+
+In a workspace that has them, the helper reports each under "Obsolete":
+
+| Its text | Reported as | With `--refresh` |
+|---|---|---|
+| Exactly a version an earlier release shipped | can be removed | removed (the backup taken at the start of the run has it) |
+| Anything else (the user edited it) | customised — left alone | left alone; a section can be named with `--refresh-section 'FILE:## Heading'`, a customised `_git-protocol.md` is the user's to delete |
+
+Until they are removed, the role files still tell the roles to commit and push. The commands they name are accepted and do nothing (`pka-tools commit`, `post-route --role … -m …`), so nothing fails, but the instructions are wrong: recommend the refresh.
+
+The researcher's commit section also carried the instruction to run `post-route` on a saved brief. That now lives in a new seeded section, `## Filing a brief`, which a plain run adds.
+
+The sections that remain but mentioned the layout (the orchestrator's "Session-start checks" and "Bootstrap dispatch", the librarian's "Obsidian coexistence" and "Rename / graduate propagation", the Pointer Layer invariants in `_obsidian.md`) are ordinary refreshable sections with new text.
+
+Not touched by any run: a workspace's `.meta`, its nested repositories, its root `.gitignore`, and the lines about pushing in the orchestrator's unseeded sections (see "Manual follow-up").
 
 ## Implementation
 
@@ -103,7 +128,7 @@ Every vendored helper is installed and refreshed by one command, run from the pl
 python3 "<plugin root>/bootstrap-assets/tools/pka-tools" install --workspace .
 ```
 
-It runs as the first step of `bootstrap upgrade` (and of base bootstrap and `bootstrap git`). It maintains `.pka/manifest.json`, which records the plugin version and a SHA-256 for each vendored file as last offered. Comparing the plugin's copy, the file on disk and the manifest tells an untouched file from an edited one:
+It runs as the first step of `bootstrap upgrade` (and of base bootstrap). It maintains `.pka/manifest.json`, which records the plugin version and a SHA-256 for each vendored file as last offered. Comparing the plugin's copy, the file on disk and the manifest tells an untouched file from an edited one:
 
 | File on disk | What happens |
 |---|---|
@@ -112,13 +137,13 @@ It runs as the first step of `bootstrap upgrade` (and of base bootstrap and `boo
 | Unchanged since it was installed | Replaced with the plugin's copy |
 | Edited by the user; plugin's copy unchanged | Kept |
 | Edited by the user; plugin's copy changed too | Kept; the plugin's copy is written beside it as `<name>.new` and reported as a conflict |
-| No manifest entry (workspace from before v1.7), code | Replaced; the previous copy is saved under `.pka/upgrade-backups/<timestamp>/vendored/` |
-| No manifest entry, template | Kept; the plugin's copy is written as `<name>.new` |
-| No longer shipped by the plugin | Moved to the same backup folder if untouched; left in place if edited |
+| No manifest entry (workspace from before v1.7), a file the plugin still ships | Replaced; the previous copy is saved under `.pka/upgrade-backups/<timestamp>/vendored/` |
+| No longer shipped by the plugin, recorded in the manifest | Moved to the same backup folder if untouched; left in place if edited |
+| A helper of the removed nested-repository layout with no manifest entry (`graduate.sh`, `init_project_repos.sh`, `reinit-project-with-lfs.sh`, `push-all.sh`, `build-repo-list.sh`, `gitattributes-template`, `gitignore-template`) | Left in place and listed: nothing says whether the user edited it |
 
 Nothing is deleted. Relay the kept, conflict and backup lines to the user.
 
-**Why first:** the section list is hardcoded in `upgrade-roles.py`, so an old copy reports "already present" for everything it knows and never adds what later versions introduced. The same goes for the shell helpers: an old `graduate.sh` keeps its old bugs.
+**Why first:** the section list is hardcoded in `upgrade-roles.py`, so an old copy reports "already present" for everything it knows and never adds what later versions introduced. 
 
 ## Index migration
 
@@ -132,15 +157,14 @@ Nothing is deleted. Relay the kept, conflict and backup lines to the user.
 
 To undo: replace `.pka/knowledge.db` with the backup file named in the output. Details in `references/sqlite-modes.md`.
 
-`upgrade-roles.py` carries copies of the seeds because it runs inside a workspace, where the plugin's reference files may not be readable. The copies are generated, never edited by hand: edit the seed in `references/role-definitions.md`, `references/obsidian-conventions.md` or `references/git-protocol.md`, then run `python3 scripts/seeds.py --write` from the plugin repository. `scripts/seeds.py --check` (run by the test suite) fails when a copy differs from its reference or a current section is missing from `KNOWN_SECTION_HASHES`.
+`upgrade-roles.py` carries copies of the seeds because it runs inside a workspace, where the plugin's reference files may not be readable. The copies are generated, never edited by hand: edit the seed in `references/role-definitions.md` or `references/obsidian-conventions.md`, then run `python3 scripts/seeds.py --write` from the plugin repository. `scripts/seeds.py --check` (run by the test suite) fails when a copy differs from its reference or a current section is missing from `KNOWN_SECTION_HASHES`.
 
 ## Manual follow-up the user may want
 
 After running `upgrade`, the user may want to:
 
-1. **Add new bullets to existing sections.** The v1.6 seed adds bullets to `## Key Competencies` (orchestrator: "Bootstrap dispatch", "Session-end push") and `## Output Conventions` (all three roles: greeting line, never-auto-commit-root). The upgrade does not touch these. Compare against `references/role-definitions.md` and add them if desired.
+1. **Bring the unseeded sections up to date by hand.** The upgrade never touches `## Key Competencies`, `## Output Conventions` or `## Invocation`. Compare them against `references/role-definitions.md`. In a workspace bootstrapped on v1.6 or v1.7.0 the orchestrator's copies still mention the removed push protocol: "Session-end consolidated push for hybrid-monorepo workspaces" (Key Competencies), "Never auto-commits root repo…" (Output Conventions) and "push coordination" (Invocation). Offer to show the user those three lines; they delete or reword them.
 2. **Update role frontmatter** if a new model is preferred. Upgrade preserves existing frontmatter; users decide whether to switch (`claude-opus-4-5` → `claude-opus-4-7` etc.).
 3. **Re-run `bootstrap obsidian`** if they want the mechanical retrofit on an existing vault.
-4. **Run `bootstrap git`** if they want the hybrid monorepo and haven't yet.
 
 The summary output should suggest these as next steps when relevant (e.g., when `_obsidian.md` was just seeded and the workspace has `knowledge/.obsidian/`).

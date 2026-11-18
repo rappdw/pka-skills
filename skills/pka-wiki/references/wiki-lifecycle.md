@@ -26,7 +26,7 @@ without losing any authored content.
 4. **Create folder** `knowledge/topics/<slug>/`.
 5. **Write `wiki.md`** using scaffold from `wiki-page-schema.md`.
 6. **Update Repo Map.** Add `topics/` with `wiki-home` tag if not already tagged.
-7. **Post-route the page:** `.pka/bin/pka-tools post-route knowledge/topics/<slug>/wiki.md --role Wiki -m "Wiki: Create <slug> wiki"` (MOC bullet, pointer row, index, commit — see `ingest-workflow.md` step 7b).
+7. **Post-route the page:** `.pka/bin/pka-tools post-route knowledge/topics/<slug>/wiki.md` (MOC bullet, pointer row, index — see `ingest-workflow.md` step 7b).
 8. **Log.** Session log:
    ```
    .pka/bin/pka-tools log add --role pka-wiki --summary "Created wiki: <slug>" --next "Ingest first source"

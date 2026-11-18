@@ -139,24 +139,29 @@ echo "$out" | head -25 | sed 's/^/  > /'
 
 # Shared references seeded
 assert_file_exists "$ws/.pka/roles/_obsidian.md"     "obsidian shared ref seeded"
-assert_file_exists "$ws/.pka/roles/_git-protocol.md" "git-protocol shared ref seeded"
 assert_file_contains "$ws/.pka/roles/_obsidian.md"     "Obsidian Coexistence Conventions"
-assert_file_contains "$ws/.pka/roles/_git-protocol.md" "Commit/Push Protocol"
+# The shared reference of the removed nested-repository layout is not seeded.
+if [ -e "$ws/.pka/roles/_git-protocol.md" ]; then
+  fail "_git-protocol.md was seeded; it belongs to a removed feature"
+else
+  pass_step "_git-protocol.md is not seeded"
+fi
 
 # Orchestrator new sections present
 assert_file_contains "$ws/.pka/roles/orchestrator.md" "## Session-start checks (cached for the session)"
 assert_file_contains "$ws/.pka/roles/orchestrator.md" "## File references in responses"
 assert_file_contains "$ws/.pka/roles/orchestrator.md" "## Bootstrap dispatch"
-assert_file_contains "$ws/.pka/roles/orchestrator.md" "## Session-end protocol (extended)"
-assert_file_contains "$ws/.pka/roles/orchestrator.md" "## Mid-session push handling"
+assert_file_lacks "$ws/.pka/roles/orchestrator.md" "## Session-end protocol (extended)"
+assert_file_lacks "$ws/.pka/roles/orchestrator.md" "## Mid-session push handling"
 
 # Librarian new sections
 assert_file_contains "$ws/.pka/roles/librarian.md" "## Obsidian coexistence (gated on \`obsidian_present\`)"
-assert_file_contains "$ws/.pka/roles/librarian.md" "## Commit/push protocol (gated on \`hybrid_monorepo_present\`)"
+assert_file_lacks "$ws/.pka/roles/librarian.md" "## Commit/push protocol"
 
 # Researcher new sections
 assert_file_contains "$ws/.pka/roles/researcher.md" "## Obsidian coexistence (gated on \`obsidian_present\`)"
-assert_file_contains "$ws/.pka/roles/researcher.md" "## Commit/push protocol (gated on \`hybrid_monorepo_present\`)"
+assert_file_contains "$ws/.pka/roles/researcher.md" "## Filing a brief"
+assert_file_lacks "$ws/.pka/roles/researcher.md" "## Commit/push protocol"
 
 # Original orchestrator sections still present
 assert_file_contains "$ws/.pka/roles/orchestrator.md" "## Purpose"

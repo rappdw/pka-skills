@@ -76,10 +76,6 @@ class Workspace:
         return (self.root / "knowledge" / ".obsidian").is_dir()
 
     @property
-    def hybrid_monorepo_present(self) -> bool:
-        return (self.root / ".meta").is_file() and (self.root / ".git").exists()
-
-    @property
     def ignore(self) -> Ignore:
         if self._ignore is None:
             self._ignore = Ignore.load(self.root)

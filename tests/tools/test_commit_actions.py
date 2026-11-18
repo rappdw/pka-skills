@@ -1,4 +1,4 @@
-"""`pka-tools commit` (path-scoped, child repos only) and `pka-tools actions`."""
+"""`pka-tools commit` (a deprecated stub that never touches git) and `pka-tools actions`."""
 from __future__ import annotations
 
 import os
@@ -6,119 +6,47 @@ import unittest
 
 import support
 
-TRAILER = "Co-Authored-By: Claude <noreply@anthropic.com>"
 
+class CommitStub(support.ToolsCase):
+    """`commit` is kept so role files written for earlier releases do not
+    fail, but it must not touch git: nothing staged, nothing committed."""
 
-class Commit(support.ToolsCase):
     def setUp(self):
         super().setUp()
-        self.repo = self.init_child_repo("knowledge")
+        self.repo = self.init_repo("knowledge")
 
     def head(self):
         return self.git(self.repo, "rev-parse", "HEAD").strip()
 
-    def test_commits_exactly_the_named_paths(self):
-        # the owner's own work in progress: one modified, one staged, one untracked
-        self.write("knowledge/AI/ai-adoption-research.md", "owner is editing this\n")
-        self.write("knowledge/AI/staged-by-owner.md", "staged\n")
-        self.git(self.repo, "add", "AI/staged-by-owner.md")
-        self.write("knowledge/AI/untracked.md", "untracked\n")
-        # the routing's files
-        self.write("knowledge/leadership/2026-06-01-new-meeting.md", "routed\n")
-        self.write("knowledge/leadership/_MOC.md", self.text("knowledge/leadership/_MOC.md") + "- added\r\n")
-        result = self.json("commit", "-m", "Librarian: Route 2026-06-01-new-meeting.md to leadership/", "--",
-                           "knowledge/leadership/2026-06-01-new-meeting.md", "knowledge/leadership/_MOC.md")
-        self.assertTrue(result["committed"])
-        self.assertEqual(result["repo"], "knowledge")
-        self.assertEqual(result["sha"], self.head())
-        names = self.git(self.repo, "show", "--name-only", "--format=", "HEAD").split()
-        self.assertEqual(sorted(names), ["leadership/2026-06-01-new-meeting.md", "leadership/_MOC.md"])
-        message = self.git(self.repo, "log", "-1", "--format=%B")
-        self.assertTrue(message.startswith("Librarian: Route 2026-06-01-new-meeting.md to leadership/\n\n"))
-        self.assertEqual(message.strip().splitlines()[-1], TRAILER)
-        status = self.git(self.repo, "status", "--porcelain").splitlines()
-        self.assertEqual(sorted(status), [" M AI/ai-adoption-research.md", "?? AI/untracked.md", "A  AI/staged-by-owner.md"])
-
-    def test_body_goes_between_subject_and_trailer(self):
-        self.write("knowledge/AI/x.md", "x\n")
-        self.ok("commit", "-m", "Librarian: Route x.md to AI/", "--body", "Side effects: none.", "knowledge/AI/x.md")
-        lines = self.git(self.repo, "log", "-1", "--format=%B").strip().splitlines()
-        self.assertEqual(lines, ["Librarian: Route x.md to AI/", "", "Side effects: none.", "", TRAILER])
-
-    def test_no_changes_means_no_commit(self):
-        before = self.head()
-        result = self.json("commit", "-m", "Librarian: nothing", "knowledge/AI/ai-adoption-research.md")
-        self.assertEqual((result["committed"], result["reason"]), (False, "no-changes"))
-        self.assertEqual(self.head(), before)
-
-    def test_a_deleted_path_can_be_committed(self):
-        self.path("knowledge/AI/northwind/northwind_partnership_proposal.md").unlink()
-        result = self.json("commit", "-m", "Librarian: Remove proposal",
-                           "knowledge/AI/northwind/northwind_partnership_proposal.md")
-        self.assertTrue(result["committed"])
-        self.assertEqual(self.git(self.repo, "status", "--porcelain").strip(), "")
-
-    def test_root_repo_is_never_committed(self):
-        self.git(self.ws, "init", "-q", "-b", "main")
-        self.write(".gitignore", "knowledge/\n")
-        result = self.json("commit", "-m", "Should not happen", "CLAUDE.md")
-        self.assertEqual((result["committed"], result["reason"]), (False, "root-repo"))
-        self.assertEqual(self.git(self.ws, "status", "--porcelain", "CLAUDE.md").strip(), "?? CLAUDE.md")
-        staged = self.json("commit", "--stage-only", "CLAUDE.md")
-        self.assertEqual((staged["committed"], staged["reason"]), (False, "staged"))
-        self.assertEqual(self.git(self.ws, "status", "--porcelain", "CLAUDE.md").strip(), "A  CLAUDE.md")
-        code, out, _err = self.git_rc(self.ws, "rev-parse", "--verify", "HEAD")
-        self.assertNotEqual(code, 0, "the root repo must still have no commit")
-
-    def git_rc(self, repo, *args):
-        import subprocess
-        proc = subprocess.run(["git", "-C", str(repo)] + list(args), env=self.env,
-                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        return proc.returncode, proc.stdout, proc.stderr
-
-    def test_no_repository_is_a_reported_no_op(self):
-        result = self.json("commit", "-m", "x", "projects/orion/CLAUDE.md")
-        self.assertEqual((result["committed"], result["reason"]), (False, "no-repo"))
-
-    def test_paths_in_two_repositories_are_refused(self):
-        self.init_child_repo("projects/orion")
-        code, _out, err = self.tool("commit", "-m", "x", "knowledge/AI/x.md", "projects/orion/CLAUDE.md")
-        self.assertEqual(code, 64)
-        self.assertIn("more than one repository", err)
-
-    def test_failed_commit_exits_1_and_leaves_the_files_staged(self):
-        hook = self.repo / ".git" / "hooks" / "pre-commit"
-        hook.parent.mkdir(exist_ok=True)
-        hook.write_text("#!/bin/sh\necho 'hook says no' >&2\nexit 1\n")
-        os.chmod(str(hook), 0o755)
+    def test_does_nothing_and_exits_0(self):
         before = self.head()
         self.write("knowledge/AI/x.md", "x\n")
-        code, _out, err = self.tool("commit", "-m", "Librarian: Route x.md to AI/", "knowledge/AI/x.md")
-        self.assertEqual(code, 1)
-        self.assertIn("git commit failed", err)
-        self.assertIn("hook says no", err)
+        code, out, _err = self.tool("commit", "-m", "Librarian: Route x.md to AI/", "--body", "b", "knowledge/AI/x.md")
+        self.assertEqual(code, 0)
+        self.assertIn("no longer commits", out)
         self.assertEqual(self.head(), before)
-        self.assertEqual(self.git(self.repo, "status", "--porcelain").strip(), "A  AI/x.md")
+        self.assertEqual(self.git(self.repo, "status", "--porcelain").strip(), "?? AI/x.md")
 
-    def test_missing_identity_is_reported_not_swallowed(self):
-        os.remove(self.env["GIT_CONFIG_GLOBAL"])
-        self.env["GIT_CONFIG_GLOBAL"] = os.path.join(self.env["HOME"], "empty-gitconfig")
-        open(self.env["GIT_CONFIG_GLOBAL"], "w").close()
-        self.git(self.repo, "config", "user.useConfigOnly", "true")
-        before = self.head()
+    def test_stage_only_stages_nothing(self):
         self.write("knowledge/AI/x.md", "x\n")
-        code, _out, err = self.tool("commit", "-m", "Librarian: Route x.md to AI/", "knowledge/AI/x.md")
-        self.assertEqual(code, 1)
-        self.assertIn("identity", err)
-        self.assertEqual(self.head(), before)
+        result = self.json("commit", "--stage-only", "knowledge/AI/x.md")
+        self.assertEqual((result["committed"], result["reason"], result["deprecated"]), (False, "removed", True))
+        self.assertEqual(self.git(self.repo, "status", "--porcelain").strip(), "?? AI/x.md")
 
-    def test_usage_errors(self):
-        for args in (("commit", "-m", "two\nlines", "knowledge/AI/x.md"),
-                     ("commit", "-m", "", "knowledge/AI/x.md"),
-                     ("commit", "-m", "x"),
-                     ("commit", "-m", "x", "../outside")):
+    def test_any_arguments_an_old_role_file_might_pass_are_accepted(self):
+        for args in (("commit", "-m", "x"),
+                     ("commit", "-m", "x", "--", "knowledge/AI/x.md", "knowledge/AI/_MOC.md"),
+                     ("commit", "-m", "x", "no/such/file.md"),
+                     ("commit",)):
             code, _out, _err = self.tool(*args)
-            self.assertEqual(code, 64, args)
+            self.assertEqual(code, 0, args)
+
+    def test_works_without_git_and_outside_a_repository(self):
+        (self.base / "empty-bin").mkdir()
+        self.env["PATH"] = str(self.base / "empty-bin")      # no git to be found
+        code, out, _err = self.tool("commit", "-m", "x", "projects/orion/CLAUDE.md")
+        self.assertEqual(code, 0)
+        self.assertIn("no longer commits", out)
 
 
 class SymlinkedVault(support.ToolsCase):
@@ -144,15 +72,6 @@ class SymlinkedVault(support.ToolsCase):
         self.ok("index", "knowledge/AI/_MOC.md")
         self.assertTrue(self.json("search", "vendor-landscape-2026")["results"][0]["is_pointer"])
         self.assertGreaterEqual(self.json("actions", "--all-dates")["open"], 3)
-
-    def test_commit_through_the_link_is_a_child_repo_commit(self):
-        self.git(self.real, "init", "-q", "-b", "main")
-        self.git(self.real, "add", "-A")
-        self.git(self.real, "commit", "-q", "-m", "baseline")
-        self.write("knowledge/AI/x.md", "x\n")
-        result = self.json("commit", "-m", "Librarian: Route x.md to AI/", "knowledge/AI/x.md")
-        self.assertEqual((result["committed"], result["repo"], result["paths"]), (True, "knowledge", ["AI/x.md"]))
-        self.assertEqual(self.git(self.real, "status", "--porcelain").strip(), "")
 
 
 class Actions(support.ToolsCase):
