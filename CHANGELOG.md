@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Changed — `pka-tutorial` checks the release before teaching
+
+- Pre-flight asks the plugin's copies of `pka-tools status` and `upgrade-roles.py --dry-run` whether the workspace's toolkit (`.pka/manifest.json`), role files and index are on the installed release. Neither command changes a file. Equal versions alone are not taken as upgraded, because the librarian and `bootstrap git` install a missing toolkit themselves.
+- **Workspace behind:** before any tour, the tutorial walks the user through `bootstrap upgrade`: a `--dry-run` preview of the installer, what each of the three steps does and what backs it up, then a hand-off ("say *bootstrap upgrade*"). It does not perform the upgrade; `pka-bootstrap` does, on the user's request. Afterwards it confirms the result and teaches what is new in the releases in between, as capabilities with a prompt to try for each.
+- **Plugin behind the workspace** (upgraded from another machine): it says to update the plugin, and does not suggest `bootstrap upgrade`.
+- **Index not migrated** (toolkit and roles current): one sentence pointing to `bootstrap upgrade`, no walkthrough.
+- **Current, upgraded at some point, but "what's new" never covered:** it is offered first in the returning-user menu. The tutorial records `What's new in v<version>` in the session log so it is offered once.
+- A specific how-do-I question is answered first, with one sentence about the upgrade; "not now" is respected for the session; "go ahead" after the preview is taken as the request and passed to `pka-bootstrap`.
+- New reference `skills/pka-tutorial/references/upgrade-and-whats-new.md` holds the walkthrough script and a what's-new section per release, starting with v1.7.0. A release without a section falls back to its changelog entry. **When a release adds something a user can do, add a section there.**
+- The tutorial's session-log entry goes to `.pka/session-log.md` through `pka-tools log add` when the toolkit is present.
+- Evals: eleven `pka-tutorial` scenarios for these states.
+
 ## v1.7.0 — 2026-11-17
 
 The mechanics move into a tool, every skill files notes the same way, and people get timelines. This release includes the two pre-releases below (v1.7.0-alpha.1 and v1.7.0-beta.1), which were not released separately; read all three entries.

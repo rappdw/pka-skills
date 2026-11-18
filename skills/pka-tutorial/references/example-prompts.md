@@ -144,6 +144,17 @@ and topics to their actual Repo Map.
 - "What can PKA do?"
 - "I'm stuck — what do I do next?"
 
+## Upgrading and What's New
+
+- "Do I need to upgrade?"
+- "What will the upgrade change?"
+- "bootstrap upgrade"
+- "What's new in this release?"
+- "File a 1-1 note for `<person>`" (then look at the Timeline in their `index.md`)
+- "From now on, '`<nickname>`' means `<person>`"
+- "What action items are still open from the last two weeks?"
+- "Refresh the role sections I haven't edited"
+
 ---
 
 ## Adapting prompts
