@@ -7,7 +7,7 @@ Use this template when generating the root `CLAUDE.md` for a PKA system. Fill al
 ## Template
 
 ```markdown
-<!-- PKA v1.6 | vendor-agnostic -->
+<!-- PKA v1.7 | vendor-agnostic -->
 <!-- Works as: Claude Code CLAUDE.md | Gemini system prompt | local LLM context -->
 <!-- Repo Map maintained by orchestrator — do not hand-edit -->
 
