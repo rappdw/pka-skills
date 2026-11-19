@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.8.0 — not yet released
+## v1.8.0 — 2026-11-18
 
 **Existing workspaces:** run `bootstrap upgrade`. Until you do, the copy of `pka-tools` already in the workspace behaves as its own release did, which for a workspace with nested repositories means it still commits. The librarian now checks for an older copy and asks for the upgrade before filing.
 
