@@ -44,7 +44,7 @@ pka-skills is a Claude Code plugin with six skills:
 | `pka-librarian` | Routes dropped files, extracts text from PDFs, indexes, backfills timelines, runs health checks |
 | `pka-meetings` | Files meeting notes: routes them, links attendees, extracts action items |
 | `pka-wiki` | Topic pages that cite your notes |
-| `pka-interface` | A single-file browser dashboard |
+| `pka-interface` | A browser dashboard you open by double-click |
 | `pka-tutorial` | A guided tour inside your own workspace, and the upgrade walkthrough |
 
 The skills are prose that Claude follows. The mechanical steps (index updates, table edits, timeline lines, health checks) are done by a small bundled command, `pka-tools`, so they come out the same every time. Section 15 covers it.
@@ -59,7 +59,6 @@ The skills are prose that Claude follows. The mechanical steps (index updates, t
 
 - **To make PDFs searchable:** `pdfplumber` or `pypdf` (Python packages) for PDFs that contain text, `tesseract` for scans. Without them a PDF is still filed, but its contents are not searchable.
 - **For a search index:** a Python whose built-in SQLite includes FTS5. The tool tells you if yours does not.
-- **For the dashboard without an index:** Chrome or Edge.
 - **thinkkit**, a separate plugin, for taking notes live during a meeting and for checking notes against a transcript. Without it PKA still files notes you wrote yourself. See section 8.
 - **Obsidian** is not required for anything here. If `knowledge/` is an Obsidian vault, PKA works alongside it. See section 10.
 
@@ -150,6 +149,8 @@ Some things are asked at every level, hands-off included: ingesting into a topic
 
 When bootstrap adapts to an existing structure it adds this infrastructure and does not move your content.
 
+In an empty folder it writes the same infrastructure. Content folders are created only if you accept the one starter layout it offers (`knowledge/` with `meetings/`, `personnel/` and `archive/` inside, plus `projects/`) or name your own. You can also start with none.
+
 Two offers follow the summary. You can decline both and take them up later.
 
 - **Pointer tables**, if you do not use Obsidian: a small `_MOC.md` per knowledge folder so filed notes get a searchable topic row. Useful once there are hundreds of notes. See section 10.
@@ -227,7 +228,7 @@ There is no "close" command. The greeting reads the last 20 entries, so an old t
 
 ### The decision log
 
-A second file, `.pka/decision-log.md`, records decisions with their context and the alternatives considered: the storage mode chosen at setup, why a project was archived, why a role was added. It is what answers *"Why did I archive Lyra?"*
+A second file, `.pka/decision-log.md`, records decisions with their context and the alternatives considered: the storage mode chosen at setup, why a project was archived, why a role was added. A decision is appended when it is made. It is what answers *"Why did I archive Lyra?"*
 
 **Try this**
 
@@ -288,11 +289,11 @@ The rest of `CLAUDE.md` records your autonomy level, communication style, storag
 
 ## 5. Roles
 
-Three roles ship with PKA. Name one with an @mention, or describe what you want and let the orchestrator route it.
+Three roles ship with PKA. Name one with an @mention, or describe what you want. The orchestrator answers lookups itself, and hands filing to the librarian and synthesis to the researcher.
 
 | Role | What it does |
 |---|---|
-| `@orchestrator` | Always active. Routes requests, keeps the Repo Map, runs the session start and end, handles project lifecycle |
+| `@orchestrator` | Always active. Answers lookups itself: where something is, what a note says. Keeps the Repo Map, runs the session start and end, handles project lifecycle. Hands filing to the librarian and synthesis to the researcher |
 | `@librarian` | Takes files in: inventory, text extraction, routing, indexing, health checks. Shows a routing proposal before it moves anything, unless you chose hands-off |
 | `@researcher` | Synthesizes across your notes. Says what it searched, cites sources, separates findings from inferences. Also maintains topic wikis |
 
@@ -304,7 +305,7 @@ Three roles ship with PKA. Name one with an @mention, or describe what you want 
 
 **Adding a role.** Say *"Add a data analyst to my team"*. The researcher writes a competency brief to `owner-inbox/research-<role>-<date>.md`, a role file is written to `.pka/roles/`, the roster gains a row, and you are shown the definition to confirm before it is final.
 
-**Writing for you.** `.pka/owner-profile.md` holds your communication style, and roles read it. If summaries run long, say *"Update my communication style, I prefer shorter summaries"* and the profile is updated.
+**Writing for you.** `.pka/owner-profile.md` holds your communication style. The orchestrator reads it once at the start of a session, and the roles write in that style. If summaries run long, say *"Update my communication style, I prefer shorter summaries"* and the profile is updated.
 
 **Try this**
 
@@ -436,8 +437,9 @@ After a meeting, `pka-meetings` files the notes. With the optional thinkkit plug
 | Capture | A meeting about to start | Yes (`take-notes`) |
 | Reconcile | Notes and a transcript | Yes (`resolve-against-transcript`) |
 | Route only | Notes you already wrote | No |
+| Notes from a transcript | A transcript and no notes | No |
 
-Without thinkkit you still get everything under "Filing the note" below. PKA says which modes are unavailable and carries on; a transcript stays held in `team-inbox/`.
+Without thinkkit you still get everything under "Filing the note" below, and notes written from a transcript. PKA says which modes are unavailable and carries on; a transcript stays held in `team-inbox/` until you say what to do with it.
 
 ### Capture live
 
@@ -501,7 +503,7 @@ The transcript is treated as the truth, and the notes are what get corrected. th
 >
 > Accept, modify, or skip?
 
-If you have a transcript and no notes, PKA offers to generate notes from the transcript.
+If you have a transcript and no notes, PKA offers to write notes from the transcript. This is PKA's own step and does not need thinkkit. It is offered, never done automatically, and the notes carry a `**Source**:` line saying they were written from the transcript.
 
 Reconcile before filing. Capture and reconciliation both work on the note while it is still in `meeting-notes/`.
 
@@ -520,7 +522,7 @@ earshot is a separate, local recording and transcription tool. It writes each me
 However the notes were written, the same things happen. For a note you wrote yourself, say *"File these meeting notes: `<path>`"*.
 
 1. **Route.** A 1-1 goes to that person's folder, if they have one. A leadership or general meeting goes to a `meeting-home` folder; with several, or none, you are asked. A meeting about an active project always gets a question, at every autonomy level: file it in the project, or in knowledge?
-2. **Link attendees.** Each name is checked against your people folders with `pka-tools people resolve`. A certain match is linked under `## Attendees`. An ambiguous one is asked about. No match is listed without a link.
+2. **Link attendees.** Each name is checked against your people folders with `pka-tools people resolve`. A certain match is linked under `## Attendees`, which is appended at the end of the note if the note has none. An ambiguous one is asked about. No match is listed without a link.
 3. **Extract action items** and ask: "Found N action items. Add to session log open threads?" On a yes they appear in the next session's greeting.
 4. **Save.** The note is saved in the destination as `YYYY-MM-DD-meeting-slug.md`. A 1-1 is `YYYY-MM-DD-1-1-<person>.md`. Existing 1-1 notes named another way are recognised as they are and never renamed.
 5. **Post-route.** The step every filed note gets (section 7), including a line on each attendee's timeline with a summary written from the note.
@@ -565,7 +567,9 @@ $ .pka/bin/pka-tools actions
       knowledge/leadership/2026-11-17-northwind-proposal-review.md:5
 ```
 
-An owner is read from `@name` and a due date from `by YYYY-MM-DD`, as in the last item. Items captured by thinkkit use a different form (`**Owner**: … (due: date)`). In v1.10.0 they are listed as written, but an owner or due date is not read from them. Tick the box in the note to close an item.
+Each item is shown as it is written in the note. Both forms above are read. An owner is a bold name with a colon at the start of the item (`**Robin**:`, the form thinkkit writes) or an `@name`. A due date is `(due: …)` or `by YYYY-MM-DD`; a bare date at the end of the item, after a dash, also counts. A due phrase that is not a date, such as "Friday", is shown as written, not guessed.
+
+Filing never rewrites a checkbox line that is already in the note. Tick the box in the note to close an item.
 
 **Try this**
 
@@ -818,42 +822,63 @@ Nothing is written until you approve, even in hands-off mode. A contradiction is
 
 ## 12. The dashboard
 
-*"Generate my dashboard"* writes a single HTML file, `dashboard.html`, at the root of your workspace. Open it in a browser. No server is set up and there is no build step.
+*"Generate my dashboard"* writes a page, `dashboard.html`, at the root of your workspace, with its data in a second file beside it. Open the page by double-click. No server is set up, there is no build step, and the page makes no network request.
 
 ```bash
 open dashboard.html        # macOS
 xdg-open dashboard.html    # Linux
 ```
 
+### Two files
+
+| File | What it is | Written by |
+|---|---|---|
+| `dashboard.html` | The page: layout, styles, one section per folder | the `pka-interface` skill, from a template |
+| `dashboard-data.js` | The data the page shows: a snapshot of the workspace | `pka-tools dashboard data` |
+
+The snapshot holds one row per file (title, the note's date, the day it last changed, tags, a short summary, its headings), the Repo Map folders, people with their newest timeline entries, projects and their status, the newest open action items, and the recent session log. It does not hold the text of your notes.
+
+The page loads that file with a script tag and loads nothing else: no library, no CDN, no folder picker. It works the same in index mode and in a markdown-only workspace, offline, in any current browser. (It was checked in Chromium and Firefox, not in Safari.)
+
+Keep the two files together.
+
+### Sections
+
 Sections are generated from the Active and Reference folders in your Repo Map. Each folder gets the view that suits its content:
 
 | Folder holds | View |
 |---|---|
-| Per-person notes | Card per person, most recent first |
-| Meeting notes (`meeting-home`) | Timeline by date in the filename |
-| Research outputs | Topic list with linked files |
-| Journal or lab notes | Calendar heatmap and entry list |
-| Project workspaces | Card with status and days since activity |
-| Anything else | File table with search |
+| One subfolder per person (`people-home`) | A card per person: files, last change, newest timeline entries |
+| Dated meeting or strategy notes (`meeting-home`) | Notes by date, newest first, grouped by month |
+| A subfolder per topic (research, wikis) | A card per subfolder with its files |
+| A journal of dated notes (`daily-home`) | A square per day for recent months, then the entries |
+| `projects/` | A card per project: status, days since last change |
+| Anything else | A sortable, filterable table |
 
-Two sections are always there: **Activity**, the last 20 session-log entries, and **Search**.
+Three sections are always there: **Search**, **Open actions** (unticked checkboxes in dated meeting and person notes) and **Activity** (the last 20 session-log entries and the files changed last).
 
-### Two ways it reads your data
+### What search covers
 
-- **With an index**, the page is built to read `.pka/knowledge.db` in the browser for full-text search. To do that it loads the sql.js library from a public CDN, so opening it makes a network request for that script.
-- **Without an index**, it needs Chrome or Edge, and asks you to pick the workspace folder when it opens. Search covers file and folder names, with a slower "deep search" for contents.
+Search in the page looks at titles, paths, tags, headings and the one-line summary of each file. It does not search the text inside notes, because that text is not in the data, and the page says so. For a full-text search, ask in a session (section 6).
 
-If the page cannot load the index, which a browser may refuse for a page opened from disk, it works the second way.
+### Keeping it current
 
-### Keeping it useful
+The page shows the workspace as it was when the data was written, and its header says when that was. After seven days that line is shown in a warning colour.
 
-Ask for an update after structural changes, such as a new folder in the Repo Map: *"Update the dashboard"*, or *"Add a timeline view for `<folder>`"*. The skill edits the existing file in place and keeps your customizations.
+- *"Refresh the dashboard"* rewrites `dashboard-data.js`; then reload the page. `dashboard.html` is not touched.
+- The data is also refreshed once at the end of a session in which notes were filed or changed, if you have a dashboard. It is not refreshed after every filed note.
+- *"Add a timeline view for `<folder>`"* or *"Update the dashboard"* after the Repo Map changed edits the page in place. The skill changes only the sections it marked as its own and keeps what you added outside them. It asks before removing a section.
 
-File links are absolute paths on your disk. A dashboard generated in one location has dead links if the workspace moves or is opened on another machine; regenerate it there.
+Links are relative to the page, so the workspace folder can be renamed, moved or synced to another machine and they still work. A note opens the way your browser opens a `.md` file: as plain text, or as a download.
+
+### If you have a dashboard from an earlier release
+
+It is not touched and behaves exactly as it did, including its request to a CDN for a script. To get the new one, run *"bootstrap upgrade"* (for the new `pka-tools`) and then ask for the dashboard to be updated. The skill recognises the old page, keeps a copy as `dashboard.html.bak-<date>`, rebuilds the page with your sections and customizations, and writes the data.
 
 **Try this**
 
 - *"Generate my dashboard"*
+- *"Refresh the dashboard"*
 - *"Add a timeline view for `<folder>`"*
 
 ---
@@ -880,7 +905,7 @@ A project folder is a workspace while the work is live. When it is done, a trans
 2. **Pause.** It waits for your approval, whatever your autonomy level.
 3. **Cleanup.** Build leftovers (what `.pkaignore` matches) are listed. You confirm before they are deleted.
 4. **Move.** The folder goes to your archive destination, here `knowledge/archive/lyra/`. Wikilinks that pointed at the old location are rewritten. Anything else that still names the old path, such as relative markdown links or mentions in `CLAUDE.md`, is shown to you to fix. The approved summary is copied into the moved folder as `project-summary.md`.
-5. **Re-index and update the map.** Status becomes `archived`, priority `Reference`.
+5. **Update the map, then re-index.** The moved project gets its own row in the Repo Map first: priority `Reference`, status `archived`. Then the index is run. The order matters, because the index reads the folders the map lists; indexing first would drop the project from search.
 
 If the project folder is its own git repository, the move stops and asks first. What happens to that history is your decision. Nothing is committed for you at any step.
 
@@ -899,7 +924,7 @@ If the project folder is its own git repository, the move stops and asks first. 
 
 **Not ready to move it?** *"Archive Lyra"* marks it `archiving` in the Repo Map for a later transition.
 
-**Changing your mind.** *"Restore Lyra to active"* moves it back, and its links follow.
+**Changing your mind.** *"Restore Lyra to active"* moves it back, and its links follow. The index is then pruned (`pka-tools index --prune`); until that runs, stale rows for the archive path stay in it.
 
 ### Meetings about a live project
 
@@ -1152,6 +1177,7 @@ People home:      knowledge/personnel
 | move a project | `pointers rename`: links follow the folder |
 | backfill timelines | `timeline plan`, `apply`, `restore` |
 | run a health check | `lint`, `lint suppress`, `lint schedule` |
+| generate or refresh the dashboard | `dashboard data`: writes the snapshot the page shows |
 | upgrade | `install` and `db migrate`, with backups |
 
 Every command, exit code and rule is in [`bootstrap-assets/tools/README.md`](../bootstrap-assets/tools/README.md).
@@ -1307,7 +1333,7 @@ It teaches one idea at a time, gives a prompt, and asks whether you want to try 
 
 **End of week.** *"What action items do I have this week?"* and *"Give me a project status summary."* Then, if the workspace is in a repository, review and commit what changed. PKA has not.
 
-**Occasionally.** *"Run a health check"* after a large import. *"Update the dashboard"* after structural changes. *"What projects are winding down?"* when you want to tidy up. *"Re-index my knowledge base"* after editing notes by hand. *"Backfill timelines"* when the health check says notes are waiting.
+**Occasionally.** *"Run a health check"* after a large import. *"Refresh the dashboard"* when its data looks old, and *"Update the dashboard"* after structural changes. *"What projects are winding down?"* when you want to tidy up. *"Re-index my knowledge base"* after editing notes by hand. *"Backfill timelines"* when the health check says notes are waiting.
 
 **After a plugin update.** *"Do I need to upgrade?"*
 
@@ -1355,7 +1381,8 @@ It teaches one idea at a time, gives a prompt, and asks whether you want to try 
 | "Find duplicate notes" | The duplicate rules of a full lint |
 | "That finding is fine, hide it" | Records a suppression with your reason |
 | "Show me the weekly lint schedule" | Prints a cron line and a launchd file; installs nothing |
-| "Generate my dashboard" / "Update the dashboard" | Writes or edits `dashboard.html` |
+| "Generate my dashboard" / "Update the dashboard" | Writes or edits `dashboard.html`, and writes its data |
+| "Refresh the dashboard" | Rewrites `dashboard-data.js`; reload the page |
 | "What projects are winding down?" | Projects with no file changes in 60 days or more |
 | "Transition `<project>` to knowledge" | Summary, approval, cleanup, move, re-index |
 | "Restore `<project>` to active" | Reverses a transition |
@@ -1381,7 +1408,8 @@ It teaches one idea at a time, gives a prompt, and asks whether you want to try 
 | `<people folder>/<person>/index.md` | A person's page and timeline | you; `pka-tools` owns the timeline block |
 | `knowledge/**/_MOC.md` | A folder's map of content and pointer table | `pka-tools`; yours to reorganise |
 | `knowledge/topics/<topic>/wiki.md` | A topic wiki | the researcher, on your approval |
-| `dashboard.html` | The dashboard | `pka-interface` |
+| `dashboard.html` | The dashboard page | `pka-interface` |
+| `dashboard-data.js` | The snapshot the dashboard shows | `pka-tools dashboard data` |
 | `.pka/bin/` | `pka-tools` | the installer |
 | `.pka/roles/` | Role files and the roster | bootstrap and upgrades; yours to edit |
 | `.pka/session-log.md` | The work diary | every role |

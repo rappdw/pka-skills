@@ -40,9 +40,9 @@ Two modules depend on the workspace. Check with
    its priority, and tags such as `people-home` and `meeting-home` that tell the
    skills where things go. Your AI reads this first to figure out where things live.
 
-3. **Roles divide the labor.** The orchestrator (me) routes your requests. The
-   researcher does deep synthesis. The librarian handles files, OCR, indexing.
-   You delegate via @mentions or just describe what you want.
+3. **Roles divide the labor.** The orchestrator (me) answers lookups itself and
+   hands off the rest: filing to the librarian (files, OCR, indexing), synthesis
+   to the researcher. You delegate via @mentions or just describe what you want.
 
 4. **A small tool does the mechanical steps.** Index updates, table edits and
    timeline lines are made by `pka-tools`, a helper in `.pka/bin/`, so they come
@@ -113,7 +113,8 @@ Combines search with dates. Useful for retrospectives.
 
 **5. Decision history — "Why did I archive X?"**
 
-Reads `.pka/decision-log.md`, which records decisions with their reasons.
+Reads `.pka/decision-log.md`, which records decisions with their reasons. A
+decision is appended there when it is made.
 
 ### What search covers, and when it is current
 
@@ -236,16 +237,25 @@ pipeline runs. Reconcile before filing, while the note is still in
 You already wrote notes somewhere. Say "file these meeting notes" and point me
 at the file. Skip capture, skip reconcile, just route + link + index.
 
+### Notes from a transcript (no thinkkit needed)
+
+You have a transcript and no notes. I offer to write notes from it. This is
+PKA's own step: it is offered, never done automatically, and the notes carry a
+`**Source**:` line saying they were written from the transcript. Then the
+pipeline runs.
+
 ### The post-processing pipeline (all modes)
 
 1. **Route** — detects meeting type (1-1, project, leadership, general) and
    proposes a destination from the Repo Map. A meeting about an active project
    always gets a question: file it in the project, or in knowledge?
 2. **Link attendees** — each name is checked against your people folders. A
-   certain match is linked under `## Attendees`; an ambiguous one is asked
-   about, never guessed; no match is listed without a link
-3. **Extract action items** — finds `- [ ]`, `AI:`, `TODO:`, `→` markers,
-   normalizes them, and offers to add them to the session log's open threads
+   certain match is linked under `## Attendees` (appended at the end of the
+   note if it has none); an ambiguous one is asked about, never guessed; no
+   match is listed without a link
+3. **Extract action items** — finds `- [ ]`, `AI:`, `TODO:`, `→` markers and
+   offers to add them to the session log's open threads. A checkbox line that
+   is already in the note is never rewritten
 4. **File** — saves as `YYYY-MM-DD-meeting-slug.md` in the destination; a 1-1 is
    `YYYY-MM-DD-1-1-<person>.md` in the person's folder. Existing notes named
    another way are never renamed
@@ -264,8 +274,10 @@ Post-meeting overhead: ~30 seconds of confirmation.
 
 "What action items do I have this week?" lists unticked `- [ ]` boxes in the
 dated notes of the last 7 days, each with its source file. An owner is read
-from `@name` and a due date from `by YYYY-MM-DD`. Items in thinkkit's own form
-(`**Owner**: …`) are listed as written. Tick the box in the note to close one.
+from a bold name with a colon at the start of the item (`**Robin**:`, the form
+thinkkit writes) or from `@name`; a due date from `(due: …)` or
+`by YYYY-MM-DD`. A due phrase that is not a date ("Friday") is shown as
+written, not guessed. Tick the box in the note to close one.
 
 ### If the user records with earshot
 
@@ -276,7 +288,8 @@ capture with a transcript and no reconciled note is offered for Mode B.
 
 ### If thinkkit isn't installed
 
-Modes A and B won't work. Mode C still handles everything. To get full capture,
+Modes A and B won't work. Mode C still handles everything, and notes can
+still be written from a transcript. To get full capture,
 install thinkkit:
 
 ```
@@ -298,8 +311,10 @@ install thinkkit:
 
 ### Key ideas
 
-A single-file HTML dashboard at `<pka-root>/dashboard.html`. No server, no
-build step. Opens directly:
+A dashboard page at `<pka-root>/dashboard.html`, with its data in a second
+file beside it, `dashboard-data.js`. No server, no build step, no network
+request. Opens by double-click in any current browser, in index mode and
+markdown-only mode alike:
 
 ```bash
 open dashboard.html    # macOS
@@ -310,45 +325,59 @@ xdg-open dashboard.html    # Linux
 
 | Folder type | View |
 |-------------|------|
-| Personnel (per-person subfolders) | Card grid, sorted by last activity |
-| Meeting-home (tagged in Repo Map) | Timeline sorted by date-in-filename |
-| Research (topic subfolders) | Topic list with links to each topic's docs |
-| Journal (date-named files) | Calendar heatmap |
-| Projects (folders with CLAUDE.md) | Project cards with status badges, age, doc count |
-| Generic | File table with search |
+| People (per-person subfolders, `people-home`) | A card per person: files, last change, newest timeline entries |
+| Meeting-home (tagged in Repo Map) | Notes by date, newest first, grouped by month |
+| Topics (a subfolder per topic: research, wikis) | A card per subfolder with its files |
+| Journal (dated notes, `daily-home`) | A square per day for recent months, then the entries |
+| Projects | A card per project: status, days since last change |
+| Anything else | A sortable, filterable table |
 
-Two sections are always there: Activity (the last 20 session-log entries) and
-Search.
+Three sections are always there: Search, Open actions (unticked checkboxes in
+dated meeting and person notes) and Activity (the last 20 session-log entries
+and the files changed last).
 
-### How it reads your data
+### Where the data comes from
 
-- **Index mode:** the page reads `.pka/knowledge.db` in the browser and search
-  is full-text. It loads the sql.js library from a public CDN to do that, so
-  opening it makes one network request.
-- **Markdown-only:** it needs Chrome or Edge and asks you to pick the workspace
-  folder when it opens. Search covers file and folder names, with a slower
-  "deep search" for contents.
+The page shows a snapshot that the helper writes (`pka-tools dashboard data`):
+one row per file (title, dates, tags, a short summary, headings), the Repo Map
+folders, people and their newest timeline entries, projects, open action items
+and the recent session log. Not the text of the notes. The page says when the
+snapshot was written.
 
-File links are absolute paths on this disk: regenerate the dashboard if the
-workspace moves.
+Links are relative, so the workspace folder can be moved; the two files stay
+together.
 
-### Updating the dashboard
+### Search
 
-Say what you want added or changed:
+The search box covers titles, paths, tags, headings and summaries. It does not
+search the text inside notes, and the page says so. For that, the user asks me
+in a session (Module 2).
+
+### Refreshing and updating
+
+> "Refresh the dashboard"
+
+rewrites the data; the user reloads the page. I also refresh it once at the end
+of a session in which notes were filed, not after every note.
+
+To change the page itself, say what you want added or changed:
 
 > "Update the dashboard — add a timeline for my `<journal-folder>` entries"
->
-> "Add a section showing my action items"
->
-> "Refresh the activity log"
 
-The skill reads the existing HTML, edits surgically, leaves everything else alone.
+The skill edits only the sections it marked as its own and leaves what the
+user added outside them alone.
+
+### A dashboard from an earlier release
+
+It keeps working as it did until the user asks for an update. Then the skill
+keeps a copy (`dashboard.html.bak-<date>`), rebuilds the page with their
+sections, and writes the data. It needs the upgraded `pka-tools` first.
 
 ### Try this
 
 > "Generate my dashboard" (if it doesn't exist yet)
 >
-> "Update the dashboard"
+> "Refresh the dashboard"
 >
 > "Add a `<new section>` to the dashboard"
 
@@ -388,8 +417,11 @@ You say "transition `<project>` to knowledge." What happens:
    one. Anything else that still names the old path is shown to you to fix.
    If the project folder is its own git repository, I stop and ask first: what
    happens to that history is your decision. Nothing is committed for you
-5. **Re-index.** Librarian runs a full content index pass on the moved directory
-6. **Map update.** Repo Map status changes to `archived`, priority to Reference
+5. **Map update, first.** The moved project gets its own row in the Repo Map:
+   priority Reference, status `archived`
+6. **Re-index.** Then the librarian runs the index. In that order: the index
+   reads the folders the map lists, so indexing first would drop the project
+   from search
 
 "Archive `<project>`" without a transition just marks it `archiving` for later.
 
@@ -406,7 +438,8 @@ If a "done" project turns out not to be done:
 > "Restore `<project>` to active"
 
 Moves it back, its links follow, the Repo Map is updated, and it returns to the
-one-level project index.
+one-level project index. The index is then pruned (`index --prune`); until
+that runs, stale rows for the archive path stay in it.
 
 ### Try this
 
@@ -426,7 +459,7 @@ PKA ships with three seed roles; you add more as you need them.
 
 | Role | What it does |
 |------|-------------|
-| `@orchestrator` | Routes requests, maintains Repo Map, handles lifecycle. Always active. |
+| `@orchestrator` | Answers lookups itself, maintains Repo Map, handles lifecycle, hands filing and synthesis to the other two. Always active. |
 | `@researcher` | Deep synthesis, role briefs, cross-knowledge-base analysis, topic wikis. |
 | `@librarian` | File ingestion, OCR, routing, indexing, health checks. |
 
@@ -442,10 +475,17 @@ You can @mention explicitly:
 
 > "@researcher synthesize what I know about distributed consensus"
 
-Or just describe what you need — the orchestrator routes:
+Or just describe what you need. The orchestrator answers a lookup itself, and
+hands filing to the librarian and synthesis to the researcher:
 
 > "What do I know about distributed consensus?"
-> → orchestrator routes to @researcher
+> → the orchestrator answers
+>
+> "Synthesize what I know about distributed consensus"
+> → @researcher
+>
+> "Process my team-inbox"
+> → @librarian
 
 ### Adding a role
 
@@ -460,7 +500,8 @@ What happens:
 ### Communication style
 
 Your `.pka/owner-profile.md` (created at bootstrap) includes a communication
-style — concise, narrative, mixed. Roles read this and adapt. If my outputs
+style — concise, narrative, mixed. The orchestrator reads it once at session
+start, and roles adapt. If my outputs
 don't match your preference, say:
 
 > "Update my communication style — I prefer shorter summaries"

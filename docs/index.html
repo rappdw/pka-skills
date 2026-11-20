@@ -85,10 +85,10 @@
       <h3>The core idea</h3>
       <ul>
         <li><strong>Your files are the source of truth.</strong> Every note is a plain file you can open in any editor. PKA reads your existing folders and infers what they mean; it does not impose a structure.</li>
-        <li><strong>Roles do the work.</strong> An orchestrator routes what you ask to a librarian (files, OCR, indexing) or a researcher (synthesis).</li>
+        <li><strong>Roles do the work.</strong> An orchestrator answers lookups itself, and hands filing to a librarian (files, OCR, indexing) and synthesis to a researcher.</li>
         <li><strong>Everything stays in your folder.</strong> There is no PKA account, server or sync. The bundled helper makes no network calls and never runs git.</li>
       </ul>
-      <p>Two things do reach the network. The dashboard, when you have a search index, loads one script (sql.js) from a public CDN. And extracting text from PDFs uses optional Python packages that you install yourself.</p>
+      <p>The dashboard is a page you open from your own disk; it makes no network request. Extracting text from PDFs uses optional Python packages, which you install yourself.</p>
       <p>Claude Code itself still sends what it reads to its model, as in any Claude Code session. PKA adds nothing to that.</p>
       <p>An optional SQLite index speeds up search in a large folder. It is built from the files and can be rebuilt from them at any time.</p>
       <p>One folder name has a fixed meaning: <code>knowledge/</code>. PKA calls it <strong>the vault</strong>. Obsidian support, MOCs and pointer tables (later screens) apply to notes inside it.</p>
@@ -151,7 +151,7 @@
               <tr><th scope="row"><code>pka-librarian</code></th><td>Routes dropped files, OCR, indexing, timeline backfill, health checks</td></tr>
               <tr><th scope="row"><code>pka-meetings</code></th><td>Files meeting notes: routes them, links attendees, extracts action items. Live capture and transcript reconciliation come from the optional thinkkit plugin.</td></tr>
               <tr><th scope="row"><code>pka-wiki</code></th><td>Topic pages that cite your notes</td></tr>
-              <tr><th scope="row"><code>pka-interface</code></th><td>A single-file browser dashboard</td></tr>
+              <tr><th scope="row"><code>pka-interface</code></th><td>A browser dashboard you open by double-click</td></tr>
               <tr><th scope="row"><code>pka-tutorial</code></th><td>A guided tour inside your own workspace</td></tr>
             </tbody>
           </table>
@@ -180,7 +180,6 @@
       <h3>Optional</h3>
       <ul>
         <li><strong>To make PDFs searchable:</strong> <code>pdfplumber</code> or <code>pypdf</code> (Python packages) for PDFs that contain text. <code>tesseract</code> for scans and image-only PDFs. Without them a PDF is still filed, but its contents are not searchable.</li>
-        <li><strong>For the dashboard without an index:</strong> Chrome or Edge.</li>
         <li><strong>For a search index:</strong> a Python whose built-in SQLite includes FTS5. The helper tells you if yours does not.</li>
         <li><strong>Obsidian</strong> is not required for anything on this site.</li>
       </ul>
@@ -214,6 +213,7 @@
       </figure>
       <div class="cards">
         <div class="card"><h4>An existing folder</h4><p>The usual case. Setup reads what is there and leaves your files where they are.</p></div>
+        <div class="card"><h4>An empty folder</h4><p>Setup still writes its own files. Content folders are created only if you accept the starter layout it offers, or name your own.</p></div>
         <div class="card"><h4>Later releases</h4><p>Update the plugin, then say "bootstrap upgrade" in the workspace. See <a href="#upgrade">Upgrading</a>.</p></div>
       </div>
     </div>
@@ -241,6 +241,7 @@
       <p>At the end it shows a schedule entry for a weekly <a href="#health">health check</a>. It installs nothing; adding the entry is yours to do.</p>
       <h3>What it writes</h3>
       <p><code>CLAUDE.md</code>, a <code>.pka/</code> folder and two inboxes. When it adapts to an existing structure it adds infrastructure and does not move your content.</p>
+      <p>In an empty folder it writes the same infrastructure. Content folders are created only if you accept the one starter layout it offers (<code>knowledge/</code> with <code>meetings/</code>, <code>personnel/</code> and <code>archive/</code> inside, plus <code>projects/</code>) or name your own.</p>
       <h3>If you already have a <code>CLAUDE.md</code></h3>
       <p>Bootstrap asks whether it belongs to an existing PKA or is unrelated. It shows you a diff and waits for your confirmation before overwriting a <code>CLAUDE.md</code> it did not write, whatever autonomy level you chose.</p>
       <h3>Storage</h3>
@@ -381,13 +382,13 @@
   <header>
     <p class="kicker"><span class="tag concept">Concept</span> who does what</p>
     <h2 id="h-roles" tabindex="-1">Roles and @mentions</h2>
-    <p class="lede">Three roles ship with PKA. You can name one with an @mention, or describe what you want and let the orchestrator route it.</p>
+    <p class="lede">Three roles ship with PKA. You can name one with an @mention, or describe what you want: the orchestrator answers lookups itself and hands on filing and synthesis.</p>
   </header>
   <div class="cols">
     <div class="prose">
       <dl>
         <dt><code>@orchestrator</code></dt>
-        <dd>Always active. Routes requests, keeps the Repo Map, runs the session start and end, handles project lifecycle. It answers where things are, and hands file work to the librarian and synthesis to the researcher.</dd>
+        <dd>Always active. Answers lookups itself: where something is, what a note says. Keeps the Repo Map, runs the session start and end, handles project lifecycle. It hands filing to the librarian and synthesis to the researcher.</dd>
         <dt><code>@librarian</code></dt>
         <dd>Takes files in: inventory, OCR, routing, indexing. Shows a routing proposal before it moves anything, unless you chose hands-off.</dd>
         <dt><code>@researcher</code></dt>
@@ -400,7 +401,7 @@
       <h3>Adding a role</h3>
       <p>Say <em>"Add a data analyst to my team"</em>. The researcher writes a competency brief to <code>owner-inbox/research-&lt;role&gt;-&lt;date&gt;.md</code>, a role file is written to <code>.pka/roles/</code>, the roster gains a row, and you are shown the definition to confirm before it is final. A role can have an alias, so a persona name works as an @mention too.</p>
       <h3>Writing for you</h3>
-      <p><code>.pka/owner-profile.md</code> holds your communication style. Roles read it. If summaries run long, say so and the profile is updated.</p>
+      <p><code>.pka/owner-profile.md</code> holds your communication style. The orchestrator reads it once at the start of a session, and the roles write in that style. If summaries run long, say so and the profile is updated.</p>
       <aside class="try" aria-label="Try this">
         <h3>Try this</h3>
         <ul>
@@ -653,7 +654,7 @@ robin-smith: added 'Rob'</code></pre>
         <li>It shows one discrepancy at a time. You answer accept, modify or skip, and an accepted change is written immediately.</li>
         <li>It ends with a count of found, resolved and skipped.</li>
       </ul>
-      <p>If you have a transcript and no notes, PKA offers to generate notes from the transcript.</p>
+      <p>If you have a transcript and no notes, PKA offers to write notes from the transcript. This is PKA's own step and does not need thinkkit. It is offered, never done automatically, and the notes carry a <code>**Source**:</code> line saying they were written from the transcript.</p>
       <h3>If you record with earshot</h3>
       <p>earshot is a separate, local recording and transcription tool. When it is in use, <code>take-notes</code> links the notes to the recording with a <code>**Recording**:</code> line, the reconcile step reads the capture's transcript, and PKA never moves or deletes the capture folder. Only the notes are filed.</p>
       <aside class="try" aria-label="Try this">
@@ -670,7 +671,7 @@ robin-smith: added 'Rob'</code></pre>
           <ul>
             <li>Write notes however you like, then say "File these meeting notes: <code>&lt;path&gt;</code>".</li>
             <li>You get everything on the <a href="#meeting-filing">next screen</a>: routing, attendee links, action items, timelines.</li>
-            <li>No live expansion and no transcript checking. A transcript stays held in <code>team-inbox/</code>, and PKA says which modes are unavailable.</li>
+            <li>No live expansion and no transcript checking; PKA says which modes are unavailable. A transcript stays held in <code>team-inbox/</code>, and PKA can still write notes from it if you ask.</li>
           </ul>
         </div>
         <div class="card"><span class="pill on">with thinkkit</span><h4>Capture and reconcile too</h4>
@@ -756,7 +757,7 @@ The vendor decision was deferred to December.
       <h3>What happens to the note</h3>
       <ol>
         <li><strong>Route.</strong> A 1-1 goes to that person's folder, if they have one; otherwise to your general meeting folder, with a suggestion to create one. A leadership or general meeting goes to a <code>meeting-home</code> folder; with several, or none, you are asked.</li>
-        <li><strong>Link attendees.</strong> Each name is checked against your <a href="#people">people folders</a>. A certain match is linked under <code>## Attendees</code>. An ambiguous one is asked about. No match is listed without a link.</li>
+        <li><strong>Link attendees.</strong> Each name is checked against your <a href="#people">people folders</a>. A certain match is linked under <code>## Attendees</code>, which is appended at the end of the note if the note has none. An ambiguous one is asked about. No match is listed without a link.</li>
         <li><strong>Extract action items</strong> and ask: "Found N action items. Add to session log open threads?" On a yes they appear in the next session's greeting.</li>
         <li><strong>Save.</strong> The note leaves <code>meeting-notes/</code>, or wherever you wrote it, and is saved in the destination as <code>YYYY-MM-DD-meeting-slug.md</code>. A 1-1 is <code>YYYY-MM-DD-1-1-&lt;person&gt;.md</code>.</li>
         <li><strong>Post-route.</strong> The step every filed note gets: a line on each attendee's timeline and the index entry. If your folders have <a href="#pointers">topic tables</a>, a row there too.</li>
@@ -767,8 +768,8 @@ The vendor decision was deferred to December.
       <p>You choose: keep it in <code>team-inbox/</code> (the default), archive it to a <code>transcripts/</code> folder beside the note, or delete it after confirming. It is never deleted automatically.</p>
       <h3>Action items later</h3>
       <p><em>"What action items do I have this week?"</em> scans the dated notes in your meeting folders and people folders for unticked <code>- [ ]</code> boxes. It goes by the date in the filename (by default the last 7 days) and lists each item with its source file.</p>
-      <p>An owner is read from <code>@name</code> and a due date from <code>by YYYY-MM-DD</code>. Tick the box in the note to close an item.</p>
-      <p>Items captured by thinkkit use a different form (<code>**Owner**: … (due: date)</code>). For now they are listed, but without an owner or due date.</p>
+      <p>Two forms are read. An owner is a bold name with a colon at the start of the item (<code>**Robin**:</code>, the form thinkkit writes) or an <code>@name</code>. A due date is <code>(due: …)</code> or <code>by YYYY-MM-DD</code>; a bare date at the end of the item, after a dash, also counts. A due phrase that is not a date, such as "Friday", is shown as written, not guessed.</p>
+      <p>Filing never rewrites a checkbox line that is already in the note. Tick the box in the note to close an item.</p>
       <aside class="try" aria-label="Try this">
         <h3>Try this</h3>
         <ul>
@@ -821,7 +822,7 @@ Files changed besides the note: knowledge/leadership/_MOC.md, knowledge/personne
 - [ ] Send Priya the architecture comparison — <mark>@Sam</mark> — <mark>by 2026-11-21</mark>
       <span class="dim">knowledge/leadership/2026-11-17-northwind-proposal-review.md:4</span></code></pre>
       </figure>
-      <p class="aside-note">The last item is from a note Sam wrote by hand, in the form PKA reads an owner and a due date from. The first three were captured by thinkkit and are listed as written.</p>
+      <p class="aside-note">The first three items were captured by thinkkit; the last is from a note Sam wrote by hand. The list shows each as it is written in the note, and an owner and a due date are read from both forms.</p>
     </div>
   </div>
 </section>
@@ -1064,7 +1065,7 @@ MCP supports resource, tool, and prompt primitives.[^spec]
   <header>
     <p class="kicker"><span class="tag">Skill</span> <code>pka-interface</code></p>
     <h2 id="h-dashboard" tabindex="-1">The dashboard</h2>
-    <p class="lede">A single HTML file, <code>dashboard.html</code>, generated at the root of your workspace for you to open in a browser. No server is set up and there is no build step.</p>
+    <p class="lede">A page, <code>dashboard.html</code>, written at the root of your workspace with its data in a second file beside it. You open it by double-click. No server, no build step, no network request.</p>
   </header>
   <div class="cols">
     <div class="prose">
@@ -1073,52 +1074,65 @@ MCP supports resource, tool, and prompt primitives.[^spec]
         <table>
           <thead><tr><th scope="col">Folder holds</th><th scope="col">View</th></tr></thead>
           <tbody>
-            <tr><td>Per-person notes</td><td>Card per person, most recent first</td></tr>
-            <tr><td>Meeting notes (<code>meeting-home</code>)</td><td>Timeline by date in the filename</td></tr>
-            <tr><td>Research outputs</td><td>Topic list with linked files</td></tr>
-            <tr><td>Journal or lab notes</td><td>Calendar heatmap and entry list</td></tr>
-            <tr><td>Project workspaces</td><td>Card with status and days since activity</td></tr>
-            <tr><td>Anything else</td><td>File table with search</td></tr>
+            <tr><td>One subfolder per person (<code>people-home</code>)</td><td>A card per person: files, last change, newest timeline entries</td></tr>
+            <tr><td>Dated meeting notes (<code>meeting-home</code>)</td><td>Notes by date, newest first, grouped by month</td></tr>
+            <tr><td>A subfolder per topic (research, wikis)</td><td>A card per subfolder with its files</td></tr>
+            <tr><td>A journal of dated notes (<code>daily-home</code>)</td><td>A square per day for recent months, then the entries</td></tr>
+            <tr><td><code>projects/</code></td><td>A card per project: status, days since last change</td></tr>
+            <tr><td>Anything else</td><td>A sortable, filterable table</td></tr>
           </tbody>
         </table>
       </div>
-      <p>Two sections are always there: <strong>Activity</strong>, the last 20 session-log entries, and <strong>Search</strong>.</p>
-      <h3>Two ways it reads your data</h3>
+      <p>Three sections are always there: <strong>Search</strong>, <strong>Open actions</strong> (unticked checkboxes in dated meeting and person notes) and <strong>Activity</strong> (the last 20 session-log entries and the files changed last).</p>
+      <h3>Two files</h3>
       <ul>
-        <li><strong>With an index:</strong> the page reads <code>.pka/knowledge.db</code> in the browser, and search is full-text. To do that it loads the sql.js library from a public CDN, so it makes a network request for that script when it opens.</li>
-        <li><strong>Without an index:</strong> it needs Chrome or Edge, and asks you to pick the workspace folder when it opens. Search covers file and folder names only, with a slower "deep search" button for contents.</li>
+        <li><strong><code>dashboard.html</code></strong> is the page. The skill writes it from a template, with one section per folder.</li>
+        <li><strong><code>dashboard-data.js</code></strong> is the data: a snapshot the helper writes with <code>pka-tools dashboard data</code>. It holds one row per file (title, dates, tags, a short summary, headings), the Repo Map folders, people with their newest timeline entries, projects, the newest open action items and the recent session log. It does not hold the text of your notes.</li>
       </ul>
-      <h3>Keeping it useful</h3>
-      <p>The page reads your data when it opens. Ask for an update after structural changes, such as a new folder in the Repo Map. The skill edits the existing file in place: it rewrites only the sections it generated, which are marked with comments, and leaves what you added outside them alone.</p>
-      <p>File links are absolute paths on your disk. A dashboard generated in one location has dead links if the workspace moves or is opened on another machine; regenerate it there.</p>
+      <p>The page loads that file with a script tag and loads nothing else: no library, no CDN, no folder picker. It works the same with and without a search index, offline, in any current browser. It was checked in Chromium and Firefox, not in Safari.</p>
+      <h3>What search covers</h3>
+      <p>Titles, paths, tags, headings and the one-line summary of each file. It does not search the text inside notes, and the page says so. For a full-text search, <a href="#finding">ask in a session</a>.</p>
+      <h3>Keeping it current</h3>
+      <p>The page shows the workspace as it was when the data was written, and its header says when. <em>"Refresh the dashboard"</em> rewrites the data; then you reload the page. The data is also refreshed once at the end of a session in which notes were filed, not after every note.</p>
+      <p>Ask for an update after structural changes, such as a new folder in the Repo Map. The skill edits the page in place: it rewrites only the sections it generated, which are marked with comments, and leaves what you added outside them alone.</p>
+      <p>Links are relative to the page, so the workspace folder can be moved or synced to another machine and they still work. Keep the two files together.</p>
+      <h3>If you have a dashboard from an earlier release</h3>
+      <p>It is not touched and behaves exactly as it did, including its request to a CDN for a script. To get the new one, run <em>"bootstrap upgrade"</em> and then ask for the dashboard to be updated. The skill keeps a copy as <code>dashboard.html.bak-&lt;date&gt;</code>, rebuilds the page with your sections and customizations, and writes the data.</p>
       <aside class="try" aria-label="Try this">
         <h3>Try this</h3>
         <ul>
           <li>Generate my dashboard</li>
+          <li>Refresh the dashboard</li>
           <li>Add a timeline view for <code>&lt;folder&gt;</code></li>
         </ul>
       </aside>
     </div>
     <div class="visuals">
       <figure class="fig">
-        <figcaption><span class="path">dashboard.html</span> a sketch of the layout, with an index</figcaption>
+        <figcaption><span class="path">dashboard.html</span> a sketch of the layout</figcaption>
         <div class="dash">
           <div class="dash-search">
             <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
             Search
           </div>
+          <div class="dash-line"><span class="when">Data</span><div>from 20/11/2026, 11:20<span>It shows the workspace as it was then.</span></div></div>
+          <div>
+            <h4>Open actions</h4>
+            <div class="dash-line"><span class="when">Nov 17</span><div>Send Priya the architecture comparison<span>Sam · by 2026-11-21</span></div></div>
+            <div class="dash-line"><span class="when">Nov 14</span><div>Run the adapter spike<span>Priya</span></div></div>
+          </div>
           <div>
             <h4>Personnel</h4>
             <div class="dash-grid">
-              <div class="dash-card"><b>Priya</b><span>Last modified: 6 days ago</span><span>Latest: SLT sync — adapter spike</span><span>12 files</span></div>
-              <div class="dash-card"><b>Robin Smith</b><span>Last modified: 6 days ago</span><span>Latest: SLT sync — hiring plan</span><span>7 files</span></div>
+              <div class="dash-card"><b>Priya</b><span>12 files · changed 6 days ago</span><span>2026-11-14 · SLT sync</span><span>2026-11-10 · 1-1</span></div>
+              <div class="dash-card"><b>Robin Smith</b><span>7 files · changed 6 days ago</span><span>2026-11-14 · SLT sync</span></div>
             </div>
           </div>
           <div>
             <h4>Projects</h4>
             <div class="dash-grid">
-              <div class="dash-card"><span class="pill on">Active</span><b>Orion</b><span>Last activity: 2 days ago</span><span>4 top-level docs</span></div>
-              <div class="dash-card"><span class="pill amber">Winding Down</span><b>Lyra</b><span>Last activity: 67 days ago</span><span>6 top-level docs</span></div>
+              <div class="dash-card"><span class="pill on">active</span><b>Orion</b><span>Last change: 2 days ago</span><span>4 docs</span></div>
+              <div class="dash-card"><span class="pill on">active</span><b>Lyra</b><span>Last change: 67 days ago</span><span>6 docs</span></div>
             </div>
           </div>
           <div>
@@ -1158,11 +1172,11 @@ MCP supports resource, tool, and prompt primitives.[^spec]
         <li><strong>Pause.</strong> It waits for your approval, whatever your autonomy level.</li>
         <li><strong>Cleanup.</strong> Build leftovers are listed. You confirm before they are deleted.</li>
         <li><strong>Move.</strong> The folder goes to your archive destination, and wikilinks that pointed at the old location are rewritten. Anything else that still names the old path is shown to you to fix. The approved summary is copied into the moved folder as <code>project-summary.md</code>.</li>
-        <li><strong>Re-index and update the map.</strong> Status becomes <code>archived</code>, priority <code>Reference</code>.</li>
+        <li><strong>Update the map, then re-index.</strong> The moved project gets its own Repo Map row first: priority <code>Reference</code>, status <code>archived</code>. Then the index is run. Indexing first would drop the project from search, because the index reads the folders the map lists.</li>
       </ol>
       <p>If the project folder is its own git repository, the move stops and asks first. What happens to that history is your decision.</p>
       <h3>Changing your mind</h3>
-      <p><em>"Restore Lyra to active"</em> moves it back and its links follow.</p>
+      <p><em>"Restore Lyra to active"</em> moves it back and its links follow. The index is then pruned; until that runs, stale rows for the archive path stay in it.</p>
       <aside class="try" aria-label="Try this">
         <h3>Try this</h3>
         <ul>
@@ -1248,7 +1262,7 @@ MCP supports resource, tool, and prompt primitives.[^spec]
       <h3>How a thread stops being open</h3>
       <p>There is no "close" command. The greeting reads the last 20 entries, so an old thread ages out as new entries are written. For an action item, the note is the truth: once its box is ticked (<code>- [x]</code>), the item is closed, even if a log entry still lists it.</p>
       <h3>Why, not only what</h3>
-      <p>A second file, <code>.pka/decision-log.md</code>, records decisions with their context and the alternatives considered: why a project was archived, why a role was added.</p>
+      <p>A second file, <code>.pka/decision-log.md</code>, records decisions with their context and the alternatives considered: why a project was archived, why a role was added. A decision is appended when it is made.</p>
       <aside class="try" aria-label="Try this">
         <h3>Try this</h3>
         <ul>
@@ -1533,6 +1547,7 @@ People home:      knowledge/personnel</code></pre>
               <tr><td>move a project</td><td><code>pointers rename</code>: links follow the folder</td></tr>
               <tr><td>backfill timelines</td><td><code>timeline plan</code>, <code>apply</code>, <code>restore</code></td></tr>
               <tr><td>run a health check</td><td><code>lint</code>, <code>lint suppress</code>, <code>lint schedule</code>. Their output is on the <a href="#health">health checks screen</a>.</td></tr>
+              <tr><td>generate or refresh the dashboard</td><td><code>dashboard data</code>: writes the snapshot the <a href="#dashboard">dashboard</a> shows</td></tr>
               <tr><td>upgrade</td><td><code>install</code> and <code>db migrate</code>, with backups</td></tr>
             </tbody>
           </table>
@@ -1711,7 +1726,7 @@ Nothing was staged or committed; the changes are left for the user to commit. Do
         <figcaption>First session in a workspace that is up to date</figcaption>
         <div class="msg you"><span class="who">You</span><p>Give me a tour</p></div>
         <div class="msg ai"><span class="who">Claude &middot; pka-tutorial</span>
-          <p>Welcome. I can give you the full tour (about 7 minutes of reading, with prompts you can try as we go), or jump to something specific — finding things, dropping files, meetings, the dashboard, project lifecycle, roles, topic wikis, or health checks. What sounds useful?</p>
+          <p>Welcome. I can give you the full tour (about 25 minutes if you read every module, with prompts you can try as we go; stop after any of them), or jump to something specific — finding things, dropping files, meetings, the dashboard, project lifecycle, roles, topic wikis, or health checks. What sounds useful?</p>
         </div>
       </figure>
       <figure class="fig">
