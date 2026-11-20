@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Walkthrough site.** `docs/index.html` (with `site.css` and `site.js`) is a static, screen-by-screen walkthrough of the skills and concepts, for GitHub Pages serving `/docs` from `main`: <https://rappdw.github.io/pka-skills/>. It loads nothing from other hosts. The README links to it. No change to the skills or to `pka-tools`.
+
 ## v1.9.0 — 2026-11-20
 
 Backfill: put the notes a workspace already has on people's timelines. Phase 5 of the v1.7 plan, written as v1.7.1 and released after the v1.8.0 removal of git support, so it commits nothing.

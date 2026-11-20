@@ -4,6 +4,8 @@ A set of Claude Code skills that turn any folder — or set of folders — into 
 
 You can install one skill or all six. They compose but are independently useful.
 
+**New here?** The [walkthrough site](https://rappdw.github.io/pka-skills/) covers each skill and concept, one screen at a time, with examples.
+
 ## The Six Skills
 
 | Skill | Purpose | Standalone? | Optional Dependency |
