@@ -238,6 +238,8 @@ Generate using `references/claude-md-template.md`.
 
 Generate `.pka/owner-profile.md` from Q1 interview responses. See `references/owner-profile.md` for schema and generation rules.
 
+The file is used: the orchestrator reads it once at session start (the `CLAUDE.md` template's Session Start Protocol, and "Owner profile and decision log" in each role seed). It holds how to write for the owner, what they know and what they are working towards. It does not hold the autonomy level; that is set in `## Autonomy Level` of `CLAUDE.md` only.
+
 ### 3f — Role definition files and shared references
 
 Seed roles in `.pka/roles/`: orchestrator, researcher, librarian. See `references/role-definitions.md` for the standard schema and seed definitions. The seeds have no `model:` line: a role runs on the session's model unless the user adds one.
@@ -261,6 +263,8 @@ Seeding it in the base bootstrap is benign — it only documents conventions tha
 ### 3h — `decision-log.md`
 
 Seed with bootstrap decisions (storage mode, autonomy level, archive destination). See `references/decision-log.md` for entry format and when-to-log rules.
+
+After bootstrap the roles keep it: the orchestrator appends an entry when a structural, lifecycle, role, autonomy or policy decision is made, the librarian when a routing policy is set, and both read it before recommending something an earlier decision may cover (the role seeds say exactly when).
 
 ### 3i — SQLite initialization (index mode)
 
@@ -294,7 +298,7 @@ Then offer the weekly health check: run `.pka/bin/pka-tools lint schedule` and s
 3. If alias requested, `CLAUDE.md` `## Roles` section updated
 4. `roster.md` updated
 5. Definition shown to user for confirmation before finalizing
-6. `session-log.md` entry appended
+6. `session-log.md` entry appended, and a `.pka/decision-log.md` entry saying why the role was added
 
 ---
 
@@ -424,7 +428,7 @@ Full step-by-step algorithm in `references/upgrade.md`. Summary:
 3. **Run the helper** with `python3 .pka/upgrade-roles.py --workspace <root>`. The helper:
    - Backs up `.pka/roles/` to `.pka/upgrade-backups/<timestamp>/`
    - Seeds `.pka/roles/_obsidian.md` if absent
-   - Structured-merges new H2 sections into orchestrator/librarian/researcher role files
+   - Structured-merges new H2 sections into orchestrator/librarian/researcher role files. A workspace from v1.10.0 or earlier gains "Owner profile and decision log" in all three and "Answering and delegating" in the orchestrator; a section with one of those headings that the user already wrote is left as it is
    - Never modifies the body of existing sections on this run
    - Lists **sections seeded by an earlier version**: "can be refreshed" (the text is exactly what an earlier version shipped, so the user never edited it) or "customised — left alone"
    - Lists **obsolete** sections and files, left by the removed commit/push protocol (`.pka/roles/_git-protocol.md`, the "Commit/push protocol" sections, the orchestrator's push sections): "can be removed" or "customised — left alone"

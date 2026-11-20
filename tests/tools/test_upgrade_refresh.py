@@ -17,6 +17,7 @@ OLD_POINTER = (support.REPO / "tests" / "fixtures" / "v1.6.3-librarian-pointer-s
 POINTER_HEADING = OLD_POINTER.split("\n", 1)[0]
 RESEARCHER_OBSIDIAN = "## Obsidian coexistence (gated on `obsidian_present`)"
 COMMIT_PUSH = "## Commit/push protocol (gated on `hybrid_monorepo_present`)"
+PROFILE_AND_LOG = "## Owner profile and decision log"
 V170 = support.REPO / "tests" / "fixtures" / "v1.7.0-roles"
 
 
@@ -172,10 +173,22 @@ class Obsolete(support.ToolsCase):
         self.assertIn("orchestrator.md: ## Mid-session push handling  — can be removed", out)
         self.assertIn("librarian.md: %s  — can be removed" % COMMIT_PUSH, out)
         self.assertIn("researcher.md: %s  — can be removed" % COMMIT_PUSH, out)
-        for name in ("orchestrator.md", "librarian.md", "_git-protocol.md"):
-            self.assertEqual(self.read(".pka/roles/" + name), before[name], name)
-        # researcher.md only gained the section that replaces the filing instruction
-        self.assertIn("## Filing a brief", self.headings("researcher.md"))
+        self.assertEqual(self.read(".pka/roles/_git-protocol.md"), before["_git-protocol.md"])
+        # A plain run only adds sections: the ones a v1.7.0 workspace lacks.
+        # Every section it had is byte for byte what it was, obsolete ones included.
+        up = upgrade_module()
+        gained = {"orchestrator.md": ["## Answering and delegating", PROFILE_AND_LOG],
+                  "librarian.md": [PROFILE_AND_LOG],
+                  "researcher.md": ["## Filing a brief", PROFILE_AND_LOG]}
+        for name, new_headings in gained.items():
+            old_text = before[name].decode("utf-8")
+            new_text = self.text(".pka/roles/" + name)
+            was = {heading: old_text[start:end] for heading, start, _, end in up.h2_sections(old_text)}
+            now = {heading: new_text[start:end] for heading, start, _, end in up.h2_sections(new_text)}
+            self.assertEqual(sorted(set(now) - set(was)), sorted(new_headings), name)
+            for heading, section in was.items():
+                self.assertEqual(now[heading].rstrip("\n"), section.rstrip("\n"), (name, heading))
+            self.assertEqual(new_text[:up.h2_sections(new_text)[0][1]], old_text[:up.h2_sections(old_text)[0][1]], name)
         self.assertIn(COMMIT_PUSH, self.headings("researcher.md"))
         self.assertNotIn("_git-protocol.md", self.run_upgrade("--dry-run").split("Shared references seeded")[1].split("\n")[1])
 
@@ -260,6 +273,149 @@ class Obsolete(support.ToolsCase):
         self.assertNotIn(b"\n", data.replace(b"\r\n", b""))          # still CRLF throughout
         self.assertTrue(data.endswith(b"coordination.\r\n"))
         self.assertEqual(self.headings("orchestrator.md"), self.seed_headings("orchestrator"))
+
+
+class ProfileAndDecisionLog(support.ToolsCase):
+    """`.pka/owner-profile.md` and `.pka/decision-log.md` are written at
+    bootstrap. The role seeds and the CLAUDE.md template must say who reads
+    and writes them, and an existing workspace must receive that through
+    the ordinary add-section path."""
+
+    fixture = False
+    REFS = support.REPO / "skills" / "pka-bootstrap" / "references"
+
+    def setUp(self):
+        super().setUp()
+        (self.ws / ".pka" / "roles").mkdir(parents=True)
+        for name in ("orchestrator.md", "librarian.md", "researcher.md"):
+            self.write(".pka/roles/" + name, (V170 / name).read_text(encoding="utf-8"))
+        self.write(".pka/owner-profile.md", "---\nname: Sam\ncommunication: concise\n---\n\n# Sam\n")
+        self.write(".pka/decision-log.md", "# Decision Log\n\n## 2026-01-05 | PKA bootstrap\n\n**Decided by:** Sam\n")
+        self.write("CLAUDE.md", "<!-- PKA v1.7 -->\n\n## Who I Am\nSam's orchestrator.\n")
+
+    def run_upgrade(self, *args):
+        proc = subprocess.run([sys.executable, str(self.path(".pka/upgrade-roles.py")), "--workspace", str(self.ws)]
+                              + list(args), env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        return proc.stdout
+
+    def section(self, text, heading):
+        up = upgrade_module()
+        for found, _start, body, end in up.h2_sections(text):
+            if found == heading:
+                return text[body:end]
+        raise AssertionError("no section %s" % heading)
+
+    # ---- the seeds ---------------------------------------------------
+    def test_every_role_seed_says_what_it_does_with_both_files(self):
+        for role in ("orchestrator", "librarian", "researcher"):
+            body = self.section(seed_file(role), PROFILE_AND_LOG)
+            self.assertIn(".pka/owner-profile.md", body, role)
+            self.assertIn(".pka/decision-log.md", body, role)
+
+    def test_the_orchestrator_seed_fixes_when_and_what_for(self):
+        body = self.section(seed_file("orchestrator"), PROFILE_AND_LOG)
+        normal = " ".join(body.split())
+        self.assertIn("once, at session start", normal)
+        self.assertIn("keep it for the session", normal)
+        self.assertIn("## Communication Style", body)
+        # Autonomy has one home, and it is not the profile.
+        self.assertIn("does **not** set the autonomy level", body)
+        self.assertIn("## Autonomy Level", body)
+        # The decision-log entry format is the one in the reference.
+        reference = (self.REFS / "decision-log.md").read_text(encoding="utf-8")
+        for field in ("## YYYY-MM-DD | <decision title>", "**Context:**", "**Decision:**",
+                      "**Alternatives considered:**", "**Decided by:**", "**Relates to:**"):
+            self.assertIn(field, body, field)
+            self.assertIn(field, reference, field)
+        self.assertIn("Append an entry when a decision is made", normal)
+        self.assertIn("Never edit or delete an earlier entry", normal)
+        self.assertIn("not read at session start", normal)
+
+    def test_who_writes_the_decision_log(self):
+        librarian = self.section(seed_file("librarian"), PROFILE_AND_LOG)
+        researcher = self.section(seed_file("researcher"), PROFILE_AND_LOG)
+        self.assertIn("Append an entry", librarian)
+        self.assertIn("routing policy", librarian)
+        self.assertIn("You do not write entries", researcher)
+        for body in (librarian, researcher):
+            self.assertIn("You do not edit the profile", body)
+
+    def test_the_dispatch_table_has_the_upgrade_target(self):
+        body = self.section(seed_file("orchestrator"), "## Bootstrap dispatch")
+        rows = [line for line in body.split("\n") if line.startswith("|")]
+        targets = [row.split("|")[2].strip() for row in rows[2:]]
+        self.assertEqual(targets, ["`obsidian`", "`all`", "`upgrade`"])
+
+    def test_the_orchestrator_answers_lookups_and_delegates_the_rest(self):
+        seed = seed_file("orchestrator")
+        body = self.section(seed, "## Answering and delegating")
+        self.assertIn("Answer a lookup yourself", body)
+        self.assertIn("@librarian", body)
+        self.assertIn("@researcher", body)
+        self.assertNotIn("Never does knowledge work directly", seed)
+
+    def test_the_claude_md_template_points_at_both_files(self):
+        template = (self.REFS / "claude-md-template.md").read_text(encoding="utf-8")
+        block = template.split("```markdown", 1)[1].split("\n```", 1)[0]
+        self.assertIn("## Owner Profile and Decision Log", block)
+        self.assertIn("`.pka/owner-profile.md`", block)
+        self.assertIn("`.pka/decision-log.md`", block)
+        start = block.split("## Session Start Protocol", 1)[1].split("## Session End Protocol", 1)[0]
+        self.assertIn("1. Read `.pka/owner-profile.md`", start)
+        steps = [line[:2] for line in start.split("\n") if line[:1].isdigit()]
+        self.assertEqual(steps, ["1.", "2.", "3.", "4.", "5.", "6."])
+        self.assertNotIn("never carry out knowledge work", " ".join(block.split()))
+        self.assertIn("I answer lookups myself", block)
+
+    # ---- an existing workspace --------------------------------------
+    def test_a_plain_upgrade_adds_the_sections_before_output_conventions(self):
+        out = self.run_upgrade()
+        self.assertEqual(out.count("+ " + PROFILE_AND_LOG), 3)
+        self.assertIn("+ ## Answering and delegating", out)
+        up = upgrade_module()
+        for role in ("orchestrator", "librarian", "researcher"):
+            text = self.text(".pka/roles/%s.md" % role)
+            headings = [heading for heading, _, _, _ in up.h2_sections(text)]
+            self.assertLess(headings.index(PROFILE_AND_LOG), headings.index("## Output Conventions"), role)
+            self.assertEqual(up.normalise_section(self.section(text, PROFILE_AND_LOG)),
+                             up.normalise_section(self.section(seed_file(role), PROFILE_AND_LOG)), role)
+
+    def test_it_is_idempotent_and_touches_nothing_else(self):
+        keep = {name: self.read(name) for name in (".pka/owner-profile.md", ".pka/decision-log.md", "CLAUDE.md")}
+        self.run_upgrade()
+        once = {role: self.read(".pka/roles/%s.md" % role) for role in ("orchestrator", "librarian", "researcher")}
+        out = self.run_upgrade()
+        self.assertNotIn("+ " + PROFILE_AND_LOG, out)
+        self.assertEqual(out.count("= " + PROFILE_AND_LOG), 3)
+        for role, data in once.items():
+            self.assertEqual(self.read(".pka/roles/%s.md" % role), data, role)
+        for name, data in keep.items():
+            self.assertEqual(self.read(name), data, name)
+
+    def test_a_section_the_user_already_wrote_is_theirs(self):
+        mine = PROFILE_AND_LOG + "\n\nSam: I keep these two files by hand. Do not read them.\n\n"
+        text = self.text(".pka/roles/orchestrator.md").replace("## Output Conventions", mine + "## Output Conventions", 1)
+        self.write(".pka/roles/orchestrator.md", text)
+        for args in ((), ("--refresh",)):
+            out = self.run_upgrade(*args)
+            self.assertIn("orchestrator.md: %s  — customised — left alone" % PROFILE_AND_LOG, out)
+            after = self.text(".pka/roles/orchestrator.md")
+            self.assertIn("Sam: I keep these two files by hand. Do not read them.", after)
+            self.assertEqual(after.count(PROFILE_AND_LOG + "\n"), 1)
+            self.assertNotIn("Read it **once, at session start**", after)
+
+    def test_an_untouched_copy_is_refreshed_when_the_seed_changes(self):
+        # The section as seeded is a known version, so a later change to the
+        # seed reaches this workspace through --refresh.
+        up = upgrade_module()
+        for role in ("orchestrator", "librarian", "researcher"):
+            for heading, body in up.refreshable_sections(role + ".md"):
+                if heading in (PROFILE_AND_LOG, "## Answering and delegating"):
+                    self.assertIn(up.section_hash(body), up.KNOWN_SECTION_HASHES["%s.md:%s" % (role, heading)])
+        self.run_upgrade()
+        out = self.run_upgrade("--refresh")
+        self.assertNotIn(PROFILE_AND_LOG + "  \u2014", out)        # current: nothing to refresh, nothing customised
 
 
 class PinnedModels(support.ToolsCase):

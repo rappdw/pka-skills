@@ -25,6 +25,7 @@ Procedure for the `upgrade` bootstrap target. Invoked when a user with an alread
    - Headings inside fenced code blocks (``` or ~~~) are examples, not structure: they are neither counted as "already present" nor used as the insertion point.
    - Keeps each file's line endings (a CRLF file stays CRLF).
    - Never modifies the body of existing sections.
+   - The sections added by a plain run are listed in `upgrade-roles.py` (`ORCHESTRATOR_SECTIONS`, `LIBRARIAN_SECTIONS`, `LIBRARIAN_SECTIONS_V161`, `RESEARCHER_SECTIONS`). The most recent: "Owner profile and decision log" in all three role files (who reads `.pka/owner-profile.md` and when, who appends to `.pka/decision-log.md` and in what format) and "Answering and delegating" in the orchestrator (it answers lookups itself and delegates filing and synthesis). The upgrade does not create either `.pka/` file and does not edit `CLAUDE.md`: a workspace's own `CLAUDE.md` keeps its wording, and the role sections carry the behaviour.
 4. **Report sections seeded by an earlier version** (see "Refreshing seeded sections" below) **and obsolete ones** (see "Obsolete sections and files"). Nothing is replaced or removed unless `--refresh` is given.
 5. **Print a summary** listing:
    - Backup path

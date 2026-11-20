@@ -163,6 +163,26 @@ assert_file_contains "$ws/.pka/roles/researcher.md" "## Obsidian coexistence (ga
 assert_file_contains "$ws/.pka/roles/researcher.md" "## Filing a brief"
 assert_file_lacks "$ws/.pka/roles/researcher.md" "## Commit/push protocol"
 
+# Owner profile and decision log: every role is told what it does with them,
+# and the orchestrator is told when it answers and when it delegates.
+for f in orchestrator librarian researcher; do
+  assert_file_contains "$ws/.pka/roles/$f.md" "## Owner profile and decision log"
+  assert_file_contains "$ws/.pka/roles/$f.md" ".pka/owner-profile.md"
+  assert_file_contains "$ws/.pka/roles/$f.md" ".pka/decision-log.md"
+  profile_line=$(grep -n "^## Owner profile and decision log" "$ws/.pka/roles/$f.md" | head -1 | cut -d: -f1)
+  anchor_line=$(grep -n "^## Output Conventions" "$ws/.pka/roles/$f.md" | head -1 | cut -d: -f1)
+  if [ -n "$profile_line" ] && [ -n "$anchor_line" ] && [ "$profile_line" -lt "$anchor_line" ]; then
+    pass_step "$f: profile and decision-log section sits before Output Conventions"
+  else
+    fail "$f: profile and decision-log section misplaced (section=$profile_line, anchor=$anchor_line)"
+  fi
+done
+assert_file_contains "$ws/.pka/roles/orchestrator.md" "## Answering and delegating"
+assert_file_contains "$ws/.pka/roles/orchestrator.md" "| \"upgrade\", \"upgrade roles\", \"update my pka\"                  | \`upgrade\`  |"
+for f in owner-profile.md decision-log.md; do
+  if [ ! -e "$ws/.pka/$f" ]; then pass_step "the upgrade does not create .pka/$f"; else fail "the upgrade created .pka/$f"; fi
+done
+
 # Original orchestrator sections still present
 assert_file_contains "$ws/.pka/roles/orchestrator.md" "## Purpose"
 assert_file_contains "$ws/.pka/roles/orchestrator.md" "## Output Conventions"
