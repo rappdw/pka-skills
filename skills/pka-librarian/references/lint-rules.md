@@ -1,253 +1,241 @@
 # Lint Rules
 
-Health-check rules for the PKA knowledge base. Lint produces a non-destructive
-report; the user reviews and acts. Lint never modifies files automatically.
+Health checks for the PKA knowledge base. Lint produces a report; the user
+reviews it and acts. Lint never edits, moves or deletes a file.
+
+Most of lint is mechanical, so a tool does it:
+
+```
+.pka/bin/pka-tools lint            # full: rules 1-5 and 8
+.pka/bin/pka-tools lint --quick    # rules 1-4, 8a and 8b
+```
+
+It needs no model and no network, writes `owner-inbox/librarian-lint-<YYYY-MM-DD>.md`
+(replacing the same day's report) and changes nothing else. Two rules need
+judgement and are yours: **6** and **7**. On a full lint you run the tool
+first, then add your findings for those two to the report it wrote.
 
 ---
 
 ## When to Run
 
-- **Weekly or monthly cadence** — not every session
 - On demand: "run a health check", "lint my knowledge base", "what needs attention?"
-- Recommended after large imports or structural changes
+- After large imports or structural changes
+- Weekly, unattended, if the user installed the schedule entry (see "Scheduling")
 
 ---
 
-## Rules
+## How to run a lint
 
-### 1. Orphan files
+1. Run `.pka/bin/pka-tools lint --json` ("quick lint": add `--quick`). Do not
+   re-derive rules 1-5 or 8 by reading files; take them from the result.
+2. **Full lint only:** work out rules 6 and 7 (below) and append them to the
+   report, under the line `<!-- librarian:rules-6-7 -->` in the section
+   "Librarian checks (rules 6 and 7)", replacing the sentence that says they
+   were not run. Change nothing above that line. Running the tool again the same
+   day rewrites the report, so append after the last tool run.
+3. Tell the user the counts per rule, the report path, and the two or three
+   findings most worth acting on. Do not paste the report.
+4. Act on a finding only when the user asks, one finding at a time (see "Acting
+   on a finding").
 
-**Detects:** Files in `team-inbox/unsorted/` older than 14 days.
-
-**Why:** Unsorted files represent routing decisions the user deferred. After
-two weeks they're likely forgotten.
-
-**Output:**
-```
-## N orphan files in team-inbox/unsorted/
-- `<path>` (added 21 days ago)
-- ...
-```
-
-**Action hint:** "Route these or delete. Say: 'process team-inbox/unsorted'."
+If `.pka/bin/pka-tools` is missing or older than the plugin, ask for
+`bootstrap upgrade` first, as for any other mechanical step.
 
 ---
+
+## Rules the tool runs
+
+Every finding in the report ends with its id, like `[id: 8a-3f9c21d0]`.
+
+### 1. Files left in the unsorted inbox
+
+**Detects:** files in `team-inbox/unsorted/` that have been there more than 14 days.
+
+**Action hint:** "Route these or delete them. Say: 'process team-inbox/unsorted'."
 
 ### 2. Broken links
 
-**Detects:** Markdown links `[text](path)` or `[[wikilink]]` pointing at
-nonexistent paths within the knowledge base.
+**Detects:** a link whose file is not there, in any markdown file lint scans.
 
-**Scope:**
-- Relative paths within PKA root
-- `[[wikilinks]]` resolved against the vault root (`knowledge/`) — covers
-  wiki-home folders, MOC files, and **pointer-row Files columns inside
-  `_MOC.md` files**
-- Absolute paths outside PKA root are skipped (user's responsibility)
+- `[[wikilinks]]`, with or without an alias (`|Title`, or `\|Title` in a table),
+  a heading or block anchor, or a `.md` suffix; targets that name a PDF, image
+  or other non-markdown file; the wiki form `[[<wiki-home>/<slug>/wiki|Title]]`.
+  A wikilink is read relative to the vault (`knowledge/`).
+- Relative markdown links `[text](path)`, including `%20` and `<path with spaces>`.
+  They are read relative to the file they are in.
+- **Not checked:** web and mail links, `#anchor`-only links, absolute paths and
+  paths that leave the workspace, and anything inside code spans, fenced blocks
+  or HTML comments.
 
-**Resolving a wikilink.** Take the text between `[[` and `]]`. Drop an alias
-(`|Title`, or `\|Title` inside a table) and a heading or block anchor
-(`#Heading`, `#^block`). What is left is the target. It resolves when
-`knowledge/<target>.md` exists, or `knowledge/<target>` exists as written (a
-target may already end in `.md`, or name a PDF, image or other non-markdown
-file). So `[[topics/mcp/wiki|MCP]]`, `[[AI/brief#Findings]]`,
-`[[AI/brief.md]]` and `[[reference/report.pdf]]` all resolve when the files
-exist.
+A link inside a `_MOC.md` Pointers table is marked with its row's topic. A bare
+name such as `[[mcp]]` is reported even though Obsidian may find the note; when
+exactly one note in the vault has that name, the report gives the full link to
+use.
 
-A bare name such as `[[mcp]]` resolves only if `knowledge/mcp.md` exists.
-Obsidian may still find a uniquely named file elsewhere in the vault, but the
-PKA conventions use full vault-relative paths, so report it, with the full
-path as the suggested fix when exactly one file in the vault has that name
-(for a wiki slug: `[[<wiki-home>/<slug>/wiki|<Title>]]`).
-
-Ignore links inside fenced code blocks and inline code: they are examples.
-
-**Why:** File moves and deletions leave dangling references. Pointer rows in
-particular accumulate over time and are append-only by the librarian, so
-broken pointer wikilinks need the user's attention to clean up.
-
-**Output:**
-```
-## N broken links
-- `<source-file>:line` → `<target-path>` (missing)
-- `<source-MOC>:line` → `<target-path>` (missing — in Pointers row, topic '<slug>')
-- ...
-```
-
-When a broken link is inside a `_MOC.md` Pointers table, the report annotates
-the row's topic slug to make the cleanup target clear. Get the pointer-row part
-of this rule from the tool rather than by reading the tables:
-
-```
-.pka/bin/pka-tools pointers check --json
-```
-
-It returns every pointer link whose file is missing (with MOC, line and topic),
-any Pointers table it could not read, and rows at or over the 8-file soft cap.
-
-**Action hint:** "Fix or remove these references. For broken pointer-row
-wikilinks: edit the MOC manually — the librarian is append-only and will not
-remove them on its own."
-
----
+**Action hint:** "Fix or remove these references." The librarian is append-only
+in Pointers tables: remove a dead pointer link only when the user asks for that
+row to be fixed.
 
 ### 3. Stale wiki sources
 
-**Detects:** Paths listed in a wiki's `## Sources` section where the target
-file no longer exists.
+**Detects:** a path in backticks in a `wiki.md`'s `## Sources` list that is not
+there (tried from the workspace root, the vault, and the wiki's own folder).
 
-**Scope:** All `wiki.md` files in `wiki-home` folders.
-
-**Why:** Wikis cite authored notes. When notes are moved or deleted, citations
-rot.
-
-**Output:**
-```
-## N stale wiki sources
-- `knowledge/topics/mcp/wiki.md` cites `<path>` (missing)
-- ...
-```
-
-**Action hint:** "Update the wiki or restore the source."
-
----
+**Action hint:** "Update the wiki's Sources list or restore the file."
 
 ### 4. Empty Repo Map folders
 
-**Detects:** Folders listed in `CLAUDE.md` Repo Map with zero indexable files
-(`.md`, `.pdf`, `.docx`, `.txt`).
+**Detects:** a Repo Map row whose folder is missing, or holds no `.md`, `.pdf`,
+`.docx` or `.txt` file.
 
-**Why:** Empty folders in the map may indicate completed workflows or
-stale entries.
+**Action hint:** "Remove the row from the Repo Map, or archive the folder."
 
-**Output:**
-```
-## N empty Repo Map folders
-- `<folder>` — last file removed ~ <date guessed from git or mtime>
-```
+### 5. Notes not on a person's timeline (information)
 
-**Action hint:** "Remove from Repo Map or archive the folder."
+**Detects:** dated notes that belong on someone's timeline and are not on it. It
+uses the same evidence rules as filing a note and as the timeline backfill (the
+note is in the person's folder, or names them in `person` / `attendees`
+frontmatter or `## Attendees`, with certainty). A name in the body does not
+count, and a note with `no-backref: true` is left out.
+
+This is **one informational line** with a count and up to 20 examples, not one
+finding per note. It replaces the old "missing back-references" rule.
+
+**Action hint:** "Ask the librarian to 'backfill timelines'." That plans first
+and writes nothing until the user approves (see the librarian's "Backfill person
+timelines").
+
+Skipped, with a note in the report, when the workspace has no people folder.
+Full lint only.
+
+### 8. Duplicates
+
+| Rule | Detects | In quick lint |
+|---|---|---|
+| 8a | Files that are byte-for-byte the same, of any type | yes |
+| 8b | The same text once frontmatter, upper and lower case and spacing are set aside | yes |
+| 8c | Near-duplicates (at least 80% of their five-word passages in common) and one note contained in another (at least 90% of the shorter one), for notes of 200 words or more | no |
+| 8d | Duplicate entities: two person folders that answer to the same name or alias, or where one folder name is contained in the other (`priya`, `priya-nair`); two wikis with the same `topic`; one topic on two rows of the same MOC's Pointers table | no |
+
+For 8a to 8c the report shows each group as a table: path, size, last-modified
+date, how many files link to it, and a **suggested keeper** (the one with the
+most links to it, then one that is not in an inbox, then the oldest). The
+suggestion is a starting point; the user decides.
+
+**Not reported:**
+
+- an OCR sidecar (`report.pdf.txt`) beside its source: the sidecar stands in for
+  the source's text and is never listed itself;
+- anything in an earshot capture directory;
+- the same topic in two different MOCs (that is intended);
+- anything under `.pka/`, in a dot-folder, or matched by `.pkaignore`;
+- lint's own reports and the backfill's plan reports in `owner-inbox/`;
+- very short texts (under about 80 characters) for 8b, and notes under 200 words for 8c.
+
+**Information only:** a copy in a wiki's `sources/` folder of a file that is
+also filed elsewhere. That is how a wiki keeps its sources; it is listed once so
+the user knows, and it does not count as a finding.
+
+**Action hints:** keep one copy and delete or move the others (links to a copy
+that goes will then show under rule 2); for near-duplicates it is often raw
+notes beside a reconciled version, or a `-2` copy; for entities, merge the two
+or record that they are different by suppressing the finding.
 
 ---
 
-### 5. Missing back-references (low priority)
-
-**Detects:** Meeting notes or authored files mentioning a person/topic where
-the person's folder or topic wiki has no inbound link to this file.
-
-**Method:**
-- For each entity in Repo Map (personnel folders, topic wikis), grep the
-  knowledge base for mentions
-- Compare mentions to actual links in the entity's folder/wiki
-- Report discrepancies
-
-**Why:** Cross-referencing improves discoverability. Manual maintenance gets
-missed.
-
-**Output:**
-```
-## N missing back-references
-- `<note-path>` mentions Maria but `personnel/maria/` has no inbound link
-- ...
-```
-
-**Action hint:** "Add a References section to each entity file, or defer."
-
-**Priority:** Low — surface in report, don't warn loudly.
-
----
+## Rules you run (full lint only)
 
 ### 6. Contradiction candidates
 
-**Detects:** Wiki claims older than 30 days with 3+ newer authored notes on
-the same topic that haven't been ingested into the wiki.
+**Detects:** a wiki not updated for 30 days or more, with 3 or more newer
+authored notes on its topic that are not in its `## Sources`.
 
-**Method:**
-- For each wiki, get `last-updated` from frontmatter
-- FTS search for topic slug across knowledge base with modified-after filter
-- Exclude notes already in wiki's Sources list
-- Flag if ≥3 new matches
+**Method:** for each `wiki.md`, read `last-updated`; search for the topic slug
+(`.pka/bin/pka-tools search "<topic>"` in index mode) among notes modified
+later; leave out notes already cited. Report when 3 or more remain.
 
-**Why:** Surfaces wikis drifting from current understanding without making
-claims about specific contradictions.
+**Why:** it surfaces a wiki that has fallen behind, without claiming a specific
+contradiction.
 
-**Output:**
 ```
-## N contradiction candidates (review)
-- `knowledge/topics/mcp/wiki.md` (updated 45 days ago) — 5 newer mentions not yet ingested
+### Contradiction candidates (N)
+- `knowledge/topics/mcp/wiki.md` (updated 45 days ago): 5 newer notes not yet ingested
   - `knowledge/personnel/priya/2026-04-02-1-1-priya.md`
-  - ...
 ```
 
 **Action hint:** "Consider ingesting these into the wiki."
 
-**Priority:** Medium — worth reviewing but not urgent.
+### 7. Uncited wiki claims
 
----
+**Detects:** a wiki whose `## Sources` list is empty, or paragraphs in
+`## What it is` or `## Key concepts` that cite no path.
 
-### 7. Uncited wiki claims (wiki-specific)
-
-**Detects:** Wiki pages where `## Sources` list is empty OR where paragraphs
-in `## What it is` or `## Key concepts` don't reference any path.
-
-**Method:** Regex for path-like strings in synthesis sections; compare to
-Sources list.
-
-**Why:** PKA wiki pages are required to cite sources. Uncited claims erode
-trust.
-
-**Output:**
 ```
-## N uncited wiki sections
-- `knowledge/topics/agents/wiki.md` — ## Key concepts has 2 paragraphs without citations
+### Uncited wiki sections (N)
+- `knowledge/topics/agents/wiki.md`: ## Key concepts has 2 paragraphs without citations
 ```
 
 **Action hint:** "Add citations or rewrite with sources."
 
 ---
 
-## Report Format
+## Acting on a finding
 
-```markdown
-# Knowledge Base Health — YYYY-MM-DD
+Lint never fixes anything by itself, and neither do you without being asked.
+When the user asks:
 
-Scanned: N files, M wiki pages, P Repo Map folders
-Checks run: orphans, broken-links, stale-sources, empty-folders, back-refs, contradictions, uncited-claims
+- **Duplicates.** Show the group, confirm which copy stays, then delete or move
+  the others as the user directs (deleting always needs a yes). If a removed
+  copy had links to it, rewrite them to the keeper with
+  `.pka/bin/pka-tools pointers rename <removed> <keeper> --notes`, then
+  `.pka/bin/pka-tools index`.
+- **Duplicate people.** Merging two person folders is the user's decision. Move
+  the notes, then `pointers rename <old folder> <new folder> --prefix --notes`.
+  If the two are different people, suppress the finding.
+- **Broken links.** Fix the link text in the note. In a Pointers row, edit the
+  row only when asked.
+- **A finding that is fine as it is.** Suppress it.
 
-## Summary
-- 3 broken links
-- 2 stale wiki sources
-- 5 missing back-references (low priority)
-- 1 contradiction candidate (review)
+## Suppressing a finding
 
-## Details
-
-[Each section as defined above, only included if it has findings]
-
-## Suggested next actions
-1. Fix 3 broken links — highest priority
-2. Review contradiction candidate in mcp wiki
-3. (Optional) Add back-references
+```
+.pka/bin/pka-tools lint suppress <id> --reason "why this is fine"
+.pka/bin/pka-tools lint suppressions          # what is suppressed, and why
+.pka/bin/pka-tools lint unsuppress <id>
 ```
 
-Saved to `owner-inbox/librarian-lint-<YYYY-MM-DD>.md`.
+- Suppress only when the user says a finding is fine, and record their reason.
+- The id comes from the most recent report. An id the report does not have is
+  refused, with the nearest ones listed.
+- A suppressed finding is left out of later reports and counted on the
+  "Suppressed" line. Suppressions live in `.pka/lint-suppressions.json`.
+- An id belongs to the exact files or link it names. A group of duplicates that
+  gains or loses a file is a new finding with a new id; the report then notes
+  the old suppression as no longer matching anything.
+
+---
+
+## Scheduling
+
+`.pka/bin/pka-tools lint schedule` prints a cron line and a macOS launchd file
+that run a quick lint every Monday morning. **It installs nothing**, and neither
+do you: show the user the entry and let them install it.
+
+At session start, `.pka/bin/pka-tools lint latest` says how old the newest
+report is and how many findings it has. When it is 7 days old or newer and has
+findings, the orchestrator mentions it once in the greeting.
 
 ---
 
 ## What Lint Does NOT Do
 
-- **Does not auto-fix anything.** Report only.
-- **Does not re-index.** That's a separate librarian capability.
-- **Does not decide contradictions.** Only surfaces candidates for user review.
-- **Does not move/delete files.** User acts on the report manually or invokes
-  other librarian modes.
-
----
+- **Does not fix anything.** Report only.
+- **Does not re-index.** That is a separate librarian capability.
+- **Does not decide contradictions.** It surfaces candidates.
+- **Does not move or delete files.** The user acts on the report, or asks you to.
 
 ## Performance
 
-- Orphan/broken-link/stale-source checks: fast, pure file operations
-- Back-reference check: slower (FTS per entity); skip on "quick lint" variant
-- Contradiction check: medium (date filter + FTS)
-
-"Quick lint" = rules 1-4 only. "Full lint" = all rules. Default: full.
+A quick lint of a few thousand notes takes about a second and a full lint a few
+seconds. Rules 6 and 7 take as long as your searches do.

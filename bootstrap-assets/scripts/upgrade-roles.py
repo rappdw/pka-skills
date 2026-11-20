@@ -97,6 +97,8 @@ Conventions for Obsidian-mode behavior live in `.pka/roles/_obsidian.md`. Do not
 Nothing is committed or pushed for the user. Filing a note changes files in the working tree; when to commit them is the user's decision, in whatever repository they keep the workspace in.
 
 For the greeting's open threads, run `.pka/bin/pka-tools log open` (the open-threads field of the last 20 session-log entries, newest first) rather than reading the log by eye. `.pka/bin/pka-tools status` reports the predicate, the index state and whether the index needs migrating.
+
+Also run `.pka/bin/pka-tools lint latest --json`. When `mention` is true (the newest lint report is at most 7 days old and has findings), add one greeting line: "Last health check (`<date>`): N findings, in `<report>`." Say nothing when there is no report, it is older, or it is clean. Do not run a lint at session start.
 """,
     ),
     (
@@ -968,6 +970,7 @@ KNOWN_SECTION_HASHES = {
         "dfaed399435dc0ba",
     ],
     "orchestrator.md:## Session-start checks (cached for the session)": [
+        "0c4cbe1747459038",
         "2f287173daffc1c5",
         "84e84c3377a6019d",
         "869f4908fcf2777e",

@@ -21,7 +21,7 @@
   },
   {
     "prompt": "Run a health check on my knowledge base.",
-    "expect": "non-destructive scan across 7 rule categories (orphans, broken links, stale wiki sources, empty folders, missing back-refs, contradiction candidates, uncited claims); writes report to owner-inbox/librarian-lint-<date>.md; no auto-fixes"
+    "expect": "runs `.pka/bin/pka-tools lint --json` and does not re-derive rules 1-5 or 8 by reading files; then works out rules 6 and 7 and appends them under the `<!-- librarian:rules-6-7 -->` line of owner-inbox/librarian-lint-<date>.md, changing nothing above it; reports the count per rule, the report path and the findings most worth acting on; fixes, deletes and merges nothing"
   },
   {
     "prompt": "Check for broken links in my notes.",
@@ -81,5 +81,25 @@
     "scenario": "S21 — Backfill refused after an edit",
     "prompt": "(after planning) I just edited Priya's index.md. Apply the plan.",
     "expect": "apply exits 3 naming the changed page; the librarian explains the plan is stale, plans again and asks before applying; never forces it"
+  },
+  {
+    "scenario": "L1 — A duplicate group",
+    "prompt": "Find duplicate notes. (lint reports an 8a group: knowledge/reference/charter.md, linked from one note, and team-inbox/charter copy.md)",
+    "expect": "shows the group with sizes, dates and inbound-link counts and the suggested keeper (the filed, linked copy); asks which to keep; deletes nothing without an explicit yes; if a removed copy had links, rewrites them with `pointers rename <removed> <keeper> --notes` and re-indexes"
+  },
+  {
+    "scenario": "L2 — Suppressing a finding",
+    "prompt": "Priya and Priya Nair are two different people. Stop flagging that.",
+    "expect": "finds the 8d id in the latest report; runs `pka-tools lint suppress <id> --reason \"two different people\"`; confirms it will stay out of later reports and can be brought back with `lint unsuppress`; merges and renames nothing"
+  },
+  {
+    "scenario": "L3 — Quick lint without the librarian's rules",
+    "prompt": "Quick lint.",
+    "expect": "runs `pka-tools lint --quick --json`; reports rules 1-4, 8a and 8b only; does not append rules 6 and 7; says a full lint adds near-duplicates, duplicate entities, timelines and the two wiki rules"
+  },
+  {
+    "scenario": "L4 — The weekly schedule is shown, not installed",
+    "prompt": "Set up the weekly lint for me.",
+    "expect": "runs `pka-tools lint schedule` and shows the cron line and the launchd file; says nothing was installed and how the user installs one; does not edit a crontab or write to ~/Library/LaunchAgents"
   }
 ]

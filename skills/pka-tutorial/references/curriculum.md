@@ -434,48 +434,62 @@ cleanly elsewhere. Lint verifies targets exist.
 
 ### Key ideas
 
-Over time, any knowledge base drifts: files move, links rot, wikis fall behind
-newer notes. Lint surfaces these issues. It produces a report — it never
-auto-fixes.
+Over time, any knowledge base drifts: files move, links rot, the same note gets
+saved twice, wikis fall behind newer notes. Lint surfaces these. It writes a
+report and changes nothing; you decide what to do about each finding.
 
 ### What lint catches
 
 | Rule | What it flags |
 |------|---------------|
-| Orphans | Files sitting in `team-inbox/unsorted/` > 14 days |
-| Broken links | Markdown links and `[[wikilinks]]` pointing nowhere |
-| Stale wiki sources | Wiki citations to files that no longer exist |
-| Empty folders | Folders in your Repo Map with no content |
-| Missing back-refs | Notes mentioning someone whose folder doesn't link back |
-| Contradiction candidates | Wikis with many newer uningested mentions |
-| Uncited wiki claims | Wiki paragraphs without citations |
+| 1. Orphans | Files sitting in `team-inbox/unsorted/` for more than 14 days |
+| 2. Broken links | `[[wikilinks]]` and markdown links pointing at files that are gone |
+| 3. Stale wiki sources | Wiki citations to files that no longer exist |
+| 4. Empty folders | Folders in your Repo Map with nothing in them |
+| 5. Timelines | Notes that involve someone and are not on their timeline (one line, with the fix) |
+| 6. Contradiction candidates | Wikis with several newer notes they have not taken in |
+| 7. Uncited wiki claims | Wiki paragraphs without citations |
+| 8. Duplicates | Identical files, the same text saved twice, near-copies, one note inside another, and two folders for one person |
 
-### Cadence
+For duplicates the report shows each group with sizes, dates and how many notes
+link to each copy, and suggests which one to keep. It never deletes anything.
 
-Weekly or monthly. Not every session. Run after big imports or structural
-changes.
+### Quick vs. full
 
-### Quick vs. full lint
-
-- **Quick** — rules 1-4 only, fast (just file operations)
-- **Full** — all 7 rules, slower (runs FTS for entity mentions)
+- **Quick** — rules 1 to 4 and exact duplicates. About a second.
+- **Full** — everything, including near-duplicates and the two wiki rules. A few seconds, plus the wiki checks.
 
 Default: full. Say "quick lint" if you're in a hurry.
 
 ### Reading the report
 
-Report lands in `owner-inbox/librarian-lint-<date>.md` with a Summary at the top
-and Details below. Suggested next actions at the bottom.
+The report lands in `owner-inbox/librarian-lint-<date>.md`: counts at the top,
+then one section per rule. Every finding ends with an id such as
+`[id: 8a-3f9c21d0]`.
 
-You act manually — lint never modifies files.
+### When a finding is fine as it is
+
+Two people really are called Priya; you keep a copy in two places on purpose.
+Tell me, and I record it so it stops coming up:
+
+> "That duplicate is on purpose, hide it"
+
+You can see what is hidden, and bring one back, at any time.
+
+### Running it every week
+
+Lint needs no AI for most of its rules, so it can run unattended. Ask and I
+will show you a schedule entry (cron, or launchd on a Mac) that runs a quick
+lint every Monday. I never install it; that is yours to do. When a recent
+report has findings, I mention it when you start a session.
 
 ### Try this
 
 > "Run a health check"
 >
-> "Check for broken links in my notes"
+> "Find duplicate notes"
 >
-> "What needs attention?"
+> "Show me the weekly lint schedule"
 
 ---
 

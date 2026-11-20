@@ -1,5 +1,46 @@
 # Changelog
 
+## v1.10.0 — not yet released
+
+Lint becomes a tool, finds duplicates, and can run every week. Phase 6 of the v1.7 plan.
+
+**Existing workspaces:** run `bootstrap upgrade` to get the new `pka-tools`; it offers to refresh the orchestrator's "Session-start checks" section if you never edited it, and shows a weekly schedule entry you can install or ignore. Nothing about your notes changes: lint only writes its report.
+
+### Added — `pka-tools lint`
+
+The mechanical health checks used to be prose for a model to carry out each time. They are now one command that needs no model and no network, so a lint is the same every run and takes seconds.
+
+- **`lint`** (full) and **`lint --quick`** write `owner-inbox/librarian-lint-<date>.md` and change nothing else. `--strict` exits 1 when there are findings; `--no-report` writes nothing.
+- **Rule 8, duplicates** (new): 8a byte-identical files of any type; 8b the same text once frontmatter, case and spacing are set aside; 8c near-duplicates (80% of five-word passages in common) and one note contained in another (90% of the shorter), for notes of 200 words or more; 8d two person folders answering to the same name or alias or with one folder name inside the other, two wikis with one `topic`, and one topic on two rows of the same MOC. Groups show sizes, dates, how many files link to each copy and a suggested keeper. Lint never deletes.
+- **Not reported:** an OCR sidecar beside its source, anything in an earshot capture directory, the same topic in different MOCs, anything under `.pka/` or matched by `.pkaignore`. A copy in a wiki's `sources/` of a file filed elsewhere is listed as information.
+- **Rule 2, broken links** (revised): wikilinks with an alias, a heading, a `.md` suffix or a non-markdown target, the wiki link form, and relative markdown links. Links in code spans, fenced blocks and HTML comments are ignored; web links, anchors and paths outside the workspace are skipped. A bare `[[name]]` gets the full link as a suggestion when one note has that name.
+- **Rule 5** (revised) is now "notes that belong on a person's timeline and are not on it": one informational line with a count and examples, from the same evidence rules as `timeline plan`. The old "missing back-references" grep is gone.
+- Rules 1, 3 and 4 are unchanged in meaning. **Rules 6 and 7** (contradiction candidates, uncited wiki claims) need judgement and stay with the librarian, who appends them to the report under a marker line.
+- **Timing:** on a synthetic workspace of 3,041 files, a quick lint took 1.0 s and a full lint 4.6 s.
+
+### Added — suppression, `latest`, `schedule`
+
+- Every finding has a stable id (`8a-3f9c21d0`), a hash of its rule and subject. **`lint suppress <id> [--reason …]`** records it in `.pka/lint-suppressions.json`; the finding stays out of later reports and is counted on a "Suppressed" line. `lint suppressions` lists them; `lint unsuppress <id>` brings one back. An id that is not in the last report is refused, with near matches. A group of duplicates that gains or loses a file is a new finding.
+- **`lint latest`** gives the newest report's date, age and finding count. The orchestrator's session-start seed uses it to mention a report at most 7 days old that has findings.
+- **`lint schedule`** prints a weekly cron line and a macOS launchd file for a quick lint. It installs nothing; base bootstrap and `bootstrap upgrade` show it and leave installing to you.
+
+### Changed
+
+- `skills/pka-librarian/references/lint-rules.md` is rewritten around the tool: what each rule detects, what is deliberately left out, what the librarian adds, how to act on a finding, how to suppress one.
+- Librarian skill, tutorial Module 9, example prompts and the tutorial's what's-new reference (a v1.10.0 section).
+- Evals: the health-check scenario is rewritten; four librarian scenarios (a duplicate group, suppressing, quick lint, the schedule) and two session-start scenarios are added.
+
+### Tests
+
+- `tests/tools/test_lint.py` (31 tests) on seeded cases added to the fixture vault by `build_vault.lint_cases`: every seeded duplicate is found; the allow-listed pairs are not; a suppressed finding stays suppressed across runs and unrelated edits; each link form of rule 2; rule 5 agrees with `timeline plan` and clears after `timeline apply`; two runs write the same bytes; a run changes no file but its report; the 8c thresholds; `--strict`, `latest`, `schedule`; a corrupt suppressions file is reported and left alone, and entries from a later version are kept.
+
+### Known limits
+
+- 8c compares text, not meaning: a note rewritten in other words is not found. Notes under 200 words are not compared for nearness.
+- A passage shared by more than 50 notes (a meeting template) is treated as boilerplate and not used to pair notes, so two notes that share only that are not paired. The report says when this happened.
+- Suggested keepers follow a fixed rule (most links to it, not in an inbox, oldest). For a raw note inside a reconciled one that may suggest the shorter note; the user decides.
+- Rules 6 and 7 are not run by a scheduled lint.
+
 ## v1.9.0 — 2026-11-20
 
 Backfill: put the notes a workspace already has on people's timelines. Phase 5 of the v1.7 plan, written as v1.7.1 and released after the v1.8.0 removal of git support, so it commits nothing.
