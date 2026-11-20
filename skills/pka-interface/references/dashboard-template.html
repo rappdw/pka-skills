@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PKA Dashboard</title>
+<!--
+  Reference dashboard for pka-interface. Copy it to <workspace>/dashboard.html and
+  adapt the sections between the pka:section markers to the Repo Map.
+  It loads no library and makes no request: its data is dashboard-data.js, the
+  script written beside it by `.pka/bin/pka-tools dashboard data`.
+-->
+<style>
+:root {
+  --bg: #ffffff; --fg: #1c1e21; --muted: #62666d; --panel: #f3f4f6; --line: #dcdfe4;
+  --accent: #1f5fd1; --ok: #1d7a46; --warn: #a15c00; --off: #6b7280; --mark: #fff1a8;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15171c; --fg: #e7e8ea; --muted: #9aa0aa; --panel: #20232a; --line: #343842;
+    --accent: #7fa8ff; --ok: #5fcf8d; --warn: #f0b055; --off: #9aa0aa; --mark: #5a4a00;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15171c; --fg: #e7e8ea; --muted: #9aa0aa; --panel: #20232a; --line: #343842;
+  --accent: #7fa8ff; --ok: #5fcf8d; --warn: #f0b055; --off: #9aa0aa; --mark: #5a4a00;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+  font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+code, .path { font-family: "SF Mono", "Fira Code", ui-monospace, monospace; font-size: 12px; }
+.layout { display: flex; min-height: 100vh; }
+nav { flex: 0 0 190px; padding: 16px; border-right: 1px solid var(--line); position: sticky; top: 0; align-self: flex-start; }
+nav a { display: block; padding: 3px 0; }
+main { flex: 1; min-width: 0; padding: 16px 24px 48px; }
+header h1 { margin: 0 0 4px; font-size: 22px; }
+#pka-status { color: var(--muted); font-size: 13px; margin-bottom: 4px; }
+#pka-status.stale { color: var(--warn); }
+#pka-problem { display: none; border: 1px solid var(--warn); border-radius: 8px; padding: 12px 14px; margin: 12px 0; }
+#pka-counts { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
+.count { background: var(--panel); border-radius: 8px; padding: 6px 12px; }
+.count b { font-size: 17px; margin-right: 4px; }
+section { margin-top: 28px; }
+section > h2 { font-size: 17px; margin: 0 0 10px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.card { background: var(--panel); border-radius: 8px; padding: 12px; min-width: 0; overflow-wrap: anywhere; }
+.card h3 { margin: 0 0 4px; font-size: 15px; }
+.meta, .excerpt, .more, .empty { color: var(--muted); font-size: 13px; }
+.badge { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 9px; border: 1px solid currentColor; margin-right: 4px; }
+.badge.active { color: var(--ok); } .badge.archiving, .badge.quiet { color: var(--warn); } .badge.archived { color: var(--off); }
+.month { font-weight: 600; margin: 14px 0 4px; }
+.row { display: flex; gap: 12px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.row .when { flex: 0 0 92px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.row .what { min-width: 0; overflow-wrap: anywhere; }
+ul.plain { list-style: none; margin: 6px 0 0; padding: 0; } ul.plain li { padding: 2px 0; }
+table { border-collapse: collapse; width: 100%; } th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+th[data-act] { cursor: pointer; user-select: none; }
+input[type="search"] { width: min(100%, 420px); padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px;
+  background: var(--bg); color: var(--fg); font: inherit; margin-bottom: 8px; }
+button { font: inherit; padding: 3px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--fg); cursor: pointer; }
+.heat { display: grid; grid-template-columns: repeat(7, 14px); gap: 3px; margin: 4px 0 10px; }
+.heat i { width: 14px; height: 14px; border-radius: 3px; background: var(--panel); display: block; }
+.heat a i.l1 { background: var(--accent); opacity: .35; } .heat a i.l2 { background: var(--accent); opacity: .6; }
+.heat a i.l3 { background: var(--accent); opacity: .8; } .heat a i.l4 { background: var(--accent); }
+.months { display: flex; flex-wrap: wrap; gap: 18px; }
+mark { background: var(--mark); color: inherit; }
+@media (max-width: 760px) { .layout { display: block; } nav { position: static; border-right: 0; border-bottom: 1px solid var(--line); } }
+</style>
+</head>
+<body>
+<div class="layout">
+<nav id="pka-nav" aria-label="Sections">
+  <strong>PKA</strong>
+  <!-- One link per section below; keep the two lists in step. -->
+  <a href="#search">Search</a>
+  <a href="#actions">Open actions</a>
+  <a href="#personnel">People</a>
+  <a href="#leadership">Leadership</a>
+  <a href="#research">Research</a>
+  <a href="#lab-notebook">Lab notebook</a>
+  <a href="#projects">Projects</a>
+  <a href="#reference">Reference</a>
+  <a href="#activity">Activity</a>
+  <p><button id="pka-theme" type="button">Light / dark</button></p>
+</nav>
+<main>
+<header>
+  <h1 id="pka-title">Knowledge base</h1>
+  <div id="pka-status">Loading…</div>
+  <div id="pka-problem"></div>
+  <div id="pka-counts"></div>
+</header>
+
+<!-- pka:section:start:search -->
+<section id="search" data-view="search">
+  <h2>Search</h2>
+  <div class="pka-body"></div>
+</section>
+<!-- pka:section:end:search -->
+
+<!-- pka:section:start:actions -->
+<section id="actions" data-view="actions">
+  <h2>Open actions</h2>
+  <div class="pka-body"></div>
+</section>
+<!-- pka:section:end:actions -->
+
+<!-- pka:section:start:personnel -->
+<section id="personnel" data-view="people" data-folder="knowledge/personnel">
+  <h2>People</h2>
+  <div class="pka-body"></div>
+</section>
+<!-- pka:section:end:personnel -->
+
+<!-- pka:section:start:leadership -->
+<section id="leadership" data-view="timeline" data-folder="knowledge/leadership">
+  <h2>Leadership</h2>
+  <div class="pka-body"></div>
+</section>
+<!-- pka:section:end:leadership -->
+
+<!-- pka:section:start:research -->
+<section id="research" data-view="topics" data-folder="knowledge/AI">
+  <h2>Research</h2>
+  <div class="pka-body"></div>
+</section>
+<!-- pka:section:end:research -->
+
+<!-- pka:section:start:lab-notebook -->
+<section id="lab-notebook" data-view="calendar" data-folder="knowledge/lab-notebook">
+  <h2>Lab notebook</h2>
+  <div class="pka-body"></div>
+</section>
+<!-- pka:section:end:lab-notebook -->
+
+<!-- pka:section:start:projects -->
+<section id="projects" data-view="projects">
+  <h2>Projects</h2>
+  <div class="pka-body"></div>
+</section>
+<!-- pka:section:end:projects -->
+
+<!-- pka:section:start:reference -->
+<section id="reference" data-view="files" data-folder="knowledge/reference">
+  <h2>Reference</h2>
+  <div class="pka-body"></div>
+</section>
+<!-- pka:section:end:reference -->
+
+<!-- pka:section:start:activity -->
+<section id="activity" data-view="activity">
+  <h2>Activity</h2>
+  <div class="pka-body"></div>
+</section>
+<!-- pka:section:end:activity -->
+</main>
+</div>
+
+<!-- The data. A plain script beside this page: no fetch, no server, no network. -->
+<script src="dashboard-data.js"></script>
+
+<!-- pka:loader:start (copy this block unchanged; replace it whole when the skill's copy changes) -->
+<script>
+/* pka-loader 1: turns window.PKA_DATA (data version 1) into objects the views use. */
+var PKA = (function (raw) {
+  'use strict';
+  var P = { ok: false, problem: '', raw: raw || null, files: [], byPath: {}, people: [], projects: [],
+            actions: [], activity: [], sections: [], counts: {}, mode: '', title: '', generatedAt: null };
+  var REFRESH = 'Ask your assistant to "refresh the dashboard data", or run ' +
+                '<code>.pka/bin/pka-tools dashboard data</code> in the workspace, then reload this page.';
+
+  P.esc = function (value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  };
+  /* A link from this page to a workspace-relative path. Relative, so the folder can move. */
+  P.href = function (path) {
+    var root = (raw && raw.root) || '';
+    return root + String(path).split('/').map(encodeURIComponent).join('/');
+  };
+  P.link = function (path, label) {
+    if (!path) return P.esc(label);
+    return '<a href="' + P.esc(P.href(path)) + '">' + P.esc(label) + '</a>';
+  };
+  P.fold = function (text) {
+    var lower = String(text).toLowerCase();
+    return lower.normalize ? lower.normalize('NFD').replace(/[̀-ͯ]/g, '') : lower;
+  };
+  P.day = function (iso) {             /* 'YYYY-MM-DD' as a local date */
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
+    return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null;
+  };
+  P.daysSince = function (iso) {
+    var then = P.day(iso);
+    if (!then) return null;
+    var now = new Date();
+    return Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - then) / 86400000);
+  };
+  P.ago = function (iso) {
+    var n = P.daysSince(iso);
+    if (n === null) return '';
+    if (n <= 0) return 'today';
+    return n === 1 ? 'yesterday' : n + ' days ago';
+  };
+  P.size = function (bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  };
+  P.titleOf = function (name) {       /* a readable title from a filename */
+    var stem = name.replace(/\.[A-Za-z0-9]{1,8}$/, '');
+    var base = stem.replace(/^\d{4}-\d{2}-\d{2}[-_ ]?/, '').replace(/[-_]+/g, ' ').trim();
+    return base ? base.charAt(0).toUpperCase() + base.slice(1) : stem || name;
+  };
+  P.under = function (folder) {       /* files in a folder, at any depth */
+    if (!folder) return P.files.slice();
+    var prefix = folder.replace(/\/+$/, '') + '/';
+    return P.files.filter(function (f) { return f.path.lastIndexOf(prefix, 0) === 0; });
+  };
+  P.newest = function (files) {       /* newest first: note date, else last change */
+    return files.slice().sort(function (a, b) {
+      var x = a.date || a.modified, y = b.date || b.modified;
+      return x < y ? 1 : x > y ? -1 : a.path < b.path ? -1 : 1;
+    });
+  };
+  /* Search: every word must appear in a file's title, path, tags, headings or
+     summary (not in the body of the note: that is not in the data). */
+  P.search = function (query, limit) {
+    var terms = P.fold(query).split(/\s+/).filter(Boolean);
+    var out = { terms: terms, people: [], hits: [], total: 0 };
+    if (!terms.length) return out;
+    out.people = P.people.filter(function (p) {
+      var hay = P.fold([p.name, p.slug].concat(p.aliases).join('\n'));
+      return terms.every(function (t) { return hay.indexOf(t) !== -1; });
+    });
+    var found = [];
+    P.files.forEach(function (f) {
+      if (!f.hay) {
+        f.hay = [f.title, f.name, f.tags.join(' '), f.headings.join(' '), f.summary, f.dir].map(P.fold);
+      }
+      var score = 0;
+      for (var i = 0; i < terms.length; i++) {
+        var best = 0, weights = [8, 5, 4, 3, 2, 1];
+        for (var k = 0; k < f.hay.length; k++) {
+          if (f.hay[k].indexOf(terms[i]) !== -1) { best = weights[k]; break; }
+        }
+        if (!best) return;
+        score += best;
+      }
+      found.push({ file: f, score: score });
+    });
+    found.sort(function (a, b) {
+      if (a.score !== b.score) return b.score - a.score;
+      var x = a.file.date || a.file.modified, y = b.file.date || b.file.modified;
+      return x < y ? 1 : x > y ? -1 : a.file.path < b.file.path ? -1 : 1;
+    });
+    out.total = found.length;
+    out.hits = found.slice(0, limit || 50);
+    return out;
+  };
+  P.mark = function (text, terms) {   /* escaped text with the matched words marked */
+    var words = (terms || []).filter(Boolean).map(function (t) { return t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); });
+    if (!words.length) return P.esc(text);
+    return String(text).split(new RegExp('(' + words.join('|') + ')', 'i')).map(function (part, pos) {
+      return pos % 2 ? '<mark>' + P.esc(part) + '</mark>' : P.esc(part);
+    }).join('');
+  };
+
+  if (!raw) {
+    P.problem = 'There is no data to show yet: <code>dashboard-data.js</code> was not found beside this page. ' + REFRESH;
+    return P;
+  }
+  if (raw.version !== 1 || !raw.files || !raw.dirs) {
+    P.problem = 'The data beside this page is in a format this page does not read (data version ' +
+                P.esc(raw.version) + '). Ask your assistant to "update the dashboard".';
+    return P;
+  }
+  var col = {};
+  raw.file_columns.forEach(function (name, pos) { col[name] = pos; });
+  P.files = raw.files.map(function (row) {
+    var dir = raw.dirs[row[col.dir]] || '', name = row[col.name];
+    var file = {
+      path: dir ? dir + '/' + name : name, dir: dir, name: name,
+      title: row[col.title] || P.titleOf(name), date: row[col.date], modified: row[col.modified],
+      size: row[col.size], tags: row[col.tags].map(function (t) { return raw.tags[t]; }),
+      summary: row[col.summary], headings: row[col.headings],
+      type: (/\.([A-Za-z0-9]{1,8})$/.exec(name) || ['', ''])[1].toLowerCase()
+    };
+    P.byPath[file.path] = file;
+    return file;
+  });
+  P.people = raw.people || [];
+  P.projects = raw.projects || [];
+  P.actions = raw.actions || [];
+  P.activity = raw.activity || [];
+  P.sections = raw.sections || [];
+  P.counts = raw.counts || {};
+  P.mode = raw.mode || '';
+  P.title = raw.title || '';
+  P.generatedAt = raw.generated_at ? new Date(raw.generated_at) : null;
+  P.refreshHint = REFRESH;
+  P.ok = true;
+  return P;
+})(window.PKA_DATA);
+</script>
+<!-- pka:loader:end -->
+
+<!-- pka:views:start (the view functions; one per data-view value) -->
+<script>
+/* pka-views 1: draws each section that has a data-view attribute. */
+(function () {
+  'use strict';
+  var esc = PKA.esc, link = PKA.link;
+  var PAGE = 60;
+
+  function fileLink(f) { return link(f.path, f.title); }
+  function titleFor(path) {
+    var f = PKA.byPath[path];
+    return f ? f.title : PKA.titleOf(path.split('/').pop());
+  }
+  function empty(text) { return '<div class="empty">' + esc(text) + '</div>'; }
+  function monthName(iso) {
+    var d = PKA.day(iso + '-01');
+    return d ? d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) : iso;
+  }
+  function tags(f) {
+    return f.tags.map(function (t) { return '<span class="badge">' + esc(t) + '</span>'; }).join('');
+  }
+  /* A list shown a page at a time, with a "Show more" button. */
+  function paged(box, items, render, size) {
+    var shown = 0;
+    size = size || PAGE;
+    function more() {
+      shown = Math.min(items.length, shown + size);
+      var html = render(items.slice(0, shown));
+      if (shown < items.length) {
+        html += '<p><button type="button" data-act="more">Show more</button> <span class="more">' +
+                shown + ' of ' + items.length + '</span></p>';
+      }
+      box.innerHTML = html;
+    }
+    box.addEventListener('click', function (ev) {
+      if (ev.target && ev.target.getAttribute && ev.target.getAttribute('data-act') === 'more') more();
+    });
+    more();
+  }
+
+  var VIEWS = {};
+
+  /* Per-person folders: one card per person, most recent first. Source: PKA.people. */
+  VIEWS.people = function (body, folder) {
+    var prefix = folder ? folder.replace(/\/+$/, '') + '/' : '';
+    var people = PKA.people.filter(function (p) { return !prefix || p.folder.lastIndexOf(prefix, 0) === 0; });
+    people.sort(function (a, b) {
+      var x = (a.timeline[0] && a.timeline[0].date) || a.latest, y = (b.timeline[0] && b.timeline[0].date) || b.latest;
+      return x < y ? 1 : x > y ? -1 : a.name < b.name ? -1 : 1;
+    });
+    if (!people.length) { body.innerHTML = empty('No person folders yet.'); return; }
+    body.innerHTML = '<div class="grid">' + people.map(function (p) {
+      var lines = p.timeline.slice(0, 3).map(function (e) {
+        return '<li><span class="meta">' + esc(e.date) + ' · ' + esc(e.kind) + '</span> ' +
+               link(e.path, e.path ? titleFor(e.path) : '(note not found)') +
+               (e.summary ? ' <span class="excerpt">— ' + esc(e.summary) + '</span>' : '') + '</li>';
+      }).join('');
+      var rest = p.timeline_total - Math.min(3, p.timeline.length);
+      return '<div class="card"><h3>' + link(p.index || p.folder + '/', p.name) + '</h3>' +
+        '<div class="meta">' + p.files + ' file' + (p.files === 1 ? '' : 's') +
+        (p.latest ? ' · last change ' + esc(PKA.ago(p.latest)) : '') + '</div>' +
+        (lines ? '<ul class="plain">' + lines + '</ul>' : '<div class="excerpt">No timeline entries yet.</div>') +
+        (rest > 0 ? '<div class="more">' + rest + ' more on ' + link(p.index, 'the timeline') + '</div>' : '') +
+        '</div>';
+    }).join('') + '</div>';
+  };
+
+  /* Dated notes, newest first, grouped by month. Source: PKA.under(folder), files with a date. */
+  VIEWS.timeline = function (body, folder) {
+    var notes = PKA.newest(PKA.under(folder).filter(function (f) { return f.date; }));
+    if (!notes.length) { body.innerHTML = empty('No dated notes here yet.'); return; }
+    paged(body, notes, function (shown) {
+      var html = '', month = '';
+      shown.forEach(function (f) {
+        if (f.date.slice(0, 7) !== month) {
+          month = f.date.slice(0, 7);
+          html += '<div class="month">' + esc(monthName(month)) + '</div>';
+        }
+        html += '<div class="row"><div class="when">' + esc(f.date) + '</div><div class="what">' + fileLink(f) +
+                (f.summary ? '<div class="excerpt">' + esc(f.summary) + '</div>' : '') + '</div></div>';
+      });
+      return html;
+    });
+  };
+
+  /* One entry per subfolder (a topic), with its files. Source: PKA.under(folder), grouped by subfolder. */
+  VIEWS.topics = function (body, folder) {
+    var base = folder.replace(/\/+$/, ''), groups = {}, names = [];
+    PKA.under(folder).forEach(function (f) {
+      var rest = f.dir.slice(base.length + 1), topic = rest ? rest.split('/')[0] : '';
+      if (!groups[topic]) { groups[topic] = []; names.push(topic); }
+      groups[topic].push(f);
+    });
+    names.sort();
+    if (!names.length) { body.innerHTML = empty('Nothing here yet.'); return; }
+    body.innerHTML = '<div class="grid">' + names.map(function (topic) {
+      var files = PKA.newest(groups[topic]);
+      var first = files.filter(function (f) { return f.summary; })[0];
+      return '<div class="card"><h3>' +
+        link(base + (topic ? '/' + topic : '') + '/', topic ? PKA.titleOf(topic) : '(not in a topic folder)') + '</h3>' +
+        '<div class="meta">' + files.length + ' file' + (files.length === 1 ? '' : 's') + '</div>' +
+        '<ul class="plain">' + files.slice(0, 6).map(function (f) { return '<li>' + fileLink(f) + '</li>'; }).join('') +
+        '</ul>' + (files.length > 6 ? '<div class="more">and ' + (files.length - 6) + ' more</div>' : '') +
+        (first ? '<div class="excerpt">' + esc(first.summary) + '</div>' : '') + '</div>';
+    }).join('') + '</div>';
+  };
+
+  /* A journal: a square per day for recent months, then the entries. Source: PKA.under(folder), files with a date. */
+  VIEWS.calendar = function (body, folder) {
+    var notes = PKA.newest(PKA.under(folder).filter(function (f) { return f.date; }));
+    if (!notes.length) { body.innerHTML = empty('No dated entries here yet.'); return; }
+    var byDay = {}, months = [];
+    notes.forEach(function (f) {
+      (byDay[f.date] = byDay[f.date] || []).push(f);
+      if (months.indexOf(f.date.slice(0, 7)) === -1) months.push(f.date.slice(0, 7));
+    });
+    var heat = months.slice(0, 6).map(function (month) {
+      var first = PKA.day(month + '-01'), cells = '';
+      var days = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+      for (var pad = 0; pad < first.getDay(); pad++) cells += '<span></span>';
+      for (var d = 1; d <= days; d++) {
+        var iso = month + '-' + (d < 10 ? '0' : '') + d, entries = byDay[iso];
+        if (!entries) { cells += '<i title="' + iso + '"></i>'; continue; }
+        var bytes = entries.reduce(function (sum, f) { return sum + f.size; }, 0);
+        var level = bytes > 4000 ? 4 : bytes > 1500 ? 3 : bytes > 400 ? 2 : 1;
+        cells += '<a href="' + esc(PKA.href(entries[0].path)) + '" title="' + iso + ': ' + entries.length +
+                 (entries.length === 1 ? ' entry' : ' entries') + '"><i class="l' + level + '"></i></a>';
+      }
+      return '<div><div class="meta">' + esc(monthName(month)) + '</div><div class="heat">' + cells + '</div></div>';
+    }).join('');
+    body.innerHTML = '<div class="months">' + heat + '</div><div class="pka-list"></div>';
+    paged(body.querySelector('.pka-list'), notes, function (shown) {
+      return shown.map(function (f) {
+        return '<div class="row"><div class="when">' + esc(f.date) + '</div><div class="what">' + fileLink(f) +
+               (f.summary ? '<div class="excerpt">' + esc(f.summary) + '</div>' : '') + '</div></div>';
+      }).join('');
+    }, 30);
+  };
+
+  /* One card per project. Source: PKA.projects. */
+  VIEWS.projects = function (body) {
+    var order = { active: 0, archiving: 1, archived: 2 };
+    var projects = PKA.projects.slice().sort(function (a, b) {
+      var x = order[a.status] === undefined ? 0 : order[a.status], y = order[b.status] === undefined ? 0 : order[b.status];
+      if (x !== y) return x - y;
+      return a.latest < b.latest ? 1 : a.latest > b.latest ? -1 : a.name < b.name ? -1 : 1;
+    });
+    if (!projects.length) { body.innerHTML = empty('No project folders yet.'); return; }
+    var labels = { active: 'Active', archiving: 'Winding down', archived: 'Archived' };
+    body.innerHTML = '<div class="grid">' + projects.map(function (p) {
+      var idle = PKA.daysSince(p.latest);
+      var quiet = p.status === 'active' && idle !== null && idle >= 60;
+      return '<div class="card"><span class="badge ' + esc(p.status) + '">' + esc(labels[p.status] || p.status) + '</span>' +
+        (quiet ? '<span class="badge quiet">quiet for ' + idle + ' days</span>' : '') +
+        '<h3>' + link(p.folder ? p.folder + '/' : '', p.name) + '</h3>' +
+        (p.latest ? '<div class="meta">Last change: ' + esc(PKA.ago(p.latest)) + '</div>' : '') +
+        (p.folder ? '<div class="meta">' + p.docs + ' top-level file' + (p.docs === 1 ? '' : 's') +
+          (p.has_claude_md ? ' · has CLAUDE.md' : '') + '</div>' : '<div class="meta">No folder under projects/</div>') +
+        (p.events.length ? '<div class="excerpt">' + esc(p.events[p.events.length - 1].event) + ' ' +
+          esc(p.events[p.events.length - 1].date) + '</div>' : '') + '</div>';
+    }).join('') + '</div>';
+  };
+
+  /* A sortable, filterable table. Source: PKA.under(folder). */
+  VIEWS.files = function (body, folder) {
+    var all = PKA.under(folder), key = 'modified', down = true, filter = '';
+    if (!all.length) { body.innerHTML = empty('Nothing here yet.'); return; }
+    body.innerHTML = '<input type="search" class="pka-filter" placeholder="Filter these files" aria-label="Filter these files">' +
+                     '<div class="pka-list"></div>';
+    var list = body.querySelector('.pka-list'), shown = 100;
+    function draw() {
+      var words = PKA.fold(filter).split(/\s+/).filter(Boolean);
+      var rows = all.filter(function (f) {
+        var hay = PKA.fold(f.title + '\n' + f.path);
+        return words.every(function (w) { return hay.indexOf(w) !== -1; });
+      });
+      rows.sort(function (a, b) {
+        var x = key === 'title' ? PKA.fold(a.title) : a[key], y = key === 'title' ? PKA.fold(b.title) : b[key];
+        var cmp = x < y ? -1 : x > y ? 1 : a.path < b.path ? -1 : 1;
+        return down ? -cmp : cmp;
+      });
+      var head = [['title', 'Name'], ['type', 'Type'], ['date', 'Date'], ['modified', 'Changed'], ['size', 'Size']];
+      list.innerHTML = '<table><thead><tr>' + head.map(function (h) {
+        return '<th data-act="sort" data-key="' + h[0] + '">' + h[1] + (key === h[0] ? (down ? ' ▾' : ' ▴') : '') + '</th>';
+      }).join('') + '</tr></thead><tbody>' + rows.slice(0, shown).map(function (f) {
+        return '<tr><td>' + fileLink(f) + '</td><td>' + esc(f.type) + '</td><td>' + esc(f.date) + '</td><td>' +
+               esc(f.modified) + '</td><td>' + esc(PKA.size(f.size)) + '</td></tr>';
+      }).join('') + '</tbody></table>' + (rows.length > shown
+        ? '<p><button type="button" data-act="more">Show more</button> <span class="more">' + shown + ' of ' + rows.length + '</span></p>'
+        : '');
+    }
+    list.addEventListener('click', function (ev) {
+      var act = ev.target && ev.target.getAttribute && ev.target.getAttribute('data-act');
+      if (act === 'sort') {
+        var next = ev.target.getAttribute('data-key');
+        down = next === key ? !down : (next === 'modified' || next === 'date' || next === 'size');
+        key = next;
+        draw();
+      } else if (act === 'more') { shown += 200; draw(); }
+    });
+    body.querySelector('.pka-filter').addEventListener('input', function (ev) { filter = ev.target.value; shown = 100; draw(); });
+    draw();
+  };
+
+  /* Unticked checkboxes in dated meeting and person notes, newest first. Source: PKA.actions. */
+  VIEWS.actions = function (body) {
+    var total = PKA.counts.open_actions || 0;
+    if (!PKA.actions.length) { body.innerHTML = empty('No open action items in dated meeting or person notes.'); return; }
+    var note = PKA.actions.length < total
+      ? '<div class="more">The newest ' + PKA.actions.length + ' of ' + total + '. Ask your assistant for the rest.</div>' : '';
+    body.innerHTML = note + '<div class="pka-list"></div>';
+    paged(body.querySelector('.pka-list'), PKA.actions, function (shown) {
+      return shown.map(function (a) {
+        return '<div class="row"><div class="when">' + esc(a.date) + '</div><div class="what">☐ ' + esc(a.text) +
+          (a.due ? ' <span class="badge quiet">due ' + esc(a.due) + '</span>' : '') +
+          '<div class="excerpt">' + link(a.path, titleFor(a.path)) + ', line ' + a.line + '</div></div></div>';
+      }).join('');
+    }, 25);
+  };
+
+  /* The session log and the files that changed last. Source: PKA.activity, PKA.files. */
+  VIEWS.activity = function (body) {
+    var log = PKA.activity.map(function (e) {
+      return '<div class="row"><div class="when">' + esc(e.at) + '</div><div class="what"><b>' + esc(e.role) + '</b> ' +
+        esc(e.summary) + (e.open ? '<div class="excerpt">Open: ' + esc(e.open) + '</div>' : '') +
+        (e.next ? '<div class="excerpt">Next: ' + esc(e.next) + '</div>' : '') + '</div></div>';
+    }).join('');
+    var recent = PKA.files.slice().sort(function (a, b) {
+      return a.modified < b.modified ? 1 : a.modified > b.modified ? -1 : a.path < b.path ? -1 : 1;
+    }).slice(0, 10).map(function (f) {
+      return '<div class="row"><div class="when">' + esc(f.modified) + '</div><div class="what">' + fileLink(f) +
+             ' <span class="path">' + esc(f.dir) + '</span></div></div>';
+    }).join('');
+    body.innerHTML = '<div class="month">Session log</div>' + (log || empty('No entries in .pka/session-log.md yet.')) +
+                     '<div class="month">Recently changed files</div>' + (recent || empty('No files yet.'));
+  };
+
+  /* Search over titles, paths, tags, headings and summaries. Source: PKA.search(). */
+  VIEWS.search = function (body) {
+    body.innerHTML = '<input type="search" id="q" placeholder="Search titles, paths, tags, headings and summaries" aria-label="Search">' +
+      '<div class="meta">This searches what the dashboard knows about each file, not the text inside the notes. ' +
+      'For a search of the full text, ask your assistant.</div><div id="search-results"></div>';
+    var results = body.querySelector('#search-results');
+    body.querySelector('#q').addEventListener('input', function (ev) {
+      var found = PKA.search(ev.target.value, 50);
+      if (!found.terms.length) { results.innerHTML = ''; return; }
+      var html = found.people.map(function (p) {
+        return '<div class="row"><div class="when">person</div><div class="what">' + link(p.index || p.folder + '/', p.name) + '</div></div>';
+      }).join('');
+      html += found.hits.map(function (hit) {
+        var f = hit.file;
+        return '<div class="row"><div class="when">' + esc(f.date || f.modified) + '</div><div class="what">' +
+          '<a href="' + esc(PKA.href(f.path)) + '">' + PKA.mark(f.title, found.terms) + '</a> ' + tags(f) +
+          '<div class="path">' + PKA.mark(f.path, found.terms) + '</div>' +
+          (f.summary ? '<div class="excerpt">' + PKA.mark(f.summary, found.terms) + '</div>' : '') + '</div></div>';
+      }).join('');
+      if (!html) html = empty('Nothing matches. Only titles, paths, tags, headings and summaries are searched.');
+      else if (found.total > found.hits.length) html += '<div class="more">' + found.hits.length + ' of ' + found.total + ' shown</div>';
+      results.innerHTML = html;
+    });
+  };
+
+  function header() {
+    var status = document.getElementById('pka-status'), problem = document.getElementById('pka-problem');
+    if (!PKA.ok) {
+      status.textContent = 'No data';
+      problem.innerHTML = PKA.problem;
+      problem.style.display = 'block';
+      return;
+    }
+    if (PKA.title) document.getElementById('pka-title').textContent = PKA.title;
+    var when = PKA.generatedAt, days = when ? Math.floor((Date.now() - when.getTime()) / 86400000) : null;
+    status.innerHTML = 'Data from ' + esc(when ? when.toLocaleString() : 'an unknown time') +
+      (days ? ' (' + days + ' day' + (days === 1 ? '' : 's') + ' ago)' : '') + ' · ' +
+      esc(PKA.mode === 'index' ? 'index mode' : 'markdown-only mode') +
+      ' · it shows the workspace as it was then. ' + PKA.refreshHint;
+    if (days !== null && days >= 7) status.className = 'stale';
+    var c = PKA.counts, items = [[c.notes, 'notes'], [c.files, 'files'], [c.people, 'people'], [c.projects, 'projects'],
+                                 [c.open_actions, 'open actions']];
+    document.getElementById('pka-counts').innerHTML = items.map(function (it) {
+      return '<span class="count"><b>' + (it[0] || 0) + '</b>' + it[1] + '</span>';
+    }).join('');
+  }
+
+  function theme() {
+    var root = document.documentElement, saved = null;
+    try { saved = window.localStorage.getItem('pka-theme'); } catch (e) { /* storage can be off for file:// pages */ }
+    if (saved) root.setAttribute('data-theme', saved);
+    var button = document.getElementById('pka-theme');
+    if (!button) return;
+    button.addEventListener('click', function () {
+      var dark = root.getAttribute('data-theme') === 'dark' ||
+        (!root.getAttribute('data-theme') && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      var next = dark ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      try { window.localStorage.setItem('pka-theme', next); } catch (e) { /* not saved; still applied */ }
+    });
+  }
+
+  theme();
+  header();
+  if (!PKA.ok) return;
+  var sections = document.querySelectorAll('[data-view]');
+  for (var i = 0; i < sections.length; i++) {
+    var el = sections[i], view = VIEWS[el.getAttribute('data-view')], body = el.querySelector('.pka-body');
+    if (!view || !body) continue;
+    try {
+      view(body, el.getAttribute('data-folder') || '');
+    } catch (err) {
+      body.innerHTML = '<div class="empty">This section could not be shown: ' + esc(err && err.message) + '</div>';
+    }
+  }
+})();
+</script>
+<!-- pka:views:end -->
+</body>
+</html>

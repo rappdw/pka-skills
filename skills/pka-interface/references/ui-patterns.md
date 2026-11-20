@@ -1,205 +1,141 @@
 # UI Patterns
 
-View types for each inferred content type. Used to generate dashboard sections from the Repo Map.
+The views a dashboard section can use, what each one draws, and where its data comes from. The working code for every view is in `dashboard-template.html` (the block between `pka:views:start` and `pka:views:end`); this file explains it.
 
 ---
 
-## View Type Selection
+## A section
 
-Sections are generated from Active and Reference priority folders in the Repo Map. No hardcoded sections. The view type is inferred from the folder's content type.
-
-| Inferred content type | Default view | Key features |
-|-----------------------|-------------|-------------|
-| Per-person notes | Card grid | One card per person, sorted by last modified |
-| Meeting / strategy notes (`meeting-home`) | Timeline | Sorted by date from filename, chronological |
-| Research outputs | Topic list | Grouped by topic, linked files per topic |
-| Journal / lab notes | Calendar heatmap + entry list | Monthly grid, click for entries |
-| Project workspaces | Project cards | Status badge, days since activity, doc count |
-| Generic / flat | File table | Sortable columns, inline search |
-
----
-
-## Card Grid (Per-Person Notes)
-
-Used for `personnel/` style folders where subfolders represent individuals.
+Sections are generated from the Active and Reference folders of the Repo Map. No hardcoded sections. Each is a marked block; the `data-view` attribute names the view and `data-folder` the folder it shows:
 
 ```html
-<div class="card-grid">
-    <!-- One card per person subfolder -->
-    <div class="card" data-last-modified="2026-03-31">
-        <h3><a href="file:///path/to/personnel/priya/">Priya</a></h3>
-        <div class="meta">Last modified: 3 days ago</div>
-        <div class="excerpt">Latest: 1-1 notes — MCP adapter decision...</div>
-        <div class="count">12 files</div>
-    </div>
-</div>
+<!-- pka:section:start:personnel -->
+<section id="personnel" data-view="people" data-folder="knowledge/personnel">
+  <h2>People</h2>
+  <div class="pka-body"></div>
+</section>
+<!-- pka:section:end:personnel -->
 ```
 
-**Sort:** By last modified date (most recent first).
-**Card content:** Person name (from subfolder name), last modified date, excerpt from most recent file, file count.
-**Click behavior:** Links to the person's folder.
+- `NAME` in the markers and the `id` are the folder's slug (`knowledge/lab-notebook` → `lab-notebook`); they must be unique in the page.
+- The view script fills `.pka-body`. Leave it empty. Anything else inside the section (an introduction, a link) is yours to write.
+- Add a link to the section in the navigation list.
+- `data-folder` is the workspace-relative folder exactly as the Repo Map writes it, without a trailing slash.
+
+## Choosing the view
+
+| The folder holds | `data-view` | Needs `data-folder` |
+|---|---|---|
+| One subfolder per person (Repo Map tag `people-home`) | `people` | yes |
+| Dated meeting or strategy notes (tag `meeting-home`) | `timeline` | yes |
+| A subfolder per topic: research outputs, wikis (tag `wiki-home`) | `topics` | yes |
+| A journal or lab notebook of dated notes (tag `daily-home`) | `calendar` | yes |
+| Project workspaces (`projects/`) | `projects` | no |
+| Anything else | `files` | yes |
+
+Use the tags first; without a tag, look at the folder: date-prefixed filenames → `timeline`, subfolders with a few files each → `topics`, flat or mixed → `files`.
 
 ---
 
-## Timeline (Meeting/Strategy Notes)
+## `people`: card grid
 
-Used for folders tagged `meeting-home` in the Repo Map. Optimized for chronologically-ordered meeting notes.
+**Source:** `PKA.people`, limited to people whose folder is under `data-folder`.
 
-```html
-<div class="timeline">
-    <!-- Entries extracted from date-slug filenames -->
-    <div class="timeline-entry" data-date="2026-03-31">
-        <div class="timeline-date">Mar 31</div>
-        <div class="timeline-content">
-            <h4><a href="file:///path/to/leadership/2026-03-31-slt-q2-planning.md">
-                SLT Q2 Planning
-            </a></h4>
-            <div class="excerpt">Discussed roadmap priorities...</div>
-        </div>
-    </div>
-</div>
-```
+One card per person, the person with the most recent timeline entry (else the most recent change) first. A card has the name (linked to the person's `index.md`, or to the folder when there is none), the number of files, how long ago the folder last changed, the three newest timeline entries (date, kind, linked note title, summary), and a count of the rest with a link to the full timeline.
 
-**Sort:** By date extracted from filename (most recent first).
-**Date extraction:** Parse `YYYY-MM-DD` prefix from filenames matching the date-slug pattern.
-**Grouping:** Group by month with month headers.
-**Excerpt:** First 150 characters of file content (SQLite mode) or filename-derived title (markdown mode).
+A person with no timeline block shows "No timeline entries yet": the timeline is maintained by `pka-tools timeline`, not by this page.
 
----
+## `timeline`: dated notes
 
-## Topic List (Research Outputs)
+**Source:** `PKA.under(folder)`, files that have a `date`, newest first.
 
-Used for folders with a consistent topic-subfolder structure.
+Grouped under month headings. Each row has the date, the title (linked) and the summary. Sixty rows are shown, with a "Show more" button. Notes without a date of their own (no `YYYY-MM-DD` filename prefix and no frontmatter `date`) are not on the timeline; the file's modification time is never used as its date.
 
-```html
-<div class="topic-list">
-    <div class="topic">
-        <h4><a href="file:///path/to/research/mcp-evaluation/">MCP Evaluation</a></h4>
-        <div class="files">
-            <span class="file-badge md">research.md</span>
-            <span class="file-badge pdf">research.pdf</span>
-            <span class="file-badge md">source-email.md</span>
-        </div>
-        <div class="excerpt">Evaluation of MCP protocol for...</div>
-    </div>
-</div>
-```
+## `topics`: topic list
 
-**Sort:** Alphabetical by topic name, or by last modified.
-**Display:** Topic name, file type badges for each file in the topic folder, excerpt from the primary `.md` file.
+**Source:** `PKA.under(folder)`, grouped by the first subfolder below `data-folder`.
 
----
+One card per subfolder, in alphabetical order: the topic name (from the folder name, linked to the folder), the number of files, the six newest files (linked), and the summary of the newest file that has one. Files directly in the folder are grouped under "(not in a topic folder)".
 
-## Calendar Heatmap (Journal/Lab Notes)
+## `calendar`: journal
 
-Used for chronologically-organized notes (lab notebook, journal).
+**Source:** `PKA.under(folder)`, files that have a `date`.
 
-```html
-<div class="calendar-view">
-    <!-- Month grid showing activity density -->
-    <div class="month" data-month="2026-03">
-        <h4>March 2026</h4>
-        <div class="heatmap-grid">
-            <!-- 1 cell per day, color intensity = content length -->
-            <div class="day active" data-date="2026-03-31" title="March notes">
-            </div>
-        </div>
-    </div>
-    <!-- Entry list below heatmap -->
-    <div class="entry-list">
-        <a href="file:///path/to/lab-notebook/2026-03.md">March 2026</a>
-    </div>
-</div>
-```
+A grid per month for the six most recent months that have entries: one square per day, filled when the day has an entry and darker the more was written (by file size), linked to that day's first entry. Below it, the entries newest first, thirty at a time.
 
-**Heatmap:** Monthly grids showing which days/months have entries. Color intensity proportional to content length.
-**Entry list:** Chronological list of all entries, most recent first.
+## `projects`: project cards
+
+**Source:** `PKA.projects`.
+
+One card per project: a status badge, the name (linked to the folder), how long ago it last changed, the number of top-level files and whether it has a `CLAUDE.md`, and the last lifecycle event when there is one. Order: active, then winding down, then archived; within each, most recently changed first.
+
+| Badge | When |
+|---|---|
+| Active (green) | `status` is `active` |
+| Winding down (amber) | `status` is `archiving` |
+| Archived (grey) | `status` is `archived` |
+| quiet for N days (amber, beside Active) | an active project unchanged for 60 days or more: a prompt to the user, not a status |
+
+The status comes from the data (see `rendering-paths.md`); the page does not decide that a project is winding down.
+
+## `files`: file table
+
+**Source:** `PKA.under(folder)`.
+
+Columns: name (the title, linked), type, date, changed, size. Click a column heading to sort; the filter box above the table narrows it by title and path. One hundred rows are shown, with a "Show more" button.
 
 ---
 
-## Project Cards
+## Fixed sections
 
-Used for the `projects/` section. One card per project workspace.
+Always present, whatever the Repo Map says. None of them takes a `data-folder`.
 
-```html
-<div class="project-grid">
-    <div class="project-card" data-status="active" data-days-since="2">
-        <div class="status-badge active">Active</div>
-        <h3><a href="file:///path/to/projects/orion/">Orion</a></h3>
-        <div class="meta">Last activity: 2 days ago</div>
-        <div class="meta">4 top-level docs</div>
-    </div>
-    <div class="project-card" data-status="archiving" data-days-since="67">
-        <div class="status-badge archiving">Winding Down</div>
-        <h3><a href="file:///path/to/projects/team_charter/">Team Charter</a></h3>
-        <div class="meta">Last activity: 67 days ago</div>
-    </div>
-</div>
-```
+### `search`
 
-**Status badges:**
-- `active` (green) — recent activity
-- `archiving` (yellow) — flagged as winding down (60+ days inactive)
-- `archived` (gray) — transitioned to knowledge
+**Source:** `PKA.search(query, 50)`.
 
-**Sort:** Active first (by last modified), then archiving, then archived.
-**Card content:** Project name, status badge, days since last activity, top-level document count, presence of `CLAUDE.md`.
+A search box; results as you type. People whose name, slug or alias matches come first, then files: date, title, tags, path and summary, with the matched words marked. Under the box, one line says what is searched (titles, paths, tags, headings, summaries) and that the text inside notes is not. Keep that line.
+
+### `actions`: open actions
+
+**Source:** `PKA.actions`, `PKA.counts.open_actions`.
+
+Unticked checkboxes from dated notes in the meeting and people folders, newest note first: the note's date, the item's text, a "due" badge when the item names a date, and a link to the note with the line number. When there are more than the 200 in the data, a line says how many there are in all.
+
+The page cannot tick a box. The note is the record: the user ticks it there, and the item is gone after the next data refresh.
+
+### `activity`
+
+**Source:** `PKA.activity`, and `PKA.files` sorted by `modified`.
+
+The last 20 session-log entries (time, role, summary, open threads, next action), then the ten files changed most recently.
 
 ---
 
-## File Table (Generic/Flat)
+## Adding a view
 
-Fallback view for folders that don't match a specific pattern.
+A view is a function in the views block: `VIEWS.name = function (body, folder) { … }`. It reads from `PKA` and writes markup into `body`.
 
-```html
-<table class="file-table">
-    <thead>
-        <tr>
-            <th data-sort="name">Name</th>
-            <th data-sort="type">Type</th>
-            <th data-sort="modified">Modified</th>
-            <th data-sort="size">Size</th>
-        </tr>
-    </thead>
-    <tbody>
-        <tr>
-            <td><a href="file:///path/to/file.md">file.md</a></td>
-            <td>.md</td>
-            <td>2026-03-31</td>
-            <td>4.2 KB</td>
-        </tr>
-    </tbody>
-</table>
-```
-
-**Features:** Sortable columns (click header), inline search/filter, file type icons.
+- Escape everything that comes from the data with `PKA.esc`; build links with `PKA.link` or `PKA.href`.
+- Read only from `PKA`. A view that needs something the data does not hold cannot be built in the page: tell the user what is missing instead of fetching it.
+- Show long lists a page at a time (the template's `paged` helper): a folder can hold thousands of notes.
+- Put a view you add for one user outside the `pka:views` markers, in its own `<script>`, so that a later update of the views block keeps it.
 
 ---
 
-## Fixed Sections
-
-Always present regardless of Repo Map content:
-
-### Activity
-Last 20 entries from `.pka/session-log.md`. Displayed as a compact log with timestamps, role names, and summaries.
-
-### Search
-Full-text search input. SQLite mode: queries `search_fts`. Markdown mode: filename search only (with deep search option). Source filter dropdown if multiple areas present.
-
----
-
-## Design System
+## Design system
 
 ### Theme
-- Dark/light mode via `prefers-color-scheme` media query
-- Manual toggle button (saves preference to localStorage)
-- CSS custom properties for all colors
+- Dark and light mode from `prefers-color-scheme`
+- A toggle button; the choice is kept in `localStorage` when the browser allows it for a local page
+- CSS custom properties for every colour
 
 ### Layout
-- Responsive: grid on desktop, stack on mobile
-- Sidebar navigation listing all sections
-- Each section collapsible
+- Responsive: a grid on a wide screen, stacked on a narrow one
+- A navigation list of all sections
+- A header with the workspace title, when the data was written and how to refresh it, and the counts
 
 ### Typography
 - System font stack: `-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`
-- Monospace for file paths: `"SF Mono", "Fira Code", monospace`
+- Monospace for file paths: `"SF Mono", "Fira Code", ui-monospace, monospace`
+- No web fonts, icons or images from anywhere else

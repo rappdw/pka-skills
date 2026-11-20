@@ -1,5 +1,40 @@
 # Changelog
 
+## Unreleased
+
+### Fixed — the dashboard opens by double-click (#16)
+
+A dashboard built by `pka-interface` did not show an indexed workspace when opened the way the skill said to open it. Checked in headless Chromium and Firefox against a fixture workspace:
+
+- Opened from `file://`, the page's `fetch('.pka/knowledge.db')` is refused by both browsers, so it fell back to markdown-only mode without saying why: empty sections until a folder was chosen (Chromium), or a "use Chrome or Edge" warning and nothing else (Firefox).
+- Where the database could be fetched (served over HTTP), three of the documented sections failed with "no such table" (`personnel_index`, `leadership_index`, `projects_index`: tables nothing creates), and search failed with "no such module: fts5": the `sql.js` build the skill named cannot read the index's full-text table. Full-text search in the dashboard never worked.
+- The page requested `sql.js` from a public CDN every time it opened, in both storage modes.
+- Links were absolute `file:///` paths.
+
+What replaces it:
+
+- **`pka-tools dashboard data`** writes `dashboard-data.js` beside the page: a snapshot of what the views list (files with title, dates, tags, a one-line summary and headings; Repo Map folders; people and their timeline entries; projects and status; open action items; the recent session log). Not note bodies. It works in index mode (from the index) and markdown-only mode (from the files), is never written through a symbolic link, holds workspace-relative paths only, escapes `<`, `>`, `&` and the Unicode line separators so no title can break a page, and will not overwrite a file it did not write. 3,000 notes: 1.1 MB in about half a second. 20,000 notes: 6.0 MB in 3 to 6 seconds; the page then opens in under half a second.
+- **The page loads that file with a `<script>` tag and nothing else.** No `fetch`, no `sql.js`, no CDN, no folder picker, no network request. It works the same in both storage modes and in any current browser (checked in Chromium and Firefox; not checked in Safari).
+- **`skills/pka-interface/references/dashboard-template.html`** is a complete reference page: the loader, nine views (`people`, `timeline`, `topics`, `calendar`, `projects`, `files`, `actions`, `activity`, `search`) and example sections. The model still writes `dashboard.html`: it copies the template and writes one marked section per Repo Map folder. `SKILL.md`, `rendering-paths.md` and `ui-patterns.md` are rewritten around it, with the exact data shape and each view's source. Instructions that depended on tables and columns that do not exist are gone.
+- **Links are relative** to the page, so the workspace can be moved or synced and they still work.
+- **The page says when its data was written and how to refresh it.** The data is a snapshot: `dashboard data` is run when you ask, and once at the end of a session that filed notes. It is not part of `post-route`, which takes 0.2 s at 20,000 notes and would take fifteen times as long.
+- New section **Open actions** (unticked checkboxes in dated meeting and person notes).
+
+**What you lose:** nothing that worked. The documented in-page full-text search is replaced by a search of titles, paths, tags, headings and summaries, and the page says so; for the text inside notes, ask the assistant. The dashboard no longer updates by itself when the index changes: it shows the workspace as of its last refresh.
+
+**Existing workspaces:** your current `dashboard.html` is not touched and behaves exactly as it did, including the request to the CDN. To get the new one, run `bootstrap upgrade` (for the new `pka-tools`), then ask for the dashboard to be updated: the skill recognises the old page, keeps a copy as `dashboard.html.bak-<date>`, rebuilds it from the template with your sections and customizations, and writes the data. From then on "refresh the dashboard" rewrites only `dashboard-data.js`. Keep the two files together.
+
+### Tests
+
+- `tests/tools/test_dashboard.py` (33 tests): the data's shape in both modes and that the modes agree; same bytes for the same moment; no absolute path; refusal to write through a link, over a foreign file or outside the workspace; names with quotes, `#`, `%` and non-ASCII letters; titles, tags, filenames, action items and log entries containing `</script>`, `<!--` and U+2028. With `node` present (skipped otherwise), `tests/tools/dashboard_page.js` runs the reference page's own scripts against the data without a browser: the loader reads it, every view draws, search finds what it should, links are relative and encoded, hostile text comes out as text, and a page with the data pasted inline still parses.
+
+### Known limits
+
+- Not checked in Safari, or in a browser with a window: the browser checks were headless Chromium and Firefox on Linux.
+- In-page search does not cover note bodies.
+- In index mode the snapshot is as fresh as the last `pka-tools index`.
+- The tutorial, the walkthrough site and the `pka-interface` evals still describe the old behaviour (`sql.js`, absolute links, full-text search in the page).
+
 ## v1.10.0 — 2026-11-20
 
 Lint becomes a tool, finds duplicates, and can run every week. Phase 6 of the v1.7 plan. The repository also gains a walkthrough website.

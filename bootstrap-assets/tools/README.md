@@ -50,6 +50,7 @@ The workspace is `--workspace`, else `$WORKSPACE_ROOT`, else the nearest folder 
 | `log add --role R --summary S [--open T] [--next N]` | Append one well-formed session-log entry | `.pka/session-log.md` |
 | `log open [--last N]` | Open threads of recent entries, newest first | nothing |
 | `log check [--strict]` | Entries that do not follow the grammar | nothing |
+| `dashboard data [--out PATH]` | Write the snapshot `dashboard.html` shows (see "Dashboard data") | `dashboard-data.js` |
 | `lint [--quick] [--strict] [--no-report]` | Health checks (see "Lint"). `--strict` exits 1 when there are unsuppressed findings | `owner-inbox/librarian-lint-<date>.md` |
 | `lint suppress ID [--reason T]`, `lint unsuppress ID` | Hide a finding from later reports, or bring it back | `.pka/lint-suppressions.json` |
 | `lint suppressions` | What is suppressed, and why | nothing |
@@ -149,6 +150,18 @@ Every command that writes to a user's file follows these. The tests in `tests/to
 
 A user's note is written through a symbolic link, as an editor would write it. A file the tools generate is not: the lint report, `.pka/lint-suppressions.json`, the backfill's plan (`.pka/backfill/`), its report in `owner-inbox/` and its backups (`.pka/backups/`). If the file's path is a link or not a regular file, or a folder on the way to it is a link or not a folder, the command exits 1 with a one-line message naming the workspace-relative path, and writes nothing. (`.pka/session-log.md` is a file the user owns and keeps the write-through rule.)
 
+## Dashboard data
+
+`dashboard.html` is opened by double-click, and a page opened from `file://` cannot `fetch` a local file, so it cannot read the index or a note. It can load a script beside it. `dashboard data` writes that script: `dashboard-data.js`, which assigns one object to `window.PKA_DATA`. The page (written by the `pka-interface` skill) draws from it and loads nothing else. The exact shape is in `skills/pka-interface/references/rendering-paths.md`.
+
+- **What is in it.** One row per file (folder, name, title, the note's own date, the day it last changed, size, tags, a summary of at most 160 characters, up to six headings); the Repo Map rows with file counts; people with their newest 50 timeline entries; projects with their status and lifecycle events; the newest 200 open action items (as `actions --all-dates` finds them) and their total; the last 20 session-log entries; counts. Note bodies are not in it, nor are `_MOC.md` files or anything `.pkaignore` hides.
+- **Where it reads.** In index mode the file list, tags and the head of each text (6,000 characters) come from `file_index` and `search_fts`, so it is as fresh as the last `index`; a row whose file has gone is left out and counted (`missing`), and a row whose path is not workspace-relative is left out and counted (`skipped`). Without an index the index roots are walked and read, with the same result. People, timelines, projects, action items and the log are read from the files in both modes. It never creates or changes the index.
+- **A generated file.** Written atomically and never through a symbolic link (see "Generated files are never written through a link"); every path in it is workspace-relative; `root` is the way from the file's folder back to the workspace root (`""` at the root). `--out` must name a `.js` file inside the workspace. A file already there that this command did not write (one that does not begin with its `/* pka-dashboard-data` line) is not overwritten: exit 1. Nothing else in the workspace changes.
+- **Safe to inline.** `<`, `>`, `&`, U+2028 and U+2029 are written as `\uXXXX` escapes, so a note title containing `</script>` cannot end a script element, whether the file is loaded with `src` or pasted into a page.
+- **Deterministic.** The same workspace gives the same bytes, apart from `generated_at`. `PKA_DASHBOARD_NOW=YYYY-MM-DDTHH:MM:SSZ` pins that too (for tests and rehearsals).
+- **Search in the page** runs over these fields, not over note text. `pka-tools search` remains the full-text search.
+- **Size and time** (index mode / markdown-only): 3,000 notes 1.1 MB, 0.5 s / 0.9 s; 20,000 notes 6.0 MB, 3 s / 5 s (up to 6 s on a busy machine). The page then loads in under half a second. `post-route` takes 0.2 s at 20,000 notes and does not run this: refresh the data when the user asks, or once at the end of a session that filed notes.
+
 ## Git rules
 
 There is one: `pka-tools` does not run git. No command stages, commits, resets or pushes, in any repository, and the package has no code that invokes `git`. A workspace may be a repository, contain repositories, or be neither; the tool only edits files. `tests/tools/test_install.py` fails if the package gains a `subprocess` import.
@@ -185,6 +198,7 @@ tools/
     ├── obsidian.py        obsidian bootstrap
     ├── backfill.py        timeline plan / apply / restore
     ├── lint.py            lint, its suppressions, latest and schedule
+    ├── dashboard.py       dashboard data
     └── install.py         install and the manifest
 ```
 

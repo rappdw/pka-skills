@@ -25,6 +25,7 @@ from . import db as db_mod
 from . import indexer, install as install_mod, mocs, obsidian, people as people_mod, pointers, postroute
 from . import backfill as backfill_mod, search as search_mod, sessionlog, timeline as timeline_mod
 from . import lint as lint_mod
+from . import dashboard as dashboard_mod
 from .errors import EXIT_FAIL, EXIT_OK, EXIT_USAGE, ToolError
 from .workspace import Workspace, find_root
 
@@ -632,6 +633,26 @@ def cmd_lint(args: argparse.Namespace) -> int:
     return EXIT_FAIL if args.strict and result["findings"] else EXIT_OK
 
 
+def cmd_dashboard(args: argparse.Namespace) -> int:
+    ws = _workspace(args)
+    result = dashboard_mod.run(ws, out=args.out)
+    counts = result["counts"]
+    text = ["Dashboard data written: %s (%s, %s mode, %.2fs)" % (
+        result["path"], lint_mod.human_size(result["bytes"]), result["mode"], result["seconds"])]
+    text.append("  %d file(s), %d of them notes; %d people; %d project(s); %d open action item(s); %d log entr%s" % (
+        counts["files"], counts["notes"], counts["people"], counts["projects"], counts["open_actions"],
+        counts["activity"], "y" if counts["activity"] == 1 else "ies"))
+    if result["missing"]:
+        text.append("  %d indexed file(s) no longer exist and were left out (run `pka-tools index`)." % result["missing"])
+    if result["skipped"]:
+        text.append("  %d index row(s) with a path that is not workspace-relative were left out." % result["skipped"])
+    text += ["  note: %s" % note for note in result["notes"]]
+    text.append("Reload %s to see it." % dashboard_mod.PAGE_NAME if result["page"]
+                else "There is no %s beside it yet: ask for the dashboard to be built." % dashboard_mod.PAGE_NAME)
+    _emit(args, result, text)
+    return EXIT_OK
+
+
 def cmd_obsidian(args: argparse.Namespace) -> int:
     ws = _workspace(args)
     summary = obsidian.bootstrap(ws, dry_run=args.dry_run)
@@ -897,6 +918,14 @@ def build_parser() -> argparse.ArgumentParser:
     q = lsub.add_parser("check", parents=[common], help="report entries that do not follow the grammar")
     q.add_argument("--strict", action="store_true", help="exit 1 when any entry is malformed")
     q.set_defaults(func=cmd_log)
+
+    p = sub.add_parser("dashboard", help="data for dashboard.html")
+    dsub = p.add_subparsers(dest="dashboard_command", metavar="<dashboard command>", parser_class=_Parser)
+    dsub.required = True
+    q = dsub.add_parser("data", parents=[common],
+                        help="write dashboard-data.js, the snapshot the dashboard page loads")
+    q.add_argument("--out", metavar="PATH", help="where to write it (default: dashboard-data.js at the workspace root)")
+    q.set_defaults(func=cmd_dashboard)
 
     p = sub.add_parser("obsidian", help="Obsidian vault helpers")
     osub = p.add_subparsers(dest="obsidian_command", metavar="<obsidian command>", parser_class=_Parser)
