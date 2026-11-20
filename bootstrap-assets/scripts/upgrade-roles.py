@@ -39,7 +39,9 @@ What this script INTENTIONALLY does NOT do:
   - It does not modify any *existing* H2 section's body. If your
     Key Competencies bullets are out of date relative to the v1.6 seed,
     that's a manual merge — see the diff at the end of the run.
-  - It does not touch the role's frontmatter.
+  - It does not touch the role's frontmatter. Role files used to be seeded
+    with a `model:` line; they no longer are. An existing line is reported
+    ("Pinned models") and left exactly as it is.
   - It does not touch user-defined H2 sections (anything not in the v1.6
     section list below).
 
@@ -1121,6 +1123,23 @@ def obsolete_file_state(filename: str, text: str) -> str:
     return "unchanged"
 
 
+def pinned_model(text: str) -> str | None:
+    """The value of a `model:` line in the file's frontmatter, or None.
+
+    Read only, to report it: the upgrade never edits frontmatter."""
+    lines = text.splitlines()
+    if not lines or lines[0].lstrip("\ufeff").rstrip() != "---":
+        return None
+    for line in lines[1:]:
+        if line.rstrip() in ("---", "..."):
+            return None
+        match = re.match(r"^model\s*:\s*(.*?)\s*(?:#.*)?$", line)
+        if match:
+            value = match.group(1).strip("\"'")
+            return value or None
+    return None
+
+
 def unique_backup_root(parent: Path, stamp: str) -> Path:
     """A backup directory name that does not exist yet. Two runs within the
     same second get `<stamp>` and `<stamp>-2` rather than a crash."""
@@ -1159,6 +1178,7 @@ def upgrade_workspace(workspace: Path, dry_run: bool = False, refresh: bool = Fa
         "refresh": {},
         "obsolete": {},
         "obsolete_files": {},
+        "pinned_models": {},
         "refresh_applied": refresh,
         "dry_run": dry_run,
     }
@@ -1264,6 +1284,18 @@ def upgrade_workspace(workspace: Path, dry_run: bool = False, refresh: bool = Fa
             continue
         if not dry_run:
             write_text_exact(role_path, final)
+
+    # 4. Role files that pin a model. Reported, never changed: frontmatter is
+    # the user's. Every role in the folder counts, not only the seeded three.
+    for path in sorted(roles_dir.glob("*.md")):
+        if path.name.startswith("_") or path.name == "roster.md" or not path.is_file():
+            continue
+        try:
+            model = pinned_model(read_text_exact(path))
+        except (OSError, UnicodeDecodeError):
+            continue
+        if model:
+            summary["pinned_models"][path.name] = model
 
     return summary
 
@@ -1377,6 +1409,15 @@ def print_summary(s: dict) -> None:
         if any(item["state"] == "customised" for _, item in gone):
             print("  A customised obsolete section stays until you remove it: edit the file, or pass")
             print("  --refresh --refresh-section 'FILE:## Heading'.")
+        print()
+    pinned = s.get("pinned_models", {})
+    if pinned:
+        print("Pinned models (frontmatter is never changed by the upgrade):")
+        for filename, model in pinned.items():
+            print(f"  {filename}: model: {model}  — left alone")
+        print("  Role files are now seeded without a `model:` line, so a role runs on the session's")
+        print("  model. A pinned model can now be removed by hand: delete the line from the file's")
+        print("  frontmatter. Keep it if you set it on purpose.")
         print()
     print("NOTE: Sections outside the seeded set (e.g. 'Key Competencies', 'Output")
     print("      Conventions', 'Invocation') are never modified. If you want later")

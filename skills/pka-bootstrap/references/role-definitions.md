@@ -30,7 +30,6 @@ role: <slug>
 alias:                    # optional — set for persona-style naming
                           # when set: @role slug and alias both work as @mentions
                           # CLAUDE.md ## Roles section updated to list alias
-model: claude-opus-4-5
 status: active
 tools: [<tool_list>]
 ---
@@ -58,6 +57,18 @@ tools: [<tool_list>]
 Delegate to @<slug> when: <trigger topics>
 ```
 
+### No model is pinned
+
+A role file has no `model:` line: the role runs on whatever model the session is using, so a workspace follows the model its owner chooses and never asks for one that has been retired. Seeds are written without the line, and so is a role added later.
+
+A user who wants one role on a particular model adds the line to that role's frontmatter themselves:
+
+```yaml
+model: <model id>
+```
+
+Leave an existing `model:` line alone. Never add one, change one or remove one unless the user asks. Releases up to v1.10.0 seeded `model: claude-opus-4-5`; `bootstrap upgrade` does not edit frontmatter, so it lists those lines and says they can be removed by hand.
+
 ---
 
 ## Seed Role: @orchestrator
@@ -65,7 +76,6 @@ Delegate to @<slug> when: <trigger topics>
 ```markdown
 ---
 role: orchestrator
-model: claude-opus-4-5
 status: active
 tools: [file_read, file_write, bash, web_search]
 ---
@@ -151,7 +161,6 @@ The orchestrator is always active. It handles session start, session end, Repo M
 ```markdown
 ---
 role: researcher
-model: claude-opus-4-5
 status: active
 tools: [web_search, file_read, file_write]
 ---
@@ -224,7 +233,6 @@ Delegate to @researcher when: the user asks about a topic that requires synthesi
 ```markdown
 ---
 role: librarian
-model: claude-opus-4-5
 status: active
 tools: [file_read, file_write, bash]
 ---
@@ -315,12 +323,14 @@ The roster file at `.pka/roles/roster.md` lists all active roles:
 
 | Role | Alias | Status | Model | Added |
 |------|-------|--------|-------|-------|
-| @orchestrator | — | active | claude-opus-4-5 | {{bootstrap_date}} |
-| @researcher | — | active | claude-opus-4-5 | {{bootstrap_date}} |
-| @librarian | — | active | claude-opus-4-5 | {{bootstrap_date}} |
+| @orchestrator | — | active | session | {{bootstrap_date}} |
+| @researcher | — | active | session | {{bootstrap_date}} |
+| @librarian | — | active | session | {{bootstrap_date}} |
 ```
 
 Updated whenever a role is added, modified, or deactivated.
+
+The Model column mirrors the role file: `session` when the file has no `model:` line (the role uses the session's model), otherwise the id the user pinned there. A roster written by a release up to v1.10.0 shows `claude-opus-4-5`; it is corrected when the user removes the line from the role file, not before.
 
 ---
 
@@ -328,7 +338,7 @@ Updated whenever a role is added, modified, or deactivated.
 
 1. User requests a new role (e.g., "Add a data analyst to my team")
 2. @researcher generates a competency brief → `owner-inbox/research-<role>-<date>.md`
-3. New role `.md` written to `.pka/roles/` following the schema above
+3. New role `.md` written to `.pka/roles/` following the schema above (no `model:` line unless the user names a model for this role)
 4. If alias requested, `CLAUDE.md` `## Roles` section updated to list alias
 5. `roster.md` updated with new row
 6. Definition shown to user for confirmation before finalizing

@@ -241,13 +241,30 @@ pre_fm=$(sed -n '1,/^---$/p; /^---$/q' "$ws/.pka/roles/orchestrator.md" | head -
 pre_model=$(grep "^model:" "$ws/.pka/roles/orchestrator.md" | head -1)
 pre_role=$(grep "^role:" "$ws/.pka/roles/orchestrator.md" | head -1)
 
-run_upgrade "$ws" >/dev/null 2>&1
+out=$(run_upgrade "$ws" 2>&1)
 
 post_model=$(grep "^model:" "$ws/.pka/roles/orchestrator.md" | head -1)
 post_role=$(grep "^role:" "$ws/.pka/roles/orchestrator.md" | head -1)
 
 assert_eq "$pre_model" "$post_model" "model: line preserved (was customized to claude-opus-4-7)"
 assert_eq "$pre_role"  "$post_role"  "role: line preserved"
+
+# Seeds no longer pin a model; an existing pin is reported, not removed.
+echo "$out" | grep -q "orchestrator.md: model: claude-opus-4-7  — left alone" \
+  && pass_step "summary lists the pinned model and leaves it" || fail "pinned model not reported"
+echo "$out" | grep -q "librarian.md: model: claude-opus-4-5  — left alone" \
+  && pass_step "summary lists the model an earlier release seeded" || fail "seeded model not reported"
+echo "$out" | grep -q "can now be removed by hand" \
+  && pass_step "summary says a pinned model can be removed by hand" || fail "no removal hint"
+assert_eq "3" "$(grep -c "^model:" "$ws"/.pka/roles/orchestrator.md "$ws"/.pka/roles/librarian.md "$ws"/.pka/roles/researcher.md | awk -F: '{n+=$2} END {print n}')" "all three model: lines still there"
+
+# Without the line there is nothing to report.
+for f in orchestrator librarian researcher; do
+  grep -v "^model:" "$ws/.pka/roles/$f.md" > "$ws/.pka/roles/$f.md.tmp" && mv "$ws/.pka/roles/$f.md.tmp" "$ws/.pka/roles/$f.md"
+done
+out=$(run_upgrade "$ws" 2>&1)
+echo "$out" | grep -q "Pinned models" && fail "pinned models reported when no role has a model: line" \
+  || pass_step "nothing reported once the lines are gone"
 
 cleanup_workspace "$ws"
 

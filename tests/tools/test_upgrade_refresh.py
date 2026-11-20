@@ -31,6 +31,15 @@ def seed_file(role: str) -> str:
     return "\n".join(seeds.role_seed(role)).strip("\n") + "\n"
 
 
+def seed_with_model(role: str) -> str:
+    """The current seed as a workspace seeded up to v1.10.0 ends up after a
+    refresh: identical, plus the `model:` line the upgrade never removes."""
+    seed = seed_file(role)
+    marker = "role: %s\n" % role
+    assert marker in seed
+    return seed.replace(marker, marker + "model: claude-opus-4-5\n", 1)
+
+
 def replace_section(text: str, heading: str, new_section: str) -> str:
     up = upgrade_module()
     for found, start, _body, end in up.h2_sections(text):
@@ -181,7 +190,7 @@ class Obsolete(support.ToolsCase):
         self.assertIn("_git-protocol.md (whole file)  — removed", out)
         self.assertFalse(self.path(".pka/roles/_git-protocol.md").exists())
         for name in ("librarian.md", "researcher.md"):
-            self.assertEqual(self.text(".pka/roles/" + name), seed_file(name[:-3]), name)
+            self.assertEqual(self.text(".pka/roles/" + name), seed_with_model(name[:-3]), name)
         # The orchestrator's unseeded sections (Key Competencies, Output
         # Conventions, Invocation) are the owner's and are never rewritten,
         # so only its seeded sections can be compared with the current seed.
@@ -213,7 +222,7 @@ class Obsolete(support.ToolsCase):
         # removed only when the owner names it
         out = self.run_upgrade("--refresh", "--refresh-section", "researcher.md:" + COMMIT_PUSH)
         self.assertIn("removed as requested", out)
-        self.assertEqual(self.text(".pka/roles/researcher.md"), seed_file("researcher"))
+        self.assertEqual(self.text(".pka/roles/researcher.md"), seed_with_model("researcher"))
 
     def test_a_customised_git_protocol_file_is_kept(self):
         text = self.text(".pka/roles/_git-protocol.md") + "\nSam: we push from the office network only.\n"
@@ -251,6 +260,85 @@ class Obsolete(support.ToolsCase):
         self.assertNotIn(b"\n", data.replace(b"\r\n", b""))          # still CRLF throughout
         self.assertTrue(data.endswith(b"coordination.\r\n"))
         self.assertEqual(self.headings("orchestrator.md"), self.seed_headings("orchestrator"))
+
+
+class PinnedModels(support.ToolsCase):
+    """Role seeds no longer pin a model. An existing `model:` line is the
+    user's frontmatter: reported, and left byte for byte."""
+
+    fixture = False
+    ROLES = ("orchestrator.md", "librarian.md", "researcher.md")
+
+    def setUp(self):
+        super().setUp()
+        (self.ws / ".pka" / "roles").mkdir(parents=True)
+
+    def run_upgrade(self, *args):
+        proc = subprocess.run([sys.executable, str(self.path(".pka/upgrade-roles.py")), "--workspace", str(self.ws)]
+                              + list(args), env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        return proc.stdout
+
+    def frontmatter(self, name):
+        text = self.text(".pka/roles/" + name)
+        return text[:text.index("\n---", 4) + 5]
+
+    def test_the_seeds_pin_no_model(self):
+        reference = (support.REPO / "skills" / "pka-bootstrap" / "references" / "role-definitions.md").read_text(
+            encoding="utf-8")
+        for role in ("orchestrator", "librarian", "researcher"):
+            seed = seed_file(role)
+            head = seed[:seed.index("\n---", 4)]
+            self.assertIn("role: %s" % role, head)
+            self.assertNotIn("model", head, role)
+        self.assertIsNone(upgrade_module().pinned_model(seed_file("orchestrator")))
+        # Nowhere in the reference is a model id seeded, in a role or in the roster.
+        self.assertNotIn("model: claude", reference.replace("seeded `model: claude-opus-4-5`", ""))
+        self.assertNotIn("| claude-", reference)
+
+    def test_an_existing_model_line_is_reported_and_left_alone(self):
+        for name in self.ROLES:
+            self.write(".pka/roles/" + name, (V170 / name).read_text(encoding="utf-8"))
+        text = self.text(".pka/roles/researcher.md").replace("model: claude-opus-4-5", "model: \"claude-fable-5\"  # Sam")
+        self.write(".pka/roles/researcher.md", text)
+        before = {name: self.frontmatter(name) for name in self.ROLES}
+        for args in ((), ("--dry-run",), ("--refresh",)):
+            out = self.run_upgrade(*args)
+            self.assertIn("Pinned models (frontmatter is never changed by the upgrade):", out)
+            self.assertIn("orchestrator.md: model: claude-opus-4-5  — left alone", out)
+            self.assertIn("researcher.md: model: claude-fable-5  — left alone", out)
+            self.assertIn("can now be removed by hand", out)
+            self.assertEqual({name: self.frontmatter(name) for name in self.ROLES}, before, args)
+
+    def test_a_role_the_user_added_is_listed_too(self):
+        self.write(".pka/roles/orchestrator.md", seed_file("orchestrator"))
+        self.write(".pka/roles/analyst.md", "---\r\nrole: analyst\r\nmodel: claude-opus-4-5\r\n---\r\n\r\n# @analyst\r\n")
+        self.write(".pka/roles/roster.md", "# Role Roster\n\n| @analyst | — | active | claude-opus-4-5 | 2026-01-05 |\n")
+        before = (self.read(".pka/roles/analyst.md"), self.read(".pka/roles/roster.md"))
+        out = self.run_upgrade("--refresh")
+        self.assertIn("analyst.md: model: claude-opus-4-5  — left alone", out)
+        self.assertNotIn("orchestrator.md: model:", out)
+        self.assertNotIn("roster.md: model:", out)
+        self.assertEqual((self.read(".pka/roles/analyst.md"), self.read(".pka/roles/roster.md")), before)
+
+    def test_nothing_is_said_when_no_role_pins_a_model(self):
+        for role in ("orchestrator", "librarian", "researcher"):
+            self.write(".pka/roles/%s.md" % role, seed_file(role))
+        # `model:` in a body, or in a fenced example, is not frontmatter.
+        self.write(".pka/roles/notes.md", "---\nrole: notes\n---\n\nmodel: claude-opus-4-5\n")
+        self.write(".pka/roles/plain.md", "model: claude-opus-4-5\n")
+        self.write(".pka/roles/_obsidian.md", "---\nmodel: x\n---\n")
+        out = self.run_upgrade()
+        self.assertNotIn("Pinned models", out)
+
+    def test_pinned_model_reader(self):
+        read = upgrade_module().pinned_model
+        self.assertEqual(read("---\nrole: x\nmodel: claude-opus-4-5\n---\n"), "claude-opus-4-5")
+        self.assertEqual(read("\ufeff---\r\nmodel:   'm-1'  \r\n---\r\n"), "m-1")
+        self.assertIsNone(read("---\nrole: x\nmodel:\n---\n"))
+        self.assertIsNone(read("---\nrole: x\nmodels: [a]\n---\nmodel: y\n"))
+        self.assertIsNone(read("# no frontmatter\nmodel: y\n"))
+        self.assertIsNone(read(""))
 
 
 class SingleSource(unittest.TestCase):

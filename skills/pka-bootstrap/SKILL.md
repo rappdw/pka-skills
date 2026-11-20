@@ -240,7 +240,7 @@ Generate `.pka/owner-profile.md` from Q1 interview responses. See `references/ow
 
 ### 3f — Role definition files and shared references
 
-Seed roles in `.pka/roles/`: orchestrator, researcher, librarian. See `references/role-definitions.md` for the standard schema and seed definitions.
+Seed roles in `.pka/roles/`: orchestrator, researcher, librarian. See `references/role-definitions.md` for the standard schema and seed definitions. The seeds have no `model:` line: a role runs on the session's model unless the user adds one.
 
 Also seed two shared-reference files in `.pka/roles/` (these are **not roles** — they have no `role:` frontmatter and aren't in the roster, but they sit alongside roles because the roles reference them):
 
@@ -428,6 +428,7 @@ Full step-by-step algorithm in `references/upgrade.md`. Summary:
    - Never modifies the body of existing sections on this run
    - Lists **sections seeded by an earlier version**: "can be refreshed" (the text is exactly what an earlier version shipped, so the user never edited it) or "customised — left alone"
    - Lists **obsolete** sections and files, left by the removed commit/push protocol (`.pka/roles/_git-protocol.md`, the "Commit/push protocol" sections, the orchestrator's push sections): "can be removed" or "customised — left alone"
+   - Lists **pinned models**: role files whose frontmatter has a `model:` line. It never changes them
 4. **Print the helper's summary** to the user.
 5. **Offer the refresh, if the summary lists sections that can be refreshed or removed.** These carry superseded instructions (the pre-v1.7 pointer-row rule, for example). Ask once, naming both kinds; on a yes run `python3 .pka/upgrade-roles.py --workspace <root> --refresh`. It takes a new backup, replaces the refreshable sections, removes the obsolete ones that were never edited, and leaves customised ones alone. Until the obsolete sections are gone the role files still tell the roles to commit, to push and to run helper scripts the upgrade has just moved to the backup folder. Say this plainly if the user declines the refresh or a section is customised and stays: those instructions must not be followed, and they should remove or reword them.
    - For a **customised** section, show the difference with `--diff` and let the user decide. Replace one (or remove an obsolete one) only on an explicit yes for that section: `--refresh --refresh-section '<file>:## <Heading>'`. Never pass `--refresh-section` on your own judgement — it overwrites or removes the user's text (the backup keeps it). A customised `_git-protocol.md` is never removed by the helper; the user deletes it when they no longer want it.
@@ -436,6 +437,7 @@ Full step-by-step algorithm in `references/upgrade.md`. Summary:
    - If there is no Obsidian vault and no `_MOC.md` anywhere in `knowledge/`, mention that the pointer layer is opt-in (step 3j of base bootstrap).
    - If the workspace has a `.meta` file at root, tell the user what changed for it (see "Workspaces with nested repositories").
    - Mention the manual bullet-merges into `## Key Competencies` and `## Output Conventions` (the upgrade does not touch these — see `references/upgrade.md` for the rationale).
+   - If the summary lists pinned models, say that roles no longer pin a model and that each listed `model:` line can be removed so the role follows the session's model. Offer to remove them; do it only on a yes, per file, and set that role's Model cell in `roster.md` to `session`.
    - Show the weekly health-check entry: run `.pka/bin/pka-tools lint schedule` and relay what it prints. Nothing is installed; installing it is the user's to do, and they can skip it. If they already installed it for this workspace, there is nothing to change.
 
 ### Hard rules
