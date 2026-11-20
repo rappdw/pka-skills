@@ -24,6 +24,9 @@ MOC_NAME = "_MOC.md"
 # Folders at the workspace root that never hold knowledge to index.
 _NEVER_ROOTS = {"owner-inbox", "team-inbox", "projects", "meeting-notes", "node_modules"}
 
+# Root folders a timeline never links into: what is there is not filed yet.
+UNFILED_ROOTS = ("owner-inbox", "team-inbox")
+
 
 class RepoMapEntry:
     __slots__ = ("folder", "priority", "status", "tags")
@@ -74,6 +77,33 @@ class Workspace:
     @property
     def obsidian_present(self) -> bool:
         return (self.root / "knowledge" / ".obsidian").is_dir()
+
+    @property
+    def link_root(self) -> Path:
+        """What a timeline can link to, and what its keys are relative to:
+        the vault in an Obsidian workspace (a wikilink cannot leave it),
+        otherwise the whole workspace (plain relative links reach anywhere)."""
+        return self.vault if self.obsidian_present else self.root
+
+    def link_scope_problem(self, path: Path) -> Optional[str]:
+        """Why a timeline cannot link to `path`, or None when it can."""
+        try:
+            parts = Path(path).relative_to(self.link_root).parts
+        except ValueError:
+            return "outside the vault" if self.obsidian_present else "outside the workspace"
+        if any(part.startswith(".") for part in parts[:-1]):
+            return "inside a hidden folder"
+        if self.link_root == self.root and parts and parts[0] in UNFILED_ROOTS:
+            return "in %s/, which holds what is not filed yet" % parts[0]
+        return None
+
+    def link_rel(self, path: Path) -> str:
+        """`path` relative to the link root; a usage error when a timeline
+        cannot link to it."""
+        problem = self.link_scope_problem(path)
+        if problem:
+            raise ToolError("%s is %s; a timeline cannot link to it" % (self.rel(path), problem), EXIT_USAGE)
+        return Path(path).relative_to(self.link_root).as_posix()
 
     @property
     def ignore(self) -> Ignore:

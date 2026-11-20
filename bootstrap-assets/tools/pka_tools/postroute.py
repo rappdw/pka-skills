@@ -87,11 +87,12 @@ def run(
     if topic and not pointers.slugify(topic):
         raise ToolError("--topic %r has no letters or digits to make a slug from" % topic, EXIT_USAGE)
     in_vault = _in_vault(ws, path)
+    scope_problem = ws.link_scope_problem(path)     # the timeline's reach is wider without Obsidian
     rel = ws.rel(path)
     if section is not None and in_vault:
         _check_section(ws, path, section)
-    reg = people.registry(ws) if (in_vault and do_timeline) else None
-    if do_timeline and in_vault:
+    reg = people.registry(ws) if (scope_problem is None and do_timeline) else None
+    if do_timeline and scope_problem is None:
         for slug in list(timeline_people or []) + list((summary_for or {}).keys()):
             if reg is None or reg.get(slug) is None:
                 raise ToolError("no person folder %r for the timeline" % slug, EXIT_USAGE)
@@ -174,8 +175,8 @@ def run(
             record("pointers", "skipped", exc.message)
 
     # 4. timeline
-    if not in_vault:
-        record("timeline", "not-applicable", "outside the vault")
+    if scope_problem is not None:
+        record("timeline", "not-applicable", scope_problem)
     elif not do_timeline:
         record("timeline", "not-requested")
     elif reg is None or reg.home is None:

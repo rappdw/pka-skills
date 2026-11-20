@@ -23,7 +23,7 @@ from . import __version__
 from . import actions as actions_mod
 from . import db as db_mod
 from . import indexer, install as install_mod, mocs, obsidian, people as people_mod, pointers, postroute
-from . import search as search_mod, sessionlog, timeline as timeline_mod
+from . import backfill as backfill_mod, search as search_mod, sessionlog, timeline as timeline_mod
 from .errors import EXIT_FAIL, EXIT_OK, EXIT_USAGE, ToolError
 from .workspace import Workspace, find_root
 
@@ -79,6 +79,7 @@ def cmd_status(args: argparse.Namespace) -> int:
         "vendored_files": vendored,
         "vault": ws.rel(ws.vault) or ".",
         "obsidian_present": ws.obsidian_present,
+        "timeline_reach": ws.rel(ws.link_root) or ".",
         "storage_mode": "index" if schema is not None else "markdown-only",
         "schema_version": schema,
         "schema_current": schema == db_mod.SCHEMA_VERSION if schema is not None else None,
@@ -92,6 +93,7 @@ def cmd_status(args: argparse.Namespace) -> int:
         "pka-tools:        %s (vendored: %s)" % (__version__, manifest_version or "no manifest"),
         "Vault:            %s" % data["vault"],
         "Obsidian:         %s" % ("present" if data["obsidian_present"] else "not present"),
+        "Timelines reach:  %s" % data["timeline_reach"],
         "Storage:          %s" % (
             "markdown-only (no index)" if schema is None
             else "index, schema version %d%s" % (schema, "" if data["schema_current"] else " (needs `db migrate`)")
@@ -466,9 +468,7 @@ def cmd_timeline(args: argparse.Namespace) -> int:
         _emit(args, result, text)
         return EXIT_OK
     if command == "rename":
-        old = pointers._normalise_ref(ws, args.old)
-        new = pointers._normalise_ref(ws, args.new)
-        result = timeline_mod.rename(ws, old, new, prefix=args.prefix, dry_run=args.dry_run)
+        result = timeline_mod.rename(ws, args.old, args.new, prefix=args.prefix, dry_run=args.dry_run)
         text = ["%d timeline link(s) rewritten in %d file(s)%s" % (result["rewrites"], len(result["changed"]),
                                                                   " (dry run)" if args.dry_run else "")]
         text += ["  %s" % rel for rel in result["changed"]]
@@ -482,6 +482,46 @@ def cmd_timeline(args: argparse.Namespace) -> int:
                  for p in result["problems"]]
         _emit(args, result, text)
         return EXIT_FAIL if args.strict and result["problems"] else EXIT_OK
+    if command == "plan":
+        result = backfill_mod.plan(ws, since=args.since, person=args.person, include_large=args.include_large,
+                                   write=not args.no_write)
+        text = ["Backfill plan %s: %d line(s) to add on %d timeline(s); %d already there"
+                % (result["id"], len(result["entries"]), len(result["targets"]), result["already_present"])]
+        if result["report_file"]:
+            text.append("Review: %s" % result["report_file"])
+            text.append("Then:   pka-tools timeline apply %s" % result["plan_file"])
+        text += _listed("Ambiguous names (not added)", ["%r: %s" % (a["text"], ", ".join(a["candidates"]))
+                                                         for a in result["ambiguous"]])
+        text += _listed("Undated notes (not added)", [u["note"] for u in result["undated"]])
+        text += _listed("People whose page cannot be written", ["%s: %s" % (s["slug"], s["problem"])
+                                                                  for s in result["people_skipped"]])
+        _emit(args, result, text)
+        return EXIT_OK
+    if command == "apply":
+        result = backfill_mod.apply(ws, args.plan, dry_run=args.dry_run)
+        if args.dry_run:
+            text = ["Would add %d line(s) to %d file(s)" % (result["entries"], len(result["files"]))]
+            text += ["  %s" % rel for rel in result["files"]]
+        elif result["problems"]:
+            text = ["Backfill NOT applied; the check failed and the pages were %s:"
+                    % ("put back" if result["restored"] else "NOT all put back (see below)")]
+            text += ["  %s" % p for p in result["problems"]]
+        else:
+            text = ["Added %d line(s) to %d file(s); verified. Backup: %s" % (result["entries"], len(result["files"]),
+                                                                            result["backup"])]
+            text.append("Nothing was committed: review the changed pages and commit them yourself.")
+            if result["backup"]:
+                text.append("Undo:   pka-tools timeline restore %s" % result["backup"].rsplit("/", 1)[-1])
+        _emit(args, result, text)
+        return EXIT_FAIL if result["problems"] else EXIT_OK
+    if command == "restore":
+        result = backfill_mod.restore(ws, args.backup, force=args.force, dry_run=args.dry_run)
+        text = ["%s %d file(s) from %s" % ("Would restore" if args.dry_run else "Restored", len(result["restored"]),
+                                          result["backup"])]
+        text += ["  %s" % rel for rel in result["restored"]]
+        text += ["  NOT restored %s: %s" % (f["file"], f["reason"]) for f in result["failed"]]
+        _emit(args, result, text)
+        return EXIT_FAIL if result["failed"] else EXIT_OK
     result = timeline_mod.strip(ws, args.person, dry_run=args.dry_run)
     text = ["Timeline blocks removed from %d file(s)%s" % (len(result["changed"]), " (dry run)" if args.dry_run else "")]
     text += ["  %s" % rel for rel in result["changed"]]
@@ -726,6 +766,22 @@ def build_parser() -> argparse.ArgumentParser:
     q.set_defaults(func=cmd_timeline)
     q = tsub.add_parser("check", parents=[common], help="unreadable blocks, broken links, lines out of order")
     q.add_argument("--strict", action="store_true")
+    q.set_defaults(func=cmd_timeline)
+    q = tsub.add_parser("plan", parents=[common],
+                        help="backfill: work out the timeline lines for existing notes; writes a report and a plan")
+    q.add_argument("--since", metavar="YYYY-MM-DD", help="only notes dated on or after this day")
+    q.add_argument("--person", metavar="SLUG", help="only this person")
+    q.add_argument("--include-large", action="store_true", help="add the attendees of large meetings too")
+    q.add_argument("--no-write", action="store_true", help="print the plan; write neither the report nor the plan file")
+    q.set_defaults(func=cmd_timeline)
+    q = tsub.add_parser("apply", parents=[common], help="backfill: write a plan's lines, verify, back up")
+    q.add_argument("plan", metavar="PLAN", help="the plan file (.pka/backfill/plan-<id>.json)")
+    q.add_argument("--dry-run", action="store_true")
+    q.set_defaults(func=cmd_timeline)
+    q = tsub.add_parser("restore", parents=[common], help="backfill: put the person pages back as they were")
+    q.add_argument("backup", metavar="BACKUP", help="the backup id printed by apply (in .pka/backups/)")
+    q.add_argument("--force", action="store_true", help="restore files edited since the backfill too")
+    q.add_argument("--dry-run", action="store_true")
     q.set_defaults(func=cmd_timeline)
     q = tsub.add_parser("strip", parents=[common], help="remove timeline blocks (rollback)")
     q.add_argument("--person", metavar="SLUG", help="only this person")
