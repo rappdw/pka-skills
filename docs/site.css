@@ -365,6 +365,7 @@ main {
   .cols.stack { grid-template-columns: minmax(0, 1fr); gap: 2rem; }
   .cols.stack .prose { columns: 2; column-gap: 2.75rem; }
   .cols.stack .prose > * { break-inside: avoid; }
+  .cols.stack .prose h3 { break-after: avoid; }
   .cols.stack .visuals { order: -1; }
 }
 .prose, .visuals { min-width: 0; }
@@ -406,6 +407,27 @@ main {
 .try li::after { content: "\201D"; }
 .try li code { font-style: normal; font-size: 0.82em; }
 .try p { margin: 0.4rem 0 0; font-size: 0.86rem; color: var(--muted); }
+
+/* ---------- start here ---------- */
+
+.start {
+  padding: 1rem 1.1rem 0.9rem;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+}
+.start h3 {
+  margin: 0 0 0.5rem;
+  font: 600 0.78rem/1.2 var(--sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.start ol { margin: 0; padding-left: 1.2rem; font-size: 0.95rem; line-height: 1.5; }
+.start li { margin-bottom: 0.4rem; }
+.start li::marker { font-weight: 600; }
+.start code { background: var(--surface); }
+.start p { margin: 0.5rem 0 0; font-size: 0.9rem; }
+.start a { color: var(--ink); font-weight: 600; }
 
 /* ---------- figures: shared frame ---------- */
 
@@ -461,15 +483,17 @@ figure { margin: 0; min-width: 0; }
   border-color: var(--term-line);
   color: var(--term-muted);
 }
+.term > figcaption { flex-wrap: nowrap; align-items: flex-start; }
 .term > figcaption::before {
   content: "";
   width: 0.55rem;
   height: 0.55rem;
+  margin-top: 0.4em;
   border-radius: 50%;
   background: var(--term-accent);
-  align-self: center;
   flex: none;
 }
+.prose .scroller { margin-bottom: 1rem; }
 .term .pr { color: var(--term-accent); user-select: none; }
 .term .cmd { color: #ffffff; font-weight: 600; }
 .term .dim { color: var(--term-muted); }
