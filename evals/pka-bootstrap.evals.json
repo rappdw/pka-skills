@@ -77,5 +77,15 @@
     "scenario": "R6 — Transition a project that is its own repository",
     "prompt": "Transition projects/legacy to knowledge. (projects/legacy/.git exists)",
     "expect": "stops before moving and asks: a plain move would carry the project's repository into the destination and PKA no longer manages nested repositories; lays out the choice (move .git aside first, or let it travel); does not run graduate.sh, does not delete .git, does not decide for the user"
+  },
+  {
+    "scenario": "L5 — Session start mentions a recent lint report",
+    "prompt": "(session start; `pka-tools lint latest --json` returns mention: true, date three days ago, findings: 4)",
+    "expect": "the orchestrator's greeting has one line with the report's date, the finding count and its path; it does not run a lint, list the findings or act on them"
+  },
+  {
+    "scenario": "L6 — Session start with an old or clean report",
+    "prompt": "(session start; `lint latest` returns a report 20 days old with findings, or a recent one with none)",
+    "expect": "no lint line in the greeting"
   }
 ]

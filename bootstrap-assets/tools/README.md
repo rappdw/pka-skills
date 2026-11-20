@@ -50,6 +50,11 @@ The workspace is `--workspace`, else `$WORKSPACE_ROOT`, else the nearest folder 
 | `log add --role R --summary S [--open T] [--next N]` | Append one well-formed session-log entry | `.pka/session-log.md` |
 | `log open [--last N]` | Open threads of recent entries, newest first | nothing |
 | `log check [--strict]` | Entries that do not follow the grammar | nothing |
+| `lint [--quick] [--strict] [--no-report]` | Health checks (see "Lint"). `--strict` exits 1 when there are unsuppressed findings | `owner-inbox/librarian-lint-<date>.md` |
+| `lint suppress ID [--reason T]`, `lint unsuppress ID` | Hide a finding from later reports, or bring it back | `.pka/lint-suppressions.json` |
+| `lint suppressions` | What is suppressed, and why | nothing |
+| `lint latest` | The newest report: path, date, age in days, finding count, and whether session start should mention it | nothing |
+| `lint schedule` | Print a weekly cron line and a launchd file for a quick lint. Installs nothing | nothing |
 
 ### Deprecated, accepted and ignored
 
@@ -87,7 +92,7 @@ A step that cannot do its work reports why and the later steps still run. Runnin
 | Code | Meaning |
 |---|---|
 | 0 | Done, including "nothing to do" |
-| 1 | The operation was attempted and failed (a migration rolled back) |
+| 1 | The operation was attempted and failed (a migration rolled back), or a `--strict` check found something |
 | 2 | A prerequisite is missing: Python older than 3.9, SQLite without FTS5 |
 | 3 | The workspace is not ready: no `.pka/`, no index, index needs `db migrate`, no Obsidian vault |
 | 64 | Bad arguments. Nothing was touched |
@@ -117,6 +122,20 @@ Every command that writes to a user's file follows these. The tests in `tests/to
 - **Reach** (`Workspace.link_root`). With Obsidian a timeline links only to notes in the vault, and keys are vault-relative. Without it a timeline links to any note in the workspace (`projects/`, a root meeting folder) except `owner-inbox/`, `team-inbox/` and hidden folders, and keys are workspace-relative; a wikilink typed by hand is still read relative to the vault, as Obsidian would. `timeline rename` and `pointers rename` take workspace paths (a vault-relative one still works). When a filed note and the person pages it touches are in different repositories, `post-route` commits each repository separately. `graduate.sh` prints the `timeline rename` to run when person pages link into the graduated project.
 - **Backfill** (`timeline plan`, `apply`, `restore`). Planning walks what a timeline can link to (not MOCs, person pages, wiki folders, capture directories or `.pkaignore` matches; markdown and office documents), decides who each note belongs to exactly as for a newly filed note, and also counts a link in the old back-link sections of a person's own page (`## Mentioned in`, `## Related meetings`, `## Inbound References`, `## References`) as T2 evidence. A note with no date (filename prefix or frontmatter `date`) is reported, never dated from its modification time; so is a note whose name a link cannot carry (an upper-case `.MD`, angle brackets without Obsidian). Lines get no summary. Plan and backup ids are unique even within one second. The plan records a hash of every page it will write and every note it cites. `apply` first checks the plan file (every target must be the page of a person folder and every line a timeline line linking to its note; anything else is a usage error, exit 64), then refuses if a page or note changed or a planned stub appeared (plan again), or if the plan was made with Obsidian in a workspace without it (or the reverse). It backs the pages up, records each page's new hash before writing it, adds only lines whose note is not already on the timeline, then checks that every planned line is there, every link resolves, and nothing else in that scope changed (dot-folders such as `.obsidian`, and the inboxes, excepted). A failed check, an exception or an interrupt puts every page back. Nothing is committed. `restore` checks that every file in the record is still the page of its person folder (all or nothing), removes stubs the apply created, and refuses a page edited after the apply, or one whose state after the apply was not recorded, unless `--force`; a backup that was rolled back has nothing to restore.
 - `timeline strip` removes the blocks, the `## Timeline` heading when nothing else is under it, and an `index.md` that was only the stub the tool created. Text the user typed inside a block goes with it. Whitespace next to the block may differ by a line from before the first `add`.
+
+## Lint
+
+`lint` reads the workspace and writes one file, the report. It never edits, moves or deletes a note, and it runs with no model and no network.
+
+- **Scope.** Every file under the workspace root that `walk` yields: not dot-folders (so not `.pka/`), not `.pkaignore` matches, not the contents of earshot capture directories, not dotfiles, and not the reports the tools themselves write into `owner-inbox/` (`librarian-lint-*.md`, `timeline-backfill-plan-*.md`). Files that are not UTF-8 are listed under "Not read".
+- **Rules.** 1 files in `team-inbox/unsorted/` older than 14 days (by modification time). 2 broken links: wikilinks (alias, anchor, `.md`, non-markdown targets; read relative to the vault, then the workspace root; a folder counts as present) and relative markdown links (percent-decoded, `<…>` form, read relative to the file); web and mail links, anchors, absolute paths and paths leaving the workspace are skipped, as are code spans, fenced blocks and HTML comments; a link in a Pointers row carries its topic. 3 backticked paths in a `wiki.md` `## Sources` list that exist nowhere (root, vault, the wiki's folder). 4 Repo Map folders that are missing or hold no `.md`, `.pdf`, `.docx` or `.txt`. 5 one informational finding (`5-timelines`) with the count of timeline lines `timeline plan` would add; skipped without a people folder. 8a files with the same SHA-256 (empty files and sidecars excluded). 8b the same normalised text (frontmatter dropped, case-folded, whitespace collapsed; at least 80 characters), for markdown and text files and for other files through their OCR sidecar. 8c notes of 200 or more words whose five-word shingles are at least 80% alike (Jaccard) or where the shorter is at least 90% contained in the longer. 8d two person folders sharing a name, slug or alias (compared as `people resolve` compares), or one slug's words a proper subset of the other's; two `wiki.md` with the same `topic`; one topic slug on two rows of one MOC's Pointers table.
+- **`--quick`** runs 1 to 4, 8a and 8b. Rules 6 and 7 are the librarian's; the report ends with a section and a marker line, `<!-- librarian:rules-6-7 -->`, under which the librarian appends them.
+- **How 8c finds pairs.** Shingles are hashed with CRC-32 (the same on every machine; `hash()` is salted). Candidates come from two sources: a one-permutation MinHash signature (64 bins, 16 bands of 4) for similar pairs, and an index of sampled shingles (hash ending in three zero bits) for containment, which banding alone cannot find when one note is much longer than the other. Every candidate is then compared exactly. A band or sampled shingle shared by more than 50 notes is treated as boilerplate and not used to pair them; the report says so when that happens.
+- **Groups.** Duplicate findings list each member with size, modification date and the number of files that link to it, and name a suggested keeper: most inbound links, then not in `owner-inbox/` or `team-inbox/`, then oldest. A group with at most one member outside a wiki's `sources/` folder is informational (`"wiki_source_copy": true`).
+- **Ids.** `<rule>-<8 hex digits>`, a hash of the rule and its subject: the sorted member paths of a group, the source file and target of a link, the folder of a Repo Map row. The same problem has the same id on every run and in both modes. A group that gains or loses a member is a different finding.
+- **Suppressions.** `.pka/lint-suppressions.json`: `{"version": 1, "suppressed": {"<id>": {"at", "reason", "rule", "subject"}}}`. Written atomically; keys and entries this version does not know are kept. `suppress` takes the id from the newest report and refuses one that is not in it (exit 64, with near matches). A file that is not valid stops every lint command with exit 1 and is left as it is. A suppressed finding is left out of `items` and the report, and counted in `suppressed`; in a full lint, suppressions that match nothing are listed as `stale_suppressions`.
+- **Report.** `owner-inbox/librarian-lint-<YYYY-MM-DD>.md`, replacing the same day's. Its first line is `<!-- pka-lint {…} -->` with `version`, `date`, `mode`, `findings`, `info`, `suppressed` and `scanned`; `lint latest` reads it. Two runs over the same workspace on the same day write the same bytes. Informational findings do not count as findings, for `--strict` or for `latest`.
+- **`lint latest`** returns `recent` (0 to 7 days old) and `mention` (recent, with findings). **`lint schedule`** prints; it never writes a crontab or a launchd file.
 
 ## Git rules
 
@@ -152,6 +171,8 @@ tools/
     ├── people.py          people list / resolve / alias
     ├── timeline.py        timeline add / who / list / rename / check / strip
     ├── obsidian.py        obsidian bootstrap
+    ├── backfill.py        timeline plan / apply / restore
+    ├── lint.py            lint, its suppressions, latest and schedule
     └── install.py         install and the manifest
 ```
 

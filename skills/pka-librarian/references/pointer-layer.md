@@ -120,7 +120,7 @@ Both paths are relative to the workspace root. Every link under `[[projects/<nam
 .pka/bin/pka-tools pointers check
 ```
 
-Lists pointer links whose file no longer exists, tables it cannot read, and rows over the soft cap. The lint health check (rule 2) uses this for Pointers tables. It reports; it never removes a row or a link.
+Lists pointer links whose file no longer exists, tables it cannot read, and rows over the soft cap. `pka-tools lint` reports the same broken pointer links under rule 2, with the row's topic. It reports; it never removes a row or a link.
 
 ## What is never done
 
