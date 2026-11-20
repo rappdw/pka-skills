@@ -350,13 +350,17 @@ LINT_CLAUDE_MD = CLAUDE_MD + (
     "| `knowledge/never-made/` | Planned | flat | Reference | active | Low | |\n"
 )
 
-CHARTER = "# Orion charter\n\nThe charter text, long enough to be worth comparing between copies.\n"
-ORION_SPEC = "# Orion spec\n\nA specification that is filed in reference and also kept beside the wiki.\n"
-SUMMARY_BODY = "Quarterly summary\n\nThe lighthouse programme met its three goals and Northwind renewed.\n"
+CHARTER = ("# Orion charter\n\nThe charter text: what Orion is for, who decides, and how a change to it is agreed. "
+           "Long enough to be worth comparing between copies.\n")
+ORION_SPEC = ("# Orion spec\n\nA specification that is filed in reference and also kept beside the wiki, so the "
+              "wiki has its source next to it. The two copies are the same file.\n")
+SUMMARY_BODY = ("Quarterly summary\n\nThe lighthouse programme met its three goals, Northwind renewed for a year, "
+                "and the adoption research was accepted by the leadership group.\n")
 LONG_NOTE = "# Planning notes\n\n" + prose(1, 400) + "\n"
 RAW_NOTES = prose(2, 260)
 RECONCILED = "# Reconciled notes\n\n" + prose(3, 500) + "\n\n" + RAW_NOTES + "\n\n" + prose(4, 500) + "\n"
-SYNC_NOTE = "# Sync\n\nA short narrative that the capture directory also holds, word for word, as its narrative.\n"
+SYNC_NOTE = ("# Sync\n\nA short narrative that the capture directory also holds, word for word, as its narrative: "
+             "who was there, what was decided and what happens next.\n")
 
 LINKS_NOTE = """\
 # Link forms
@@ -365,17 +369,32 @@ Resolving: [[AI/ai-adoption-research|with an alias]], [[AI/ai-adoption-research#
 [[AI/ai-adoption-research.md]], [[reference/report.pdf]], [[topics/orion/wiki|Orion]],
 [relative](../reference/code-fence.md), [encoded](Vendor%20landscape,%202026.md),
 [angle](<Vendor landscape, 2026.md>), [with anchor](ai-adoption-research.md#findings),
-[[reference/charter]].
+[[reference/charter]], [[/AI/ai-adoption-research]], [parens](paren%20(1).md),
+[by reference][adoption].
+
+[adoption]: ai-adoption-research.md "a title"
 
 Not links to check: [site](https://example.com/missing.md), [mail](mailto:sam@example.com),
-[anchor](#top), `[[missing/in-code]]`, \\[[missing/escaped]], <!-- [[missing/in-comment]] -->
+[anchor](#top), `[[missing/in-code]]`, \\[[missing/escaped]], <!-- [[missing/in-comment]] -->,
+%% [[missing/in-percent]] %%, $$ x[[missing/in-math]] $$, and the call f[i](missing-call.md).
 
 ```
 [[missing/in-fence]] and [gone](missing-in-fence.md)
 ```
 
+%%
+[[missing/in-percent-block]]
+%%
+
+An indented code block follows.
+
+    [[missing/in-indent]] and [gone](missing-in-indent.md)
+
 Broken: [[missing/wikilink|x]], [[missing/heading#Part]], [gone](../reference/gone.md),
-[[ai-adoption-research]].
+[paren](missing(20).md), [[AI/AI-Adoption-Research]], [Case](VENDOR%20landscape,%202026.md),
+[dangling][nowhere].
+
+[nowhere]: ../reference/gone-by-reference.md
 """
 
 REFERENCE_MOC = """\
@@ -451,6 +470,7 @@ LINT_FILES = {
     "knowledge/reference/_MOC.md": lf(REFERENCE_MOC),
     # rule 2: every link form
     "knowledge/AI/links.md": lf(LINKS_NOTE),
+    "knowledge/AI/paren (1).md": lf("A note whose name has parentheses in it.\n"),
     # rule 1 (the test ages one of them); rule 4
     "team-inbox/unsorted/old-scan.md": lf("left here a month ago\n"),
     "team-inbox/unsorted/new-scan.md": lf("dropped in today\n"),

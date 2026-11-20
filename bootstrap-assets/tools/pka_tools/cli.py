@@ -560,8 +560,11 @@ def cmd_lint(args: argparse.Namespace) -> int:
         if not args.ident:
             raise ToolError("lint %s needs a finding id (for example 8a-3f9c21d0)" % command, EXIT_USAGE)
         if command == "suppress":
-            result = lint_mod.suppress(ws, args.ident, args.reason or "")
-            text = ["%s %s" % ("Already suppressed:" if result["already"] else "Suppressed:", result["id"])]
+            result = lint_mod.suppress(ws, args.ident, args.reason)
+            state = "Suppressed:"
+            if result["already"]:
+                state = "Already suppressed (reason updated):" if result["updated"] else "Already suppressed:"
+            text = ["%s %s" % (state, result["id"])]
             if result["entry"].get("subject"):
                 text.append("  %s" % result["entry"]["subject"])
         else:
@@ -574,6 +577,8 @@ def cmd_lint(args: argparse.Namespace) -> int:
     if command == "suppressions":
         result = lint_mod.suppressions(ws)
         text = ["%d suppressed finding(s) in %s" % (len(result["suppressed"]), result["file"])]
+        if result["read_only"]:
+            text.append("(written by a later release: this release reads it and will not change it)")
         for item in result["suppressed"]:
             text.append("- %s  %s%s" % (item["id"], item["subject"] or "(no subject recorded)",
                                          ("  — " + item["reason"]) if item["reason"] else ""))
@@ -594,6 +599,8 @@ def cmd_lint(args: argparse.Namespace) -> int:
         text = [
             "Nothing was installed. To run a quick lint every Monday at 09:00, install ONE of these yourself.",
             "",
+            "Output goes to %s, so a run that fails leaves a trace." % result["log"],
+            "",
             "cron (run `crontab -e` and add this line):",
             "",
             result["cron"],
@@ -610,10 +617,16 @@ def cmd_lint(args: argparse.Namespace) -> int:
     for rule in result["rules"]:
         items = [item for item in result["items"] if item["rule"] == rule]
         if items:
-            text.append("  rule %-2s %-36s %d" % (rule, lint_mod.TITLES[rule], len(items)))
+            text.append("  rule %-2s %-36s %s" % (rule, lint_mod.TITLES[rule], lint_mod._counted(
+                result["counts"][rule], result["info_counts"][rule])))
     text += ["  note: %s" % note for note in result["notes"]]
+    skipped = len(result["unreadable"]) + result["unreadable_names"]
+    if skipped:
+        text.append("  not read: %d file(s) that are not UTF-8 or have a name that is not" % skipped)
     if result["report"]:
         text.append("Report: %s" % result["report"])
+    elif result["report_kept"]:
+        text.append("Report: %s (today's full report, kept; this quick run wrote nothing)" % result["report_kept"])
     text.append("Nothing was changed. Rules 6 and 7 are the librarian's to add.")
     _emit(args, result, text)
     return EXIT_FAIL if args.strict and result["findings"] else EXIT_OK

@@ -11,7 +11,9 @@ Most of lint is mechanical, so a tool does it:
 ```
 
 It needs no model and no network, writes `owner-inbox/librarian-lint-<YYYY-MM-DD>.md`
-(replacing the same day's report) and changes nothing else. Two rules need
+(replacing the same day's report, but keeping what you appended to it) and
+changes nothing else. It never writes through a symbolic link: if the report's
+path or `owner-inbox/` is a link, it stops and says so. Two rules need
 judgement and are yours: **6** and **7**. On a full lint you run the tool
 first, then add your findings for those two to the report it wrote.
 
@@ -32,8 +34,10 @@ first, then add your findings for those two to the report it wrote.
 2. **Full lint only:** work out rules 6 and 7 (below) and append them to the
    report, under the line `<!-- librarian:rules-6-7 -->` in the section
    "Librarian checks (rules 6 and 7)", replacing the sentence that says they
-   were not run. Change nothing above that line. Running the tool again the same
-   day rewrites the report, so append after the last tool run.
+   were not run. Change nothing above that line. A later run the same day
+   rewrites what is above the line and keeps what you put below it. A quick
+   lint never replaces a full report from the same day: it prints its results
+   and leaves the report as it is.
 3. Tell the user the counts per rule, the report path, and the two or three
    findings most worth acting on. Do not paste the report.
 4. Act on a finding only when the user asks, one finding at a time (see "Acting
@@ -48,9 +52,12 @@ If `.pka/bin/pka-tools` is missing or older than the plugin, ask for
 
 Every finding in the report ends with its id, like `[id: 8a-3f9c21d0]`.
 
-### 1. Files left in the unsorted inbox
+### 1. Left in the unsorted inbox
 
-**Detects:** files in `team-inbox/unsorted/` that have been there more than 14 days.
+**Detects:** things in `team-inbox/unsorted/` that were last changed more than 14
+days ago. "Last changed" is the later of the file's modification time and the
+time it arrived or was renamed, so an old PDF dropped in today is new. An
+earshot capture directory there counts as one item.
 
 **Action hint:** "Route these or delete them. Say: 'process team-inbox/unsorted'."
 
@@ -62,16 +69,25 @@ Every finding in the report ends with its id, like `[id: 8a-3f9c21d0]`.
   a heading or block anchor, or a `.md` suffix; targets that name a PDF, image
   or other non-markdown file; the wiki form `[[<wiki-home>/<slug>/wiki|Title]]`.
   A wikilink is read relative to the vault (`knowledge/`).
-- Relative markdown links `[text](path)`, including `%20` and `<path with spaces>`.
-  They are read relative to the file they are in.
+- Relative markdown links `[text](path)`, including `%20`, `<path with spaces>`
+  and parentheses in a name, and reference-style links (`[text][ref]` with a
+  `[ref]: path` line; the path on that line is what is checked). They are read
+  relative to the file they are in.
+- **Names must match exactly**, including upper and lower case, so the same
+  report comes out on a Mac and on Linux. A link that is right except for its
+  case is reported as "differs only in upper and lower case".
+- **Bare names.** In an Obsidian vault `[[Target Note]]` is fine when exactly
+  one note in the vault has that name (Obsidian's own short form); it is
+  reported when no note has it, or when several do ("ambiguous"). Without
+  Obsidian a bare name is reported, with the full link to use when exactly one
+  note has that name.
 - **Not checked:** web and mail links, `#anchor`-only links, absolute paths and
-  paths that leave the workspace, and anything inside code spans, fenced blocks
-  or HTML comments.
+  paths that leave the workspace; a markdown link whose path has a raw space
+  and no `<…>` around it; HTML `<a href>`; and anything inside code spans,
+  fenced or indented code blocks, HTML comments, Obsidian `%% comments %%` or
+  `$$ math $$`.
 
-A link inside a `_MOC.md` Pointers table is marked with its row's topic. A bare
-name such as `[[mcp]]` is reported even though Obsidian may find the note; when
-exactly one note in the vault has that name, the report gives the full link to
-use.
+A link inside a `_MOC.md` Pointers table is marked with its row's topic.
 
 **Action hint:** "Fix or remove these references." The librarian is append-only
 in Pointers tables: remove a dead pointer link only when the user asks for that
@@ -81,13 +97,15 @@ row to be fixed.
 
 **Detects:** a path in backticks in a `wiki.md`'s `## Sources` list that is not
 there (tried from the workspace root, the vault, and the wiki's own folder).
+Bulleted and numbered items are read; a `#section` after the path is ignored;
+backticked words that are not paths are left alone.
 
 **Action hint:** "Update the wiki's Sources list or restore the file."
 
 ### 4. Empty Repo Map folders
 
-**Detects:** a Repo Map row whose folder is missing, or holds no `.md`, `.pdf`,
-`.docx` or `.txt` file.
+**Detects:** a Repo Map row whose folder is missing, or holds no `.md`,
+`.markdown`, `.txt`, `.pdf` or `.docx` file.
 
 **Action hint:** "Remove the row from the Repo Map, or archive the folder."
 
@@ -100,7 +118,10 @@ frontmatter or `## Attendees`, with certainty). A name in the body does not
 count, and a note with `no-backref: true` is left out.
 
 This is **one informational line** with a count and up to 20 examples, not one
-finding per note. It replaces the old "missing back-references" rule.
+finding per note. It replaces the old "missing back-references" rule. It does
+not count as a finding, and it **cannot be suppressed**: hiding it would hide
+every note left off a timeline from then on. It goes away when the timelines
+are backfilled; one note can be kept off every timeline with `no-backref: true`.
 
 **Action hint:** "Ask the librarian to 'backfill timelines'." That plans first
 and writes nothing until the user approves (see the librarian's "Backfill person
@@ -118,10 +139,15 @@ Full lint only.
 | 8c | Near-duplicates (at least 80% of their five-word passages in common) and one note contained in another (at least 90% of the shorter one), for notes of 200 words or more | no |
 | 8d | Duplicate entities: two person folders that answer to the same name or alias, or where one folder name is contained in the other (`priya`, `priya-nair`); two wikis with the same `topic`; one topic on two rows of the same MOC's Pointers table | no |
 
-For 8a to 8c the report shows each group as a table: path, size, last-modified
-date, how many files link to it, and a **suggested keeper** (the one with the
-most links to it, then one that is not in an inbox, then the oldest). The
-suggestion is a starting point; the user decides.
+**One set of copies is one finding**, filed under the broadest rule that holds
+for it. If a note has an identical copy, a re-saved copy and a near copy, that
+is a single 8c finding listing all four files, not three findings.
+
+For 8a to 8c the report shows each set as a table: path, size, last-modified
+date, how many files link to it, and how each file compares with the
+**suggested keeper** ("identical bytes", "same text", "near copy"). The keeper
+is the file with the most links to it, then one that is not in an inbox, then
+the oldest. The suggestion is a starting point; the user decides.
 
 **Not reported:**
 
@@ -131,7 +157,15 @@ suggestion is a starting point; the user decides.
 - the same topic in two different MOCs (that is intended);
 - anything under `.pka/`, in a dot-folder, or matched by `.pkaignore`;
 - lint's own reports and the backfill's plan reports in `owner-inbox/`;
-- very short texts (under about 80 characters) for 8b, and notes under 200 words for 8c.
+- `_MOC.md` files, as duplicates of each other;
+- text with fewer than about 80 characters outside its headings (two notes
+  holding only the same headings, two `# TODO` files), and notes under 200
+  words for 8c;
+- files other than text that are smaller than 16 bytes.
+
+**Known limit:** 8c compares five-word passages, so it does not compare text
+written without spaces between words (Chinese, Japanese). Exact and re-saved
+copies of such notes are still found by 8a and 8b.
 
 **Information only:** a copy in a wiki's `sources/` folder of a file that is
 also filed elsewhere. That is how a wiki keeps its sources; it is listed once so
@@ -206,25 +240,31 @@ When the user asks:
 ```
 
 - Suppress only when the user says a finding is fine, and record their reason.
-- The id comes from the most recent report. An id the report does not have is
-  refused, with the nearest ones listed.
+- The id comes from a lint report of the last 30 days (so an id from
+  yesterday's full lint still works after today's quick one). An id no report
+  has is refused, with the nearest ones listed.
+- Rule 5's line cannot be suppressed (see rule 5).
+- Running `suppress` again with a new `--reason` replaces the reason.
 - A suppressed finding is left out of later reports and counted on the
   "Suppressed" line. Suppressions live in `.pka/lint-suppressions.json`.
-- An id belongs to the exact files or link it names. A group of duplicates that
-  gains or loses a file is a new finding with a new id; the report then notes
-  the old suppression as no longer matching anything.
+- An id belongs to the exact files or link it names. A set of duplicates that
+  gains or loses a file is a new finding with a new id. A **full** lint then
+  notes the old suppression as no longer matching anything; a quick lint does
+  not look at every rule, so it does not say.
 
 ---
 
 ## Scheduling
 
 `.pka/bin/pka-tools lint schedule` prints a cron line and a macOS launchd file
-that run a quick lint every Monday morning. **It installs nothing**, and neither
-do you: show the user the entry and let them install it.
+that run a quick lint every Monday morning and append their output to
+`.pka/lint-cron-log.txt`, so a run that fails leaves a trace. **It installs
+nothing**, and neither do you: show the user the entry and let them install it.
 
 At session start, `.pka/bin/pka-tools lint latest` says how old the newest
-report is and how many findings it has. When it is 7 days old or newer and has
-findings, the orchestrator mentions it once in the greeting.
+report is and how many of its findings are still open (findings suppressed
+since are not counted). When it is 7 days old or newer and has open findings,
+the orchestrator mentions it once in the greeting.
 
 ---
 
@@ -238,4 +278,5 @@ findings, the orchestrator mentions it once in the greeting.
 ## Performance
 
 A quick lint of a few thousand notes takes about a second and a full lint a few
-seconds. Rules 6 and 7 take as long as your searches do.
+seconds; twenty thousand notes take about 5 and 20 seconds. Rules 6 and 7 take
+as long as your searches do.
