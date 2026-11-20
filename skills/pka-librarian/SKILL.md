@@ -12,9 +12,10 @@ description: >
   "OCR these", "set up my scanner", or drops files and asks what to do with
   them. Handles transcript detection (holds .vtt/.srt files for meeting
   processing instead of routing them). Also runs lint / health checks on the
-  knowledge base (orphan files, broken links, stale wiki sources, contradiction
-  candidates) — triggered by "run a health check", "lint my knowledge base",
-  "what needs attention", or "check for broken links". Backfills person
+  knowledge base (orphan files, broken links, stale wiki sources, duplicate
+  notes and people, contradiction candidates) — triggered by "run a health
+  check", "lint my knowledge base", "find duplicates", "what needs attention",
+  or "check for broken links". Backfills person
   timelines from existing notes ("backfill timelines"). Works standalone or
   with pka-bootstrap.
 user-invocable: true
@@ -118,23 +119,28 @@ The lines have no summaries. To add them, read the notes for one person or a rec
 
 ## Lint / Health Check
 
-**Trigger:** "run a health check", "lint my knowledge base", "what needs attention", "check for broken links".
+**Trigger:** "run a health check", "lint my knowledge base", "what needs attention", "check for broken links", "find duplicates".
 
-Runs a non-destructive scan producing `owner-inbox/librarian-lint-<YYYY-MM-DD>.md` with findings across 7 rule categories:
+The mechanical rules run in the tool, with no model: `.pka/bin/pka-tools lint --json` (add `--quick` for "quick lint"). It writes `owner-inbox/librarian-lint-<YYYY-MM-DD>.md` and changes nothing else. Do not re-derive these rules by reading files.
 
-1. Orphan files (team-inbox/unsorted/ older than 14 days)
-2. Broken links (markdown links + `[[wikilinks]]` to missing paths)
-3. Stale wiki sources (wiki Sources entries pointing at missing files)
-4. Empty Repo Map folders
-5. Missing back-references (low priority)
-6. Contradiction candidates (wikis with many newer uningested mentions)
-7. Uncited wiki claims
+| Rule | What it finds | Quick |
+|---|---|---|
+| 1 | Things left in `team-inbox/unsorted/` and not changed for more than 14 days | yes |
+| 2 | Broken links: `[[wikilinks]]` in every form, and relative markdown links | yes |
+| 3 | Wiki `## Sources` entries whose file is gone | yes |
+| 4 | Repo Map folders that are empty or missing | yes |
+| 5 | Notes that belong on a person's timeline and are not on it (one informational line that cannot be suppressed; the fix is "backfill timelines") | no |
+| 8 | Duplicates: identical files (8a), the same text re-saved (8b), near-duplicates and one note inside another (8c), duplicate people, wiki topics and pointer topics (8d). One set of copies is one finding | 8a, 8b |
 
-Lint reports only — never auto-fixes. User acts on the report. See `references/lint-rules.md` for full rule definitions and `references/cross-reference-maintenance.md` for the back-reference model.
+Rules 6 (contradiction candidates) and 7 (uncited wiki claims) need judgement and are yours. On a **full** lint, run the tool, then append your findings for those two under the `<!-- librarian:rules-6-7 -->` line of the report it wrote. A later run the same day keeps what is below that line, and a quick lint never replaces a same-day full report.
 
-**Variants:**
-- "quick lint" → rules 1-4 only (fast)
-- "lint" / "full lint" → all 7 rules (default)
+Then tell the user the count per rule, the report path and the findings most worth acting on. Lint reports only: fix, merge or delete nothing unless the user asks, one finding at a time.
+
+**Suppressing.** Every finding has an id (`[id: 8a-3f9c21d0]`). When the user says a finding is fine as it is, record it: `.pka/bin/pka-tools lint suppress <id> --reason "<their reason>"`. It stays out of later reports. `lint suppressions` lists them; `lint unsuppress <id>` brings one back.
+
+**Scheduling.** `.pka/bin/pka-tools lint schedule` prints a weekly cron line and a launchd file. Show it; never install it.
+
+See `references/lint-rules.md` for each rule, what is deliberately not reported, and how to act on a finding.
 
 ## Key Constraints
 

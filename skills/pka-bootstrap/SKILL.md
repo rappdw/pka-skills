@@ -283,6 +283,8 @@ Otherwise it is opt-in. Offer it in one sentence: *"I can add a small `_MOC.md` 
 
 Print: Repo Map summary, meeting-home and people-home folders, archive destination, storage mode, roles, two suggested first actions.
 
+Then offer the weekly health check: run `.pka/bin/pka-tools lint schedule` and show what it prints (a cron line and a macOS launchd file that run a quick lint every Monday). Say plainly that nothing was installed and that installing either one is the user's to do. Never write to a crontab or `~/Library/LaunchAgents/`.
+
 ---
 
 ## Extending the Team (Post-Bootstrap)
@@ -434,6 +436,7 @@ Full step-by-step algorithm in `references/upgrade.md`. Summary:
    - If there is no Obsidian vault and no `_MOC.md` anywhere in `knowledge/`, mention that the pointer layer is opt-in (step 3j of base bootstrap).
    - If the workspace has a `.meta` file at root, tell the user what changed for it (see "Workspaces with nested repositories").
    - Mention the manual bullet-merges into `## Key Competencies` and `## Output Conventions` (the upgrade does not touch these — see `references/upgrade.md` for the rationale).
+   - Show the weekly health-check entry: run `.pka/bin/pka-tools lint schedule` and relay what it prints. Nothing is installed; installing it is the user's to do, and they can skip it. If they already installed it for this workspace, there is nothing to change.
 
 ### Hard rules
 

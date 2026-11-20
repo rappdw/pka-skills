@@ -1,6 +1,51 @@
 # Changelog
 
-## Unreleased
+## v1.10.0 — 2026-11-20
+
+Lint becomes a tool, finds duplicates, and can run every week. Phase 6 of the v1.7 plan. The repository also gains a walkthrough website.
+
+**Existing workspaces:** run `bootstrap upgrade` to get the new `pka-tools`; it offers to refresh the orchestrator's "Session-start checks" section if you never edited it, and shows a weekly schedule entry you can install or ignore. Nothing about your notes changes: lint only writes its report.
+
+### Added — `pka-tools lint`
+
+The mechanical health checks used to be prose for a model to carry out each time. They are now one command that needs no model and no network, so a lint is the same every run and takes seconds.
+
+- **`lint`** (full) and **`lint --quick`** write `owner-inbox/librarian-lint-<date>.md` and change nothing else. `--strict` exits 1 when there are findings; `--no-report` writes nothing. A later run the same day keeps what the librarian appended, and a quick run never replaces a same-day full report.
+- **Generated files are never written through a symbolic link.** If the report's path, `owner-inbox/` or `.pka/lint-suppressions.json` is a link (or not a regular file or folder), lint stops with a one-line message and writes nothing. The same now holds for the timeline backfill's plan, report and backups.
+- **Rule 8, duplicates** (new): 8a byte-identical files of any type; 8b the same text once frontmatter, case and spacing are set aside; 8c near-duplicates (80% of five-word passages in common) and one note contained in another (90% of the shorter), for notes of 200 words or more; 8d two person folders answering to the same name or alias or with one folder name inside the other, two wikis with one `topic`, and one topic on two rows of the same MOC. **One set of copies is one finding**, under the broadest rule that holds, with each file's relation to the suggested keeper (identical bytes, same text, near copy), sizes, dates and how many files link to each. Text needs 80 characters outside headings to take part, so stubs and heading-only notes are not duplicates; `_MOC.md` files never are. Lint never deletes.
+- **Not reported:** an OCR sidecar beside its source, anything in an earshot capture directory, the same topic in different MOCs, anything under `.pka/` or matched by `.pkaignore`. A copy in a wiki's `sources/` of a file filed elsewhere is listed as information.
+- **Rule 2, broken links** (revised): wikilinks with an alias, a heading, a `.md` suffix or a non-markdown target, the wiki link form, relative markdown links (with parentheses in a name) and reference-style links. Names must match exactly, case included, so a Mac and a Linux machine give the same report; a link that is right except for its case says so. Links in code spans, fenced and indented code blocks, HTML comments, Obsidian `%%` comments and `$$` math are ignored; web links, anchors and paths outside the workspace are skipped. In an Obsidian vault a bare `[[name]]` is valid when exactly one note has that name and reported when none or several do; without Obsidian it gets the full link as a suggestion.
+- **Rule 5** (revised) is now "notes that belong on a person's timeline and are not on it": one informational line with a count and examples, from the same evidence rules as `timeline plan`. It never counts as a finding and cannot be suppressed. The old "missing back-references" grep is gone.
+- **Rule 1** counts from when a file last changed here (the later of its modification and status-change times), so an old document dropped in today is new; a capture directory in `unsorted/` is one item.
+- Rule 3 also reads numbered items and ignores a `#section` after a path; rule 4 counts `.markdown`. **Rules 6 and 7** (contradiction candidates, uncited wiki claims) need judgement and stay with the librarian, who appends them to the report under a marker line.
+- **Timing** (quick / full): 3,000 notes 0.9 s / 2.9 s; 20,000 notes 5.2 s / 20.8 s; 5,000 notes in 100 families of 50 that share 2,000 words each 4.7 s / 13.0 s.
+
+### Added — suppression, `latest`, `schedule`
+
+- Every finding has a stable id (`8a-3f9c21d0`), a hash of its rule and subject. **`lint suppress <id> [--reason …]`** records it in `.pka/lint-suppressions.json`; the finding stays out of later reports and is counted on a "Suppressed" line. `lint suppressions` lists them; `lint unsuppress <id>` brings one back. The id may come from any report of the last 30 days; one that no report has is refused, with near matches. A set of duplicates that gains or loses a file is a new finding. Several `suppress` commands at once do not lose each other's entries (the file is locked while it is changed); a file from a later release is read but not rewritten.
+- **`lint latest`** gives the newest report's date, age and the number of its findings still open (less what has been suppressed since). The orchestrator's session-start seed uses it to mention a report at most 7 days old that has findings.
+- **`lint schedule`** prints a weekly cron line and a macOS launchd file for a quick lint, both logging to `.pka/lint-cron-log.txt`. It installs nothing; base bootstrap and `bootstrap upgrade` show it and leave installing to you.
+
+### Changed
+
+- `skills/pka-librarian/references/lint-rules.md` is rewritten around the tool: what each rule detects, what is deliberately left out, what the librarian adds, how to act on a finding, how to suppress one.
+- Librarian skill, tutorial Module 9, example prompts and the tutorial's what's-new reference (a v1.10.0 section).
+- Evals: the health-check scenario is rewritten; four librarian scenarios (a duplicate group, suppressing, quick lint, the schedule) and two session-start scenarios are added.
+
+### Tests
+
+- `tests/tools/test_lint.py` (61 tests) on seeded cases added to the fixture vault by `build_vault.lint_cases`: every seeded duplicate is found; the allow-listed pairs are not; a suppressed finding stays suppressed across runs and unrelated edits; each link form of rule 2; rule 5 agrees with `timeline plan` and clears after `timeline apply`; two runs write the same bytes; a run changes no file but its report; the 8c thresholds; `--strict`, `latest`, `schedule`; a corrupt suppressions file is reported and left alone. An independent review of the first build reproduced 1 high, 8 medium and 13 low issues; all but one (see Known limits) are fixed, each with a regression test. The high one: a report path that was a symbolic link to a note had the note overwritten with the report.
+
+### Known limits
+
+- 8c compares text, not meaning: a note rewritten in other words is not found. Notes under 200 words are not compared for nearness, and neither is text written without spaces between words (Chinese, Japanese); exact and re-saved copies of those are still found.
+- A passage shared by more than 50 otherwise different notes (a meeting template) is noted as boilerplate; notes that share only that are not paired. A large family of near-copies is still found whole.
+- Rule 2 does not check a markdown link whose path has a raw space and no `<…>`, or HTML `<a href>`.
+- `.pka/session-log.md` is still written through a symbolic link if it is one; it is the user's file, not a generated one.
+- Suggested keepers follow a fixed rule (most links to it, not in an inbox, oldest). For a raw note inside a reconciled one that may suggest the shorter note; the user decides.
+- Rules 6 and 7 are not run by a scheduled lint.
+
+### Added — walkthrough site
 
 - **Walkthrough site.** `docs/index.html` (with `site.css` and `site.js`) is a static, screen-by-screen walkthrough of the skills and concepts, for GitHub Pages serving `/docs` from `main`: <https://rappdw.github.io/pka-skills/>. It loads nothing from other hosts. The README links to it. No change to the skills or to `pka-tools`.
 

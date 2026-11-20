@@ -184,9 +184,10 @@ install it and come back for this module."
 **Goal:** User can run lint and act on the report.
 
 Covers: what lint catches (orphans, broken links, stale wiki sources,
-contradiction candidates, uncited claims), weekly/monthly cadence, reading
-the report in `owner-inbox/`, lint is never destructive. Points to
-`pka-librarian` for execution.
+duplicate notes and people, notes missing from timelines, contradiction
+candidates, uncited claims), quick and full, reading the report in
+`owner-inbox/`, hiding a finding that is fine, the optional weekly schedule,
+lint is never destructive. Points to `pka-librarian` for execution.
 
 ---
 

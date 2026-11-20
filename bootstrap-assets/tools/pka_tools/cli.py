@@ -24,6 +24,7 @@ from . import actions as actions_mod
 from . import db as db_mod
 from . import indexer, install as install_mod, mocs, obsidian, people as people_mod, pointers, postroute
 from . import backfill as backfill_mod, search as search_mod, sessionlog, timeline as timeline_mod
+from . import lint as lint_mod
 from .errors import EXIT_FAIL, EXIT_OK, EXIT_USAGE, ToolError
 from .workspace import Workspace, find_root
 
@@ -552,6 +553,85 @@ def cmd_log(args: argparse.Namespace) -> int:
     return EXIT_FAIL if args.strict and result["malformed"] else EXIT_OK
 
 
+def cmd_lint(args: argparse.Namespace) -> int:
+    ws = _workspace(args)
+    command = args.lint_command
+    if command in ("suppress", "unsuppress"):
+        if not args.ident:
+            raise ToolError("lint %s needs a finding id (for example 8a-3f9c21d0)" % command, EXIT_USAGE)
+        if command == "suppress":
+            result = lint_mod.suppress(ws, args.ident, args.reason)
+            state = "Suppressed:"
+            if result["already"]:
+                state = "Already suppressed (reason updated):" if result["updated"] else "Already suppressed:"
+            text = ["%s %s" % (state, result["id"])]
+            if result["entry"].get("subject"):
+                text.append("  %s" % result["entry"]["subject"])
+        else:
+            result = lint_mod.unsuppress(ws, args.ident)
+            text = ["No longer suppressed: %s" % result["id"]]
+        _emit(args, result, text)
+        return EXIT_OK
+    if args.ident:
+        raise ToolError("lint %s takes no id" % command, EXIT_USAGE)
+    if command == "suppressions":
+        result = lint_mod.suppressions(ws)
+        text = ["%d suppressed finding(s) in %s" % (len(result["suppressed"]), result["file"])]
+        if result["read_only"]:
+            text.append("(written by a later release: this release reads it and will not change it)")
+        for item in result["suppressed"]:
+            text.append("- %s  %s%s" % (item["id"], item["subject"] or "(no subject recorded)",
+                                         ("  — " + item["reason"]) if item["reason"] else ""))
+        _emit(args, result, text)
+        return EXIT_OK
+    if command == "latest":
+        result = lint_mod.latest(ws)
+        if result["report"] is None:
+            text = ["No lint report yet. Run: pka-tools lint"]
+        else:
+            count = "an unknown number of" if result["findings"] is None else str(result["findings"])
+            text = ["%s (%s, %s day(s) old): %s finding(s)" % (result["report"], result["mode"] or "unknown mode",
+                                                              result["age_days"], count)]
+        _emit(args, result, text)
+        return EXIT_OK
+    if command == "schedule":
+        result = lint_mod.schedule(ws)
+        text = [
+            "Nothing was installed. To run a quick lint every Monday at 09:00, install ONE of these yourself.",
+            "",
+            "Output goes to %s, so a run that fails leaves a trace." % result["log"],
+            "",
+            "cron (run `crontab -e` and add this line):",
+            "",
+            result["cron"],
+            "",
+            "launchd on macOS (save as %s, then `launchctl load` that file):" % result["launchd_path"],
+            "",
+            result["launchd_plist"],
+        ]
+        _emit(args, result, text)
+        return EXIT_OK
+    result = lint_mod.run(ws, quick=args.quick, write_report=not args.no_report)
+    text = ["Lint (%s): %d finding(s), %d informational, %d suppressed; %d files scanned" % (
+        result["mode"], result["findings"], result["info"], result["suppressed"], result["scanned"])]
+    for rule in result["rules"]:
+        items = [item for item in result["items"] if item["rule"] == rule]
+        if items:
+            text.append("  rule %-2s %-36s %s" % (rule, lint_mod.TITLES[rule], lint_mod._counted(
+                result["counts"][rule], result["info_counts"][rule])))
+    text += ["  note: %s" % note for note in result["notes"]]
+    skipped = len(result["unreadable"]) + result["unreadable_names"]
+    if skipped:
+        text.append("  not read: %d file(s) that are not UTF-8 or have a name that is not" % skipped)
+    if result["report"]:
+        text.append("Report: %s" % result["report"])
+    elif result["report_kept"]:
+        text.append("Report: %s (today's full report, kept; this quick run wrote nothing)" % result["report_kept"])
+    text.append("Nothing was changed. Rules 6 and 7 are the librarian's to add.")
+    _emit(args, result, text)
+    return EXIT_FAIL if args.strict and result["findings"] else EXIT_OK
+
+
 def cmd_obsidian(args: argparse.Namespace) -> int:
     ws = _workspace(args)
     summary = obsidian.bootstrap(ws, dry_run=args.dry_run)
@@ -787,6 +867,18 @@ def build_parser() -> argparse.ArgumentParser:
     q.add_argument("--person", metavar="SLUG", help="only this person")
     q.add_argument("--dry-run", action="store_true")
     q.set_defaults(func=cmd_timeline)
+
+    p = sub.add_parser("lint", parents=[common],
+                       help="health checks: writes a report to owner-inbox/, changes nothing else")
+    p.add_argument("lint_command", nargs="?", default="run", metavar="COMMAND",
+                   choices=("run", "suppress", "unsuppress", "suppressions", "latest", "schedule"),
+                   help="run (default) | suppress ID | unsuppress ID | suppressions | latest | schedule")
+    p.add_argument("ident", nargs="?", metavar="ID", help="a finding id, for suppress and unsuppress")
+    p.add_argument("--quick", action="store_true", help="rules 1-4, 8a and 8b only")
+    p.add_argument("--strict", action="store_true", help="exit 1 when there are unsuppressed findings")
+    p.add_argument("--no-report", action="store_true", help="do not write the report file")
+    p.add_argument("--reason", metavar="TEXT", help="with suppress: why this finding is fine")
+    p.set_defaults(func=cmd_lint)
 
     p = sub.add_parser("log", help="the session log (.pka/session-log.md)")
     lsub = p.add_subparsers(dest="log_command", metavar="<log command>", parser_class=_Parser)

@@ -8,7 +8,7 @@ authored notes, personnel folders, project workspaces, and topic wikis.
 ## Scope for v1.0
 
 **In scope (MVP):**
-- Surfacing missing back-references via lint (see `lint-rules.md`)
+- Surfacing notes that are missing from a person's timeline via lint rule 5 (see `lint-rules.md`)
 - Recording entity mentions when files are filed (for future use)
 
 **Deferred to future versions:**

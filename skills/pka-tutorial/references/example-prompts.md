@@ -134,6 +134,10 @@ and topics to their actual Repo Map.
 - "What files are orphaned?"
 - "Quick lint" (fast subset)
 - "Full lint"
+- "Find duplicate notes"
+- "That finding is fine, hide it"
+- "What have I hidden from lint?"
+- "Show me the weekly lint schedule"
 
 ## Meta / Getting Help
 

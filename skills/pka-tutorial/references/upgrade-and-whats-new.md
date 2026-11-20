@@ -254,6 +254,42 @@ The inboxes are left out, since what is in them is not filed yet.
 
 > "Show me what's on `<person>`'s timeline from `<a project folder>`"
 
+### v1.10.0
+
+**1. Health checks find duplicates.** *(Applies to all workspaces.)*
+A health check now finds files that are identical, notes that are the same text
+saved twice, near-copies (raw notes beside the reconciled version, a `-2`
+file), and two folders for the same person. Each group comes with sizes, dates,
+how many notes link to each copy, and a suggestion for which to keep. Nothing
+is deleted or merged for the user.
+
+> "Find duplicate notes"
+
+**2. A finding that is fine can be hidden.** *(Applies to all workspaces.)*
+Every finding has an id. When the user says one is fine as it is, it is recorded
+and left out of later reports, with their reason. It can be listed and brought
+back.
+
+> "That duplicate is on purpose, hide it"
+
+**3. Lint runs without a session, and can run weekly.** *(Applies to all
+workspaces.)*
+Most of lint is now a command that needs no AI, so it takes seconds and can be
+scheduled. The user can ask for a schedule entry (cron, or launchd on a Mac);
+it is shown, never installed for them. A recent report with findings is
+mentioned at the start of a session.
+
+> "Show me the weekly lint schedule"
+
+**4. Broken-link checks understand every link form.** *(Applies to all
+workspaces.)*
+Aliases, heading links, links to PDFs and images, and plain markdown links are
+all checked, and links in examples (code blocks) are left alone. A note that
+involves someone but is missing from their timeline shows up as one line, with
+the fix. *(That last part applies when the workspace has a people folder.)*
+
+> "Check for broken links in my notes"
+
 ### After the last item
 
 > That's what's new in v`<tool_version>`. Want to try one of these, or go
