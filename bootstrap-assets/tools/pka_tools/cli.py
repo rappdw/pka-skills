@@ -252,7 +252,12 @@ def cmd_actions(args: argparse.Namespace) -> int:
         result["open"], window, result["files_scanned"], ", ".join(result["scope"]) or "nothing")]
     for item in result["items"]:
         text.append("- [ ] %s" % item["text"])
-        text.append("      %s:%d" % (item["path"], item["line"]))
+        facts = []
+        if item["owners"]:
+            facts.append("owner: %s" % ", ".join(item["owners"]))
+        if item["due"] or item["due_text"]:
+            facts.append("due: %s" % (item["due"] or "%s (as written)" % item["due_text"]))
+        text.append("      %s:%d%s" % (item["path"], item["line"], "  [%s]" % "; ".join(facts) if facts else ""))
     _emit(args, result, text)
     return EXIT_OK
 

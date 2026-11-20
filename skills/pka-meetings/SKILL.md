@@ -121,10 +121,13 @@ Scan notes for:
 - Lines starting with `- [ ]`, `→`, `AI:`, `Action:`, `TODO:`
 - Sections `## Action Items`, `## Next Steps`, `## Follow-up`
 
-Normalize into `## Action Items` section at bottom:
+**Items that are already checkboxes are never rewritten.** A `- [ ]` line stays byte for byte as it was written, wherever it is in the note and whichever form it uses, including thinkkit's `- [ ] **Robin**: Draft the Q1 hiring plan (due: 2026-12-01)`. `pka-tools actions` reads that form and PKA's own, so there is nothing to convert.
+
+Only items found in the other patterns (an `Action:` line, a `→` line, a bullet under `## Next Steps`) are added, to the `## Action Items` section (created at the bottom if the note has none), one line each, in PKA's form:
 ```
-- [ ] <action> — @<owner if mentioned> — <due date if mentioned>
+- [ ] <action> — @<owner if mentioned> — by <YYYY-MM-DD if a due date was mentioned>
 ```
+Skip an item the section already lists in any form.
 
 Surface to user: "Found N action items. Add to session log open threads?"
 
