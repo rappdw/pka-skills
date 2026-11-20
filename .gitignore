@@ -30,8 +30,9 @@ Thumbs.db
 # Packaged skills (build artifacts)
 *.skill
 
-# Eval workspaces
+# Eval workspaces and results
 *-workspace/
+evals/results/
 
 # Temporary files
 *.tmp

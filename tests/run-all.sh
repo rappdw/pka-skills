@@ -39,6 +39,7 @@ run_suite "obsidian-bootstrap" "$THIS_DIR/test_obsidian_bootstrap.sh"
 run_suite "upgrade"            "$THIS_DIR/test_upgrade.sh"
 run_suite "pointer-layer"      "$THIS_DIR/test_pointer_layer.sh"
 run_suite "pka-tools"          "$THIS_DIR/test_tools.sh"
+run_suite "eval-runner"        "$THIS_DIR/test_evals.sh"
 
 if [ "$GIT_CONFIG_BEFORE" = "$(git_config_fingerprint)" ]; then
   SUITES_PASS+=("global git config untouched")

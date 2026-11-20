@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased
+
+### Added — an eval runner (`evals/run.py`)
+
+The behavioural evals have been prose since they were first written: nothing ran them. `evals/run.py` does. For each scenario it builds a scratch workspace in the state the scenario describes, runs Claude Code headlessly in it with a read-only copy of the checkout loaded as the plugin, records what the model said, every tool call and how the files changed, and hands that to a second model call that grades each expectation. Standard library only; `evals/README.md` has the details.
+
+- **Starting states are declared, not described.** A scenario's `setup` picks a fixture (`vault`, `lint`, `existing`, `empty`), says whether there is an Obsidian vault, a toolkit, current or v1.7.0 role files, an index (current or on an old schema) and which autonomy level, and lists ordered steps (write, append, replace, remove, copy, age, run a `pka-tools` command, date a lint report in the past, make a folder look like a git repository). The fixture workspace's `CLAUDE.md` and role files are rendered from the plugin's own template and seeds.
+- **A run is confined.** Permission mode `dontAsk` with an allow list (no git, no network tools), file tools limited to the workspace, a scratch home directory, no user settings or plugins, and Claude Code's OS sandbox required by default (`--sandbox off` to run on the allow list alone). The subject cannot read `evals/`.
+- **The judge sees evidence, not instructions.** Skill text is stripped from the transcript before grading. The judge must quote; the runner looks each quote up and throws out a "yes" it cannot find, and works the verdict out itself (pass: all met; fail: fewer than half).
+- **Caps and recovery.** Turns, dollars per call, dollars per run and seconds per call are capped; `--resume` continues a run, `--rejudge` grades stored transcripts again, `--dry-run` builds every workspace and prints every command without calling a model.
+- **Not run automatically.** An eval run costs money and is started by hand. No full run has been done yet.
+
+### Changed — the evals match the skills
+
+All 84 scenarios were read against the v1.10.0 skills and rewritten so that a transcript can settle them: each has a stable `id`, a real starting state instead of a parenthesised description, and expectations that name the command, file or wording to look for. There are now 94.
+
+- **Wrong since an earlier release, corrected:** action items "found with `search_fts`" (the skill uses `pka-tools actions`); person backlinks under `## Mentioned in` (replaced by timelines in v1.7.0); "no person backlinks without Obsidian" (timelines are not gated on Obsidian); re-indexing "by path and modified time" (it is `pka-tools index`, by content hash); broken links found by scanning (it is `lint`); the tour's "7 modules" (nine); "language noted in `file_index`" (there is no such column); a backfill plan calling a nickname "ambiguous" (the tool reports it as unmatched, and refuses an alias that is ambiguous); a nickname that must be asked about (the skill lists it without a link); a non-PKA `CLAUDE.md` "treated as a fresh setup" (the skill asks first); retiring a wiki without confirming.
+- **Split or merged:** conditional scenarios ("if a parent `.pka/` exists … else …") became one scenario per state; the Obsidian bootstrap's "existing files" and "malformed frontmatter" cases run as one; "take notes" and "take-notes is not installed" are one two-message scenario; the two identical "What can PKA do?" cases are one.
+- **Names:** the examples use the fixture cast only.
+- **`needs`:** eighteen scenarios describe behaviour from changes that are still in review (the skills clean-up and the new dashboard) and are marked with the pull request they wait for. A run leaves them out unless `--include-needs` is given.
+
+### Tests
+
+- New suite `eval-runner` (`tests/test_evals.sh`, 64 tests, no model, no network): see `tests/README.md`.
+
 ## v1.10.0 — 2026-11-20
 
 Lint becomes a tool, finds duplicates, and can run every week. Phase 6 of the v1.7 plan. The repository also gains a walkthrough website.

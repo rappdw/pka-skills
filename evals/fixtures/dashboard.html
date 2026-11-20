@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sam's Knowledge Dashboard</title>
+<style>
+  :root { --bg: #ffffff; --fg: #1c1c1c; --card: #f3f3f3; }
+  [data-theme="dark"] { --bg: #16181c; --fg: #e8e8e8; --card: #23262c; }
+  body { background: var(--bg); color: var(--fg); font-family: system-ui, sans-serif; margin: 2rem; }
+  section { background: var(--card); border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+  .timeline li { list-style: none; border-left: 2px solid var(--fg); padding-left: 0.75rem; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr)); gap: 0.75rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Sam's Knowledge Dashboard</h1>
+  <button id="theme-toggle" type="button">Toggle theme</button>
+</header>
+
+<!-- custom: Sam's reading list (added by hand, keep) -->
+<section id="reading-list">
+  <h2>Reading list</h2>
+  <ul><li>Northwind partnership proposal, second draft</li></ul>
+</section>
+
+<section id="knowledge-ai" data-folder="knowledge/AI/">
+  <h2>AI</h2>
+  <ul class="topics"></ul>
+</section>
+
+<section id="knowledge-leadership" data-folder="knowledge/leadership/" data-view="timeline">
+  <h2>Leadership</h2>
+  <ul class="timeline"></ul>
+</section>
+
+<section id="knowledge-personnel" data-folder="knowledge/personnel/" data-view="cards">
+  <h2>Personnel</h2>
+  <div class="cards"></div>
+</section>
+
+<section id="projects" data-folder="projects/" data-view="cards">
+  <h2>Projects</h2>
+  <div class="cards"></div>
+</section>
+
+<section id="activity">
+  <h2>Activity</h2>
+  <ol id="activity-list"></ol>
+</section>
+
+<section id="search">
+  <h2>Search</h2>
+  <input id="search-box" type="search" placeholder="Search file names">
+  <ul id="search-results"></ul>
+</section>
+
+<script>
+  // Theme initialisation: a saved choice wins, otherwise follow the system.
+  const savedTheme = localStorage.getItem('pka-theme');
+  const systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  document.documentElement.dataset.theme = savedTheme || (systemDark ? 'dark' : 'light');
+
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    localStorage.setItem('pka-theme', next);
+  });
+
+  // Markdown-only mode: the folder is opened with the File System Access API.
+  async function openWorkspace() {
+    if (!window.showDirectoryPicker) {
+      document.body.insertAdjacentHTML('afterbegin', '<p>This dashboard needs Chrome or Edge.</p>');
+      return;
+    }
+    const root = await window.showDirectoryPicker();
+    return root;
+  }
+</script>
+</body>
+</html>
