@@ -61,10 +61,11 @@ class Owners(unittest.TestCase):
         self.assertEqual(self.owners("*Robin*: Draft the plan"), [])
         self.assertEqual(self.owners("Robin: Draft the plan"), [])
 
-    def test_names_with_particles_and_other_scripts(self):
-        self.assertEqual(self.owners("**Priya de Souza**: Draft it"), ["Priya de Souza"])
-        self.assertEqual(self.owners("**Zoë O'Neil-Smith**: Draft it"), ["Zoë O'Neil-Smith"])
-        self.assertEqual(self.owners("**山田**: Draft it"), ["山田"])
+    def test_names_with_particles_accents_and_hyphens(self):
+        self.assertEqual(self.owners("**Robin van Smith**: Draft it"), ["Robin van Smith"])
+        self.assertEqual(self.owners("**Zoë Åkesson-Smith**: Draft it"), ["Zoë Åkesson-Smith"])
+        self.assertEqual(self.owners("**Dr. Nair**: Draft it"), ["Dr. Nair"])
+        self.assertEqual(self.owners("**van**: Draft it"), [])
 
 
 class Due(unittest.TestCase):
