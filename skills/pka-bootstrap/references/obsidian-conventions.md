@@ -260,9 +260,11 @@ Each person's `index.md` carries a `## Timeline`: one line per note about them, 
 ```
 
 - **Line grammar:** `- <date> · <kind> · <link>[ — <summary>]`; kind is `1on1`, `meeting` or `doc`. The link is a wikilink in an Obsidian vault and a relative markdown link otherwise. This section is **not** gated on `obsidian_present`.
+- **What a timeline can link to:** in an Obsidian vault, notes in the vault (a wikilink cannot leave it). Without Obsidian, any note in the workspace — `projects/`, a root `meeting-notes/`, the vault — except `owner-inbox/`, `team-inbox/` (not filed yet) and hidden folders. Notes are never moved to make them reachable.
 - **Who writes it:** `.pka/bin/pka-tools post-route` when a note is filed (any role). The role supplies the summary: at most 140 characters, drawn only from the note — decisions and what this person owns; for a 1-1, the topics only.
 - **Who is on a note's timeline:** the person whose folder holds the note; people its `person` / `attendees` frontmatter or `## Attendees` links name with high confidence; a person whose slug is in the filename. A body mention is not enough. Ambiguous names are never added. Meetings with more than 8 resolved attendees add none of them. A note with `no-backref: true` goes on nobody's timeline.
 - **Editing:** the user may rewrite any summary or add text inside the block; the tool never changes an existing line except to follow a renamed note. Do not reorder lines by hand if you want new ones to land in date order.
+- **Backfill:** notes filed before the timeline existed are added once, with `.pka/bin/pka-tools timeline plan` (a report to review) and then `timeline apply <plan>`, which backs up and verifies; `timeline restore <id>` undoes it. The librarian runs it on request.
 - **Rollback:** `.pka/bin/pka-tools timeline strip` removes the blocks.
 - The older `## Mentioned in` back-link sections are no longer written; existing ones stay.
 

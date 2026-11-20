@@ -17,7 +17,7 @@ The workspace is `--workspace`, else `$WORKSPACE_ROOT`, else the nearest folder 
 
 | Command | What it does | Writes |
 |---|---|---|
-| `status` | Workspace root, vault, the Obsidian predicate, storage mode and schema version, index roots, meeting and people folders | nothing |
+| `status` | Workspace root, vault, the Obsidian predicate, what timelines can reach (`timeline_reach`), storage mode and schema version, index roots, meeting and people folders | nothing |
 | `install [--dry-run]` | Vendor the plugin's helpers into `.pka/` by manifest. Run from the plugin's copy | `.pka/bin/`, `.pka/upgrade-roles.py`, `.pka/manifest.json` |
 | `db init` | Create `.pka/knowledge.db` at the current schema | the database |
 | `db migrate` | Print the migration plan. Changes nothing | nothing |
@@ -44,6 +44,9 @@ The workspace is `--workspace`, else `$WORKSPACE_ROOT`, else the nearest folder 
 | `timeline rename OLD NEW [--prefix]` | Follow a moved note in every timeline (`pointers rename` does this too) | person `index.md` files |
 | `timeline check [--strict]` | Unreadable blocks, links to missing notes, lines out of order | nothing |
 | `timeline strip [--person S]` | Remove timeline blocks (rollback) | person `index.md` files |
+| `timeline plan [--since D] [--person S] [--include-large] [--no-write]` | Backfill: the timeline lines existing notes would get, as a review report and a plan file | `owner-inbox/timeline-backfill-plan-<date>.md`, `.pka/backfill/plan-<id>.json` |
+| `timeline apply PLAN [--dry-run]` | Backfill: write a plan's lines, back up and verify | person `index.md` files, `.pka/backups/<id>/` |
+| `timeline restore ID [--force] [--dry-run]` | Put the person pages back as they were before an apply | person `index.md` files |
 | `log add --role R --summary S [--open T] [--next N]` | Append one well-formed session-log entry | `.pka/session-log.md` |
 | `log open [--last N]` | Open threads of recent entries, newest first | nothing |
 | `log check [--strict]` | Entries that do not follow the grammar | nothing |
@@ -72,7 +75,7 @@ The one command a skill runs after it has put a note in place. Its steps, each r
 | `frontmatter` | missing schema keys and the domain tag | Obsidian vault, a markdown note (`.md`, `.markdown`) inside the vault |
 | `moc-link` | a `- [[note]]` bullet in the nearest `_MOC.md` | Obsidian vault (or `--create-moc`) |
 | `pointers` | a pointer row in the domain MOC(s) | note inside the vault; without Obsidian only into existing MOCs |
-| `timeline` | a line on the timeline of each person the note belongs to (`--summary`, `--summary-for`, `--person`, `--include-large`, `--no-timeline`) | note inside the vault and a people folder exists; with or without Obsidian |
+| `timeline` | a line on the timeline of each person the note belongs to (`--summary`, `--summary-for`, `--person`, `--include-large`, `--no-timeline`) | a people folder exists, and the note is one a timeline can link to: in the vault with Obsidian; anywhere but the inboxes and hidden folders without |
 | `index` | the note, every MOC changed above, and every `--also` path | index mode |
 
 Arguments are checked before anything is written: a bad `--section` or `--topic`, or an `--also` that names a folder, exits 64 with every file as it was. An `--also` path that no longer exists is fine: naming the old location of a moved note is how its rows leave the index.
@@ -111,6 +114,8 @@ Every command that writes to a user's file follows these. The tests in `tests/to
 - Evidence: the note is in the person's folder (T1); or its `person` / `attendees` frontmatter, an `## Attendees` link, or a filename containing the slug names them with high confidence (T2). Body mentions do not count. More than 8 resolved attendees: none are added unless `--include-large`. `no-backref: true` opts a note out.
 - Summaries are at most 140 characters (cut without splitting a character); the role writes them from the note.
 - Without Obsidian the links are relative markdown links; `%` and `#` in a filename are percent-encoded.
+- **Reach** (`Workspace.link_root`). With Obsidian a timeline links only to notes in the vault, and keys are vault-relative. Without it a timeline links to any note in the workspace (`projects/`, a root meeting folder) except `owner-inbox/`, `team-inbox/` and hidden folders, and keys are workspace-relative; a wikilink typed by hand is still read relative to the vault, as Obsidian would. `timeline rename` and `pointers rename` take workspace paths (a vault-relative one still works). When a filed note and the person pages it touches are in different repositories, `post-route` commits each repository separately. `graduate.sh` prints the `timeline rename` to run when person pages link into the graduated project.
+- **Backfill** (`timeline plan`, `apply`, `restore`). Planning walks what a timeline can link to (not MOCs, person pages, wiki folders, capture directories or `.pkaignore` matches; markdown and office documents), decides who each note belongs to exactly as for a newly filed note, and also counts a link in the old back-link sections of a person's own page (`## Mentioned in`, `## Related meetings`, `## Inbound References`, `## References`) as T2 evidence. A note with no date (filename prefix or frontmatter `date`) is reported, never dated from its modification time; so is a note whose name a link cannot carry (an upper-case `.MD`, angle brackets without Obsidian). Lines get no summary. Plan and backup ids are unique even within one second. The plan records a hash of every page it will write and every note it cites. `apply` first checks the plan file (every target must be the page of a person folder and every line a timeline line linking to its note; anything else is a usage error, exit 64), then refuses if a page or note changed or a planned stub appeared (plan again), or if the plan was made with Obsidian in a workspace without it (or the reverse). It backs the pages up, records each page's new hash before writing it, adds only lines whose note is not already on the timeline, then checks that every planned line is there, every link resolves, and nothing else in that scope changed (dot-folders such as `.obsidian`, and the inboxes, excepted). A failed check, an exception or an interrupt puts every page back. Nothing is committed. `restore` checks that every file in the record is still the page of its person folder (all or nothing), removes stubs the apply created, and refuses a page edited after the apply, or one whose state after the apply was not recorded, unless `--force`; a backup that was rolled back has nothing to restore.
 - `timeline strip` removes the blocks, the `## Timeline` heading when nothing else is under it, and an `index.md` that was only the stub the tool created. Text the user typed inside a block goes with it. Whitespace next to the block may differ by a line from before the first `add`.
 
 ## Git rules

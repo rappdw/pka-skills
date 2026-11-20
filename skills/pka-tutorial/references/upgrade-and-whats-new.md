@@ -137,7 +137,7 @@ A person's `index.md` gains a `## Timeline`, newest first, the first time a
 note involving them is filed after the upgrade: one line per meeting or note,
 with a link and a one-line summary of what was decided and what they own. Until
 then there is nothing to show, and notes filed before the upgrade are not
-added. A line the user edits by hand is never rewritten.
+added (v1.9.0 adds a backfill for those). A line the user edits by hand is never rewritten.
 
 > "File a 1-1 note for `<a person in their people folder>`" — then open
 > `<people folder>/<person>/index.md` and look at the Timeline.
@@ -230,6 +230,29 @@ pointed at it, in MOCs and in notes, and lists anything else that still names
 the old folder for the user to fix.
 
 > "Transition `<a finished project>` to knowledge"
+
+### v1.9.0
+
+**1. Old notes can go on people's timelines.** *(Applies when the workspace
+has a people folder: `people_home` in `status` is not null.)*
+Until now a timeline only gained lines as new notes were filed. The backfill
+reads the notes the workspace already has and works out whose timeline each
+belongs on, by the same rules as a newly filed note. It plans first: a report
+lands in `owner-inbox/` listing what would be added and what it could not
+place (ambiguous names, notes with no date). Nothing is written until the user
+approves; the pages it touches are backed up, and one command undoes it. Notes
+themselves are never changed.
+
+> "Backfill the timelines from my old notes"
+
+**2. Without Obsidian, timelines reach the whole workspace.** *(Applies when
+there is no Obsidian vault: `obsidian_present` is false.)*
+A person's timeline can now link to a note anywhere in the workspace, such as
+a project folder or a meeting folder at the root, not only inside
+`knowledge/`. Nothing is moved; the person page links to the note where it is.
+The inboxes are left out, since what is in them is not filed yet.
+
+> "Show me what's on `<person>`'s timeline from `<a project folder>`"
 
 ### After the last item
 

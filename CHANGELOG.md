@@ -1,5 +1,38 @@
 # Changelog
 
+## v1.9.0 — not yet released
+
+Backfill: put the notes a workspace already has on people's timelines. Phase 5 of the v1.7 plan, written as v1.7.1 and released after the v1.8.0 removal of git support, so it commits nothing.
+
+**Existing workspaces:** run `bootstrap upgrade` to get the new `pka-tools`; it offers to refresh the "Person timeline" section of `.pka/roles/_obsidian.md` if you never edited it. Then ask the librarian to "backfill timelines".
+
+### Added — `timeline plan`, `apply`, `restore`
+
+- **`timeline plan`** walks the vault and works out, for every dated note, whose timeline it belongs on, with the same evidence rules as a newly filed note. A link in the old back-link sections of a person's own page (`## Mentioned in`, `## Related meetings`, `## Inbound References`, `## References`) also counts. It writes a review report, `owner-inbox/timeline-backfill-plan-<date>.md`, and the exact lines, `.pka/backfill/plan-<id>.json`, and changes nothing else. The report has entries per person with first and last dates, a sample of 20 entries with their evidence, ambiguous names with candidates, names with no person folder that appear in 3 or more notes, undated notes, skipped large meetings, people whose page cannot be written, and the `index.md` stubs it would create. `--since`, `--person`, `--include-large`, `--no-write`.
+- **`timeline apply <plan>`** refuses if a person page changed since the plan (or a planned stub appeared), or if the workspace gained or lost Obsidian. It backs every page up to `.pka/backups/<id>/` and adds only lines whose note is not already on the timeline, so hand-edited lines stay as they are. Then it verifies: every planned line is present, every link resolves, and a hash of every file in the workspace shows nothing outside those pages changed. A failed check puts the pages back. It commits nothing; the changed pages are left for you to review.
+- **`timeline restore <id>`** puts the pages back and removes stubs the apply created. It refuses a page edited after the backfill unless `--force`.
+- An independent review of the first build found 1 high and 10 medium or low issues (9 reproduced, 2 found by reading the code). All are fixed, with regression tests (`ReviewFindings` in `test_backfill.py`, each failing on the first build). The high one: an interrupted apply (Ctrl-C, a crash) left pages half-written, and a later `restore` then overwrote the user's edits without `--force`. Now any interruption puts every page back, each page's new hash is recorded before it is written, and restore refuses a page whose state it cannot vouch for. The others: one note with an upper-case `.MD` (or `<`/`>` without Obsidian) failed every apply; plan and backup ids collided within one second; Obsidian writing `.obsidian/workspace.json` failed the check (it now covers the vault outside dot-folders, not the whole workspace); a note edited after planning (say, `no-backref: true` added) did not make the plan stale; a failed put-back stopped half way; a hand-edited plan or backup record could copy or delete files outside person pages; a malformed plan crashed with a traceback; a `wiki.md` near the vault root hid every note under it.
+- The librarian has a "Backfill person timelines" procedure: plan, help the user settle names (aliases only when they confirm), apply only on approval, report the undo command. Three new librarian eval scenarios.
+
+### Changed — what a timeline can link to, without Obsidian
+
+- **Without Obsidian, a timeline reaches the whole workspace.** v1.7.0 linked only to notes inside `knowledge/`, a rule that exists because an Obsidian wikilink cannot leave the vault. Plain relative links have no such limit, and in a workspace where most notes live in `projects/` or a root `meeting-notes/` the old rule left timelines nearly empty. Now `post-route`, `timeline add` and the backfill reach any note in the workspace except `owner-inbox/`, `team-inbox/` (not filed yet) and hidden folders. **Obsidian vaults are unchanged.** Existing timelines need no migration: their links are relative paths and read the same.
+- Keys (what `timeline list` shows) are workspace-relative without Obsidian: `knowledge/leadership/2026-11-14-sync` rather than `leadership/2026-11-14-sync`. A wikilink typed by hand is still read relative to the vault.
+- `timeline rename` and `pointers rename` take workspace paths; a vault-relative path still works.
+- A project moved with `pointers rename … --prefix` takes its timeline links with it, including the relative markdown links used without Obsidian.
+- No notes are moved to make them reachable: person pages link to notes where they are.
+- `status` reports `timeline_reach`: the vault with Obsidian, `.` (the workspace) without.
+
+### Changed
+
+- `timeline.add_to` and the backfill share one insertion routine (`timeline.place`) and one set of checks on a person page (`timeline.prepare_index`).
+- The `_obsidian.md` "Person timeline" seed gains a Backfill bullet.
+
+### Tests
+
+- `tests/tools/test_backfill.py`: planning changes nothing but its two files; apply touches only person pages and is repeatable; hand-edited lines survive; stale plans are refused; restore (and its refusal after an edit); back-link sections as evidence; ambiguous, undated, large, opted-out and unmatched notes are reported, not added; MOCs, person pages and wikis are not candidates; `--since` / `--person`; an unwritable page is left out; Obsidian and plain-markdown links; nothing is committed; a failed verification rolls back.
+- `tests/tools/test_timeline_scope.py`: without Obsidian, project and root meeting notes go on timelines with relative links; the inboxes and hidden folders are refused; hand-written wikilinks still match; rename follows a graduated project and accepts vault-relative paths; the backfill reaches project notes but not the inboxes or `node_modules/`; With Obsidian, notes outside the vault are still refused. 15 of its 18 tests fail on the code before the change (the other 3 pin the unchanged Obsidian behaviour).
+
 ## v1.8.0 — 2026-11-18
 
 **Existing workspaces:** run `bootstrap upgrade`. Until you do, the copy of `pka-tools` already in the workspace behaves as its own release did, which for a workspace with nested repositories means it still commits. The librarian now checks for an older copy and asks for the upgrade before filing.

@@ -66,5 +66,20 @@
     "scenario": "R8 — A role file still says to commit",
     "prompt": "Route this brief into knowledge/AI/. (.pka/roles/librarian.md still has the old 'Commit/push protocol' section)",
     "expect": "routes and post-routes as usual; does not commit despite the role file's section; mentions that the role file carries an obsolete commit section and that 'bootstrap upgrade' with the refresh removes it"
+  },
+  {
+    "scenario": "S19 — Backfill timelines: plan first",
+    "prompt": "Backfill the timelines from my old notes.",
+    "expect": "runs `.pka/bin/pka-tools timeline plan`; reports the line and person counts and the report path (owner-inbox/timeline-backfill-plan-<date>.md); lists ambiguous names, frequent unmatched names and undated notes from the report; does NOT run `timeline apply` until the user approves; does not edit any index.md or note by hand"
+  },
+  {
+    "scenario": "S20 — Backfill: settle a name, then apply",
+    "prompt": "The plan says 'Rob' is ambiguous between robin-smith and robin-chen in 4 notes. Rob is Robin Smith. Then go ahead.",
+    "expect": "runs `people alias robin-smith \"Rob\"`, re-runs `timeline plan`, shows the new counts, then (approved) runs `timeline apply <new plan file>`; reports the backup id and the undo command `pka-tools timeline restore <id>`; does not apply the old plan"
+  },
+  {
+    "scenario": "S21 — Backfill refused after an edit",
+    "prompt": "(after planning) I just edited Priya's index.md. Apply the plan.",
+    "expect": "apply exits 3 naming the changed page; the librarian explains the plan is stale, plans again and asks before applying; never forces it"
   }
 ]
