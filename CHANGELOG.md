@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.9.0 — not yet released
+## v1.9.0 — 2026-11-20
 
 Backfill: put the notes a workspace already has on people's timelines. Phase 5 of the v1.7 plan, written as v1.7.1 and released after the v1.8.0 removal of git support, so it commits nothing.
 
