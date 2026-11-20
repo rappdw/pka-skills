@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Fixed — the test harness could delete the checkout
+
+- With `TMPDIR` set to a folder that did not exist, `tests/lib.sh` got an empty path back from `mktemp`, resolved it to the current directory, registered that for removal, and deleted it when the test script exited. Run from the repository root, `./tests/run-all.sh` removed the checkout, untracked files included. Only the shell suites were affected; nothing a user of the plugin runs.
+- The harness now checks once that its temp folder exists and is writable, and stops with one line if not. Every directory it creates goes through one checked helper, and it removes only directories it created: the name must match, and it is never the current directory or an ancestor of it.
+- New suite `tests/test_harness_safety.sh` runs first in `run-all.sh`, in a sacrificial folder with its own copy of `lib.sh`; if it fails, no other suite runs.
+
 ## v1.10.0 — 2026-11-20
 
 Lint becomes a tool, finds duplicates, and can run every week. Phase 6 of the v1.7 plan. The repository also gains a walkthrough website.

@@ -29,16 +29,58 @@ ASSETS_DIR="${PKA_REPO}/bootstrap-assets"
 # ---------- workspace creation ----------
 # Workspaces are created with their physical path (no symlinked prefix such as
 # macOS's /var -> /private/var) so tests can compare paths with script output.
+#
+# SAFETY. Everything here that creates a directory goes through _pka_mktemp,
+# and everything that removes one checks the name first. An earlier version
+# ran `dir=$(mktemp -d ...)` unchecked: with TMPDIR pointing at a folder that
+# did not exist, mktemp failed, `cd "" && pwd -P` returned the CURRENT
+# directory, and the exit trap removed it. Run from the repository root, that
+# deleted the checkout.
+PKA_TEST_TMP="${TMPDIR:-/tmp}"
+if [ ! -d "$PKA_TEST_TMP" ] || [ ! -w "$PKA_TEST_TMP" ]; then
+  echo "tests: the temp folder '$PKA_TEST_TMP' (TMPDIR) is not a writable directory. Create it, or unset TMPDIR." >&2
+  exit 1
+fi
+
+# _pka_mktemp PREFIX -> prints the physical path of a new, empty directory
+# named PREFIX.XXXXXX, or prints nothing and returns 1.
+_pka_mktemp() {
+  local prefix="$1" dir
+  dir=$(mktemp -d "$PKA_TEST_TMP/$prefix.XXXXXX" 2>/dev/null) || return 1
+  [ -n "$dir" ] && [ -d "$dir" ] || return 1
+  case "${dir##*/}" in
+    "$prefix".*) ;;
+    *) return 1 ;;
+  esac
+  (cd "$dir" 2>/dev/null && pwd -P) || return 1
+}
+
+# True only for a directory this file created: never the current directory,
+# never an ancestor of it, and only the three names _pka_mktemp is asked for.
+_pka_is_test_dir() {
+  local p="$1" here
+  [ -n "$p" ] && [ -d "$p" ] || return 1
+  case "${p##*/}" in
+    pka-test.*|pka-scratch.*|pka-test-home.*) ;;
+    *) return 1 ;;
+  esac
+  here=$(pwd -P)
+  case "$here/" in
+    "$p"/*) return 1 ;;
+  esac
+  return 0
+}
+
 make_workspace() {
   local dir
-  dir=$(mktemp -d "${TMPDIR:-/tmp}/pka-test.XXXXXX")
-  (cd "$dir" && pwd -P)
+  dir=$(_pka_mktemp pka-test) || { echo "tests: could not create a workspace under '$PKA_TEST_TMP'" >&2; return 1; }
+  echo "$dir"
 }
 
 cleanup_workspace() {
   local dir="$1"
   case "$dir" in
-    */pka-test.*) rm -rf "$dir" ;;
+    */pka-test.*) _pka_is_test_dir "$dir" && rm -rf "$dir" ;;
   esac
 }
 
@@ -47,12 +89,17 @@ cleanup_workspace() {
 # by this file.
 PKA_TEST_CLEANUP=()
 register_cleanup() {
-  PKA_TEST_CLEANUP+=("$1")
+  if _pka_is_test_dir "$1"; then
+    PKA_TEST_CLEANUP+=("$1")
+  else
+    echo "tests: refusing to register '$1' for removal: not a directory this harness created" >&2
+  fi
 }
 _pka_test_cleanup() {
   local p
+  cd "$PKA_TEST_TMP" 2>/dev/null || cd / || return 0
   for p in "${PKA_TEST_CLEANUP[@]:-}"; do
-    [ -n "$p" ] && rm -rf "$p"
+    _pka_is_test_dir "$p" && rm -rf "$p"
   done
 }
 trap _pka_test_cleanup EXIT
@@ -62,8 +109,7 @@ trap _pka_test_cleanup EXIT
 # (registration cannot happen inside the command substitution).
 make_scratch_dir() {
   local dir
-  dir=$(mktemp -d "${TMPDIR:-/tmp}/pka-scratch.XXXXXX")
-  dir=$(cd "$dir" && pwd -P)
+  dir=$(_pka_mktemp pka-scratch) || { echo "tests: could not create a scratch folder under '$PKA_TEST_TMP'" >&2; return 1; }
   echo "$dir"
 }
 
@@ -203,8 +249,11 @@ end_run() {
 # ~/.gitconfig. (An earlier version of this helper wrote the test identity
 # into the real global config, and a release was later committed under it.)
 configure_test_git_identity() {
-  PKA_TEST_HOME=$(mktemp -d "${TMPDIR:-/tmp}/pka-test-home.XXXXXX")
-  PKA_TEST_HOME=$(cd "$PKA_TEST_HOME" && pwd -P)
+  PKA_TEST_HOME=$(_pka_mktemp pka-test-home) || PKA_TEST_HOME=""
+  if [ -z "$PKA_TEST_HOME" ]; then
+    echo "tests: could not create a throwaway home under '$PKA_TEST_TMP'; stopping before any test runs" >&2
+    exit 1
+  fi
   register_cleanup "$PKA_TEST_HOME"
   export HOME="$PKA_TEST_HOME"
   export GIT_CONFIG_GLOBAL="$PKA_TEST_HOME/.gitconfig"

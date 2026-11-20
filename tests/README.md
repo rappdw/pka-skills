@@ -76,3 +76,7 @@ Every name in a test, fixture, eval or doc example must be invented. Use the exi
 - Tests create temp workspaces under `${TMPDIR:-/tmp}/pka-test.*` and `pka-tools-test.*` and clean them up unconditionally.
 - Tests run with an **isolated git identity**: `configure_test_git_identity` points `HOME` and `GIT_CONFIG_GLOBAL` at a throwaway directory and ignores the system config. Nothing is written to your own `~/.gitconfig`. (Before v1.6.3 the helper wrote the test identity into the real global config.)
 - CI runs the suite on Linux and macOS for every push and pull request, and the pka-tools tests again under Python 3.9 (`.github/workflows/tests.yml`).
+
+## Temp folder
+
+The suites create their workspaces under `TMPDIR` (default `/tmp`). It must exist: `mkdir -p <dir> && TMPDIR=<dir> ./tests/run-all.sh`. The harness stops with a message if it does not, and `test_harness_safety.sh` (run first) checks that the harness can only ever remove directories it created.

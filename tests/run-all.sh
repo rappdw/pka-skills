@@ -35,6 +35,13 @@ git_config_fingerprint() {
 }
 GIT_CONFIG_BEFORE=$(git_config_fingerprint)
 
+# First: if the harness could remove a directory it did not create, stop here.
+run_suite "harness-safety"     "$THIS_DIR/test_harness_safety.sh"
+if [ "${#SUITES_FAIL[@]}" -gt 0 ]; then
+  echo "${RED}The harness safety check failed; not running the other suites.${RESET}" >&2
+  exit 1
+fi
+
 run_suite "obsidian-bootstrap" "$THIS_DIR/test_obsidian_bootstrap.sh"
 run_suite "upgrade"            "$THIS_DIR/test_upgrade.sh"
 run_suite "pointer-layer"      "$THIS_DIR/test_pointer_layer.sh"
