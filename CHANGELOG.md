@@ -1,8 +1,8 @@
 # Changelog
 
-## v1.10.0 — not yet released
+## v1.10.0 — 2026-11-20
 
-Lint becomes a tool, finds duplicates, and can run every week. Phase 6 of the v1.7 plan.
+Lint becomes a tool, finds duplicates, and can run every week. Phase 6 of the v1.7 plan. The repository also gains a walkthrough website.
 
 **Existing workspaces:** run `bootstrap upgrade` to get the new `pka-tools`; it offers to refresh the orchestrator's "Session-start checks" section if you never edited it, and shows a weekly schedule entry you can install or ignore. Nothing about your notes changes: lint only writes its report.
 
@@ -44,6 +44,10 @@ The mechanical health checks used to be prose for a model to carry out each time
 - `.pka/session-log.md` is still written through a symbolic link if it is one; it is the user's file, not a generated one.
 - Suggested keepers follow a fixed rule (most links to it, not in an inbox, oldest). For a raw note inside a reconciled one that may suggest the shorter note; the user decides.
 - Rules 6 and 7 are not run by a scheduled lint.
+
+### Added — walkthrough site
+
+- **Walkthrough site.** `docs/index.html` (with `site.css` and `site.js`) is a static, screen-by-screen walkthrough of the skills and concepts, for GitHub Pages serving `/docs` from `main`: <https://rappdw.github.io/pka-skills/>. It loads nothing from other hosts. The README links to it. No change to the skills or to `pka-tools`.
 
 ## v1.9.0 — 2026-11-20
 
