@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+### Skills and tool clean-up (Phase 7: issues #14, #17 to #22, plan findings E4 and C10)
+
+**Existing workspaces:** the next `bootstrap upgrade` adds two sections to the orchestrator's role file ("Answering and delegating", "Owner profile and decision log") and one to the librarian's and the researcher's ("Owner profile and decision log"). A section you already wrote under one of those headings is left as it is. The summary also lists any role file whose frontmatter pins a model; nothing in frontmatter is changed. Your `CLAUDE.md` is not edited.
+
+#### Fixed
+
+- **Action items captured by thinkkit now have an owner and a due date in `pka-tools actions`** (#14). `- [ ] **Robin**: Draft the Q1 hiring plan (due: 2026-12-01)` was listed with neither. `actions` now reads a bold name with a colon at the start of an item as its owner (several names are split; a bold label such as `**Note**:` or a phrase is not an owner) and `(due: …)` as its due date. A date written with a month name is resolved, using the note's date when the year is missing. A due date that is not a calendar date ("Friday", "12/1") is returned as written in a new `due_text` field and is not guessed. The text output shows owner and due date beside each item.
+- **A due date no longer needs the word `by`** when it is an ISO date that ends the item after a dash (`— @Sam — 2026-11-21`), the form the meetings skill itself told roles to write. An ISO date anywhere else in an item is still not a due date.
+- **Filing never rewrites an existing action item.** The meetings skill said items were normalised into PKA's form; its reference said manually written items were not modified. Both now say the same: a checkbox line stays byte for byte as written, and only items found in other patterns are added, as `- [ ] <action> — @<owner> — by <date>`.
+- **A transitioned project is searchable only through its own Repo Map row, and the workflow now adds it before indexing** (#19). Run as documented, with the archive destination at priority Archive, the move took the project out of the index: `index` dropped its `projects/` rows and added none. The workflow now gives the project a row at its new path (Priority Reference, Status archived) and then runs `index`, after which the whole project is indexed, not just its top-level files. A restore removes the row and runs `index --prune`, which is what clears the rows left at the archive path. The bootstrap skill, `inference-guide.md`, `sqlite-modes.md` and the tools README say what the index roots are and that an Archive row does not exclude a folder that lies inside another root.
+
+#### Changed
+
+- **Skill descriptions** are all under 1,024 characters (pka-bootstrap 1,283 → 1,013, pka-librarian 1,196 → 956, pka-tutorial 1,030 → 955) and no longer compete for a newcomer's first message. `pka-tutorial` owns "I just installed PKA", tours, "how do I…", "what can this do" and "what's new"; `pka-bootstrap` owns carrying out setup and upgrade and no longer claims every mention of PKA; the others name their own job and defer.
+- **Role seeds no longer pin a model.** A role file has no `model:` line and runs on the session's model; the roster's Model column says `session`. `upgrade-roles.py` does not edit frontmatter: it lists existing `model:` lines under "Pinned models" and says they can be removed by hand.
+- **The owner profile and the decision log are used** (C10). The orchestrator reads `.pka/owner-profile.md` once at session start (how to write for the owner, what they know, what they are working on) and is the only role that edits it; the autonomy level stays in `CLAUDE.md` alone. A decision-log entry is appended when a decision is made (structure, project lifecycle, roles, autonomy, policies by the orchestrator; routing policies by the librarian), in the format of `references/decision-log.md`, never edited afterwards, and read before a recommendation an earlier decision may cover. The `CLAUDE.md` template has a section for both files and a session-start step.
+- **The orchestrator answers lookups itself** and delegates filing and synthesis (#21). The `CLAUDE.md` template and the role seed said it never did knowledge work directly, which contradicted the tutorial.
+- **Bootstrap in an empty folder is specified** (#18): the inboxes, `.pka/`, `.pkaignore` and `CLAUDE.md` are created as always; content folders only when the user accepts the one starter layout offered (`knowledge/` with `meetings/` and `personnel/`, `projects/`, archive at `knowledge/archive/`) or names their own; declining leaves a Repo Map with no rows, which the tools report plainly.
+- **Notes can be written from a transcript without thinkkit** (#17). The skill now says so: it is PKA's own step, offered and never automatic, and the notes carry a `**Source**:` line saying they were written from the transcript. Checking existing notes against a transcript still needs thinkkit.
+- **`## Attendees` has one position** (#20): appended at the end of the note, after thinkkit's sections. The reference said both "at the bottom" and "before Action Items".
+- **The tutorial's full tour is "about 25 minutes"** (#22), the sum of its nine modules, not 7.
+
+#### Tests
+
+- `tests/tools/test_actions_forms.py`, `test_skill_descriptions.py`, `test_documented_behaviour.py`; additions to `test_upgrade_refresh.py` and `test_upgrade.sh`.
+
 ## v1.10.0 — 2026-11-20
 
 Lint becomes a tool, finds duplicates, and can run every week. Phase 6 of the v1.7 plan. The repository also gains a walkthrough website.
