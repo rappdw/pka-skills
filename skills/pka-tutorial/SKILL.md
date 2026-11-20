@@ -1,19 +1,19 @@
 ---
 name: pka-tutorial
 description: >
-  ALWAYS use this skill when the user is new to PKA, asks for a tour, walkthrough,
-  tutorial, onboarding, or says they don't know how to use their PKA system.
-  Triggers on: "I just installed PKA", "how do I use this", "what can I do with this",
-  "walk me through PKA", "teach me how this works", "give me a tour", "I'm new here",
-  "what are my options", "how do I find things", "show me the ropes", "help me get
-  started", or any confusion about where to begin. Also use when a user asks how to
-  do a specific PKA task for the first time (how to capture meetings, drop files,
-  use the dashboard, transition a project) — the skill teaches the workflow with
-  concrete examples rather than just executing. Also use for "what's new", "what
-  changed in this release", "I just updated the plugin", "do I need to upgrade".
-  Adapts to the user's current PKA state: points to pka-bootstrap if not set up;
-  walks through `bootstrap upgrade` and then what is new if the workspace has not
-  been upgraded on the installed release; otherwise offers the tour.
+  Use this skill for first contact and for questions about how PKA works: the
+  user is new, wants a tour, or asks how to do something rather than asking for
+  it to be done. Triggers: "I just installed PKA", "I'm new here", "how do I
+  use this", "what can this do", "what can I do with this", "give me a tour",
+  "walk me through PKA", "teach me how this works", "show me the ropes", "help
+  me get started", "what are my options", "how do I find things", and any "how
+  do I…" question about a PKA task (capturing meetings, dropping files, the
+  dashboard, transitioning a project): it teaches the workflow with examples
+  from the user's own workspace instead of executing it. Also "what's new",
+  "what changed in this release", "I just updated the plugin", "do I need to
+  upgrade": it previews the upgrade and explains it, changing nothing. It never
+  creates or upgrades a workspace: when PKA is not there yet, or the user says
+  to go ahead, it hands off to pka-bootstrap.
 user-invocable: true
 argument-hint: "[topic or 'tour']"
 allowed-tools: Read, Bash, Glob, Grep

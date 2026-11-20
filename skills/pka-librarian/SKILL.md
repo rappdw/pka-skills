@@ -1,23 +1,19 @@
 ---
 name: pka-librarian
 description: >
-  ALWAYS use this skill when the user wants to process, route, OCR, index, or
-  organize documents in their knowledge system. Triggers on: processing an inbox
-  or team-inbox, routing dropped files to the right folders, OCR on PDFs or
-  scanned documents, re-indexing a knowledge base, setting up a scanner (ScanSnap,
-  iPhone), organizing files into a folder structure, inventorying what's in an
-  inbox, extracting text from PDFs, or any document ingestion task within a PKA
-  or personal knowledge system. Use this skill even when the user just says
+  Use this skill when the user wants to process, route, OCR, index or
+  health-check documents in a PKA workspace. Triggers on: processing the
+  team-inbox, routing dropped files to the right folders, OCR on PDFs or scans,
+  extracting text from PDFs, re-indexing, connecting a scanner (ScanSnap,
+  iPhone), and lint / health checks (orphan files, broken links, stale wiki
+  sources, duplicate notes and people, contradiction candidates). Use it for
   "process my inbox", "what's in the inbox", "route these docs", "re-index",
-  "OCR these", "set up my scanner", or drops files and asks what to do with
-  them. Handles transcript detection (holds .vtt/.srt files for meeting
-  processing instead of routing them). Also runs lint / health checks on the
-  knowledge base (orphan files, broken links, stale wiki sources, duplicate
-  notes and people, contradiction candidates) — triggered by "run a health
-  check", "lint my knowledge base", "find duplicates", "what needs attention",
-  or "check for broken links". Backfills person
-  timelines from existing notes ("backfill timelines"). Works standalone or
-  with pka-bootstrap.
+  "OCR these", "set up my scanner", "run a health check", "lint my knowledge
+  base", "find duplicates", "what needs attention", "check for broken links",
+  "backfill timelines", or when the user drops files and asks what to do with
+  them. Holds transcripts (.vtt/.srt) for pka-meetings instead of routing them.
+  Needs an existing workspace: creating or upgrading one is pka-bootstrap's
+  job, and questions about how the inbox works go to pka-tutorial.
 user-invocable: true
 argument-hint: "[file or command]"
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep

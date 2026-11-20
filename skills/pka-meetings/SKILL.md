@@ -12,8 +12,8 @@ description: >
   these notes", "I have a transcript", "what are my action items this week",
   or mentions a specific meeting like "1-1 with Priya" or "SLT planning".
   Orchestrates thinkkit take-notes and resolve-against-transcript when available.
-  Handles smart routing, attendee linking, and action item extraction. Works
-  standalone for routing if thinkkit is not installed.
+  Works standalone for routing if thinkkit is not installed. A question about
+  how meeting capture works goes to pka-tutorial.
 user-invocable: true
 argument-hint: "[meeting context or file]"
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep

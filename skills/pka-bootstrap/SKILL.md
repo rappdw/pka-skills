@@ -1,22 +1,20 @@
 ---
 name: pka-bootstrap
 description: >
-  ALWAYS use this skill when the user mentions PKA, personal knowledge, repo map,
-  knowledge base setup, replacing Obsidian/Notion/Tana/Heptabase, organizing
-  notes and files into a unified system, adding roles to their AI team, project
-  lifecycle management, transitioning or archiving projects, restoring archived
-  projects, checking which projects are stale or winding down, bootstrapping
-  any kind of personal knowledge assistant, OR setting up Obsidian coexistence,
-  OR upgrading an existing workspace. Triggers also include: "bootstrap obsidian",
-  "bootstrap vault", "MOC stubs", "frontmatter retrofit", "bootstrap upgrade",
-  "bootstrap all", "bootstrap everything". This skill handles first-run setup (scanning folders, inferring
-  structure, writing CLAUDE.md, creating SQLite indexes, defining roles) AND
-  ongoing management (updating the repo map, adding team roles, transitioning
-  completed projects to a knowledge archive, checking project activity) AND
-  the additive Obsidian bootstrap and the upgrade (idempotent, user-triggered,
-  never auto-run). It never runs git: nothing is committed or pushed. Use it even if the user doesn't say "PKA" explicitly — if
-  they want to unify scattered notes, set up AI-powered file organization, or
-  manage workspace lifecycle, this is the right skill.
+  Use this skill to set up, upgrade or manage a PKA (Personal Knowledge
+  Assistance) workspace. It owns: first-run setup in a folder (Repo Map,
+  CLAUDE.md, roles, optional SQLite index); upgrading an existing workspace;
+  the Obsidian retrofit; updating the Repo Map; adding roles to the AI team;
+  and project lifecycle (transition, archive, restore). Triggers: "set up PKA", "set up my PKA",
+  "initialize PKA here", "bootstrap", "bootstrap upgrade", "upgrade my PKA",
+  "update my role files", "bootstrap obsidian", "bootstrap vault", "MOC stubs",
+  "frontmatter retrofit", "bootstrap all", "bootstrap everything", "update my
+  repo map", "add a role", "transition X to knowledge", "archive X", "restore X
+  to active", "what projects are winding down", or wanting to replace
+  Obsidian/Notion/Tana/Heptabase. Runs only on request, is idempotent, never
+  runs git. A newcomer's questions (how something works, what changed, whether
+  an upgrade is needed) belong to pka-tutorial, which hands back here to run
+  the setup or the upgrade.
 user-invocable: true
 argument-hint: "[command or context]"
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
@@ -49,7 +47,9 @@ Everything related to PKA setup and management:
 - "What projects are winding down?"
 - "Bootstrap obsidian / the vault / the MOCs"
 - "Bootstrap all / bootstrap everything"
-- Any mention of "personal knowledge assistance", "PKA", "repo map", "CLAUDE.md orchestrator"
+- "Bootstrap upgrade / upgrade my PKA / update my role files"
+
+Not this skill: "I just installed PKA", "give me a tour", "how do I…", "what's new", "do I need to upgrade". Those are questions, and `pka-tutorial` owns them; it hands back here when the user wants the setup or the upgrade carried out. Mentioning PKA is not by itself a reason to bootstrap anything.
 
 ---
 
