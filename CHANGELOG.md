@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Docs — tutorial, curriculum and walkthrough site brought up to v1.10.0
+
+No change to the skills' behaviour or to `pka-tools`.
+
+- **`docs/TUTORIAL.md` is rewritten** as the long-form written reference for v1.10.0, in twenty sections: requirements and install, setup, a session and its log, the Repo Map, roles, finding things, the inbox, meetings (capture, reconcile, earshot, filing, action items), people and timelines with the backfill, MOCs and the pointer layer with and without Obsidian, topic wikis, the dashboard, project lifecycle, health checks, `pka-tools` and the no-commit rule, upgrading, the guided tour, a working rhythm, a prompt reference and a table of where things live. The previous text predated `pka-tools`, timelines, the removal of git, the upgrade walkthrough and lint, said "four skills", and used names outside the fictional cast. Tool output in it was captured from `pka-tools` 1.10.0 on a scratch workspace.
+- **Tutorial curriculum: eleven modules.** Two are new: **Module 10, People and Timelines** (who goes on a timeline, name matching and aliases, the backfill, how far a timeline reaches) and **Module 11, The Pointer Layer and Obsidian** (what a pointer row is, opt-in without Obsidian, what changes in a vault, `bootstrap obsidian`). Both say when to teach them in full and what to say otherwise. Modules 1 to 9 keep their numbers. Module 1 now covers `pka-tools`, the no-commit rule and where upgrading is taught; Module 2 what search covers and when the index is current; Module 3 the librarian's rules and PDFs; Module 4 attribution, reconciliation, the filing pipeline as it is now, action items and earshot; Module 5 how the dashboard reads data. Upgrading stays in `upgrade-and-whats-new.md`: it is driven by the state of the workspace, not chosen from a menu. `example-prompts.md` gains sections for the two new modules. **The tutorial skill body still says nine modules and lists eight topics in its menus; it needs the matching edit.**
+- **Walkthrough site (issue #15).** The health-check screen is rewritten around `pka-tools lint`: what each rule finds and which run in a quick lint, a real quick and full run, a report excerpt with a broken link in a pointer row, an identical pair and a near-copy with their suggested keepers, suppressing a finding, and the schedule entry the tool prints (it installs nothing). The what's-new table gains v1.10.0; the first screen is labelled v1.10.0; the `status` and upgrade-preview captures are from 1.10.0; the session-start list and greeting include the health-check line; setup and upgrade mention the schedule offer; the tutorial screen lists eleven modules; the `pka-tools` screen lists the lint commands.
+- README: the skill table, quick start, build order, documentation links and repository structure are brought in line (six skills, the site, `scripts/`). The plugin and marketplace descriptions no longer say PKA replaces other tools: it works beside Obsidian or without it.
+
 ## v1.10.0 — 2026-11-20
 
 Lint becomes a tool, finds duplicates, and can run every week. Phase 6 of the v1.7 plan. The repository also gains a walkthrough website.

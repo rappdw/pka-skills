@@ -1,6 +1,6 @@
 {
   "name": "pka-skills",
-  "description": "Personal Knowledge Assistance — local, AI-powered knowledge system replacing Obsidian/Notion/Tana",
+  "description": "Personal Knowledge Assistance — a local, AI-assisted knowledge system over the folders you already have",
   "owner": {
     "name": "Dan Rapp",
     "url": "https://github.com/rappdw"
@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "pka-skills",
-      "description": "Personal Knowledge Assistance — six skills that turn any folder into a local, AI-powered knowledge system with semantic navigation, SQLite indexing, and meeting documentation",
+      "description": "Personal Knowledge Assistance — six skills and a bundled helper that turn any folder of notes into a local, AI-assisted knowledge system: search, meeting filing, people timelines, topic wikis and health checks. Works beside Obsidian or without it",
       "source": "./",
       "author": {
         "name": "Dan Rapp",
