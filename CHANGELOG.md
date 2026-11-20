@@ -23,7 +23,7 @@ All 84 scenarios were read against the v1.10.0 skills and rewritten so that a tr
 
 ### Tests
 
-- New suite `eval-runner` (`tests/test_evals.sh`, 64 tests, no model, no network): see `tests/README.md`.
+- New suite `eval-runner` (`tests/test_evals.sh`, 65 tests, no model, no network): see `tests/README.md`.
 
 ## v1.10.0 — 2026-11-20
 
