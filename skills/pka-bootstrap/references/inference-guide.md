@@ -95,6 +95,8 @@ The flat vs. subfolder distinction is critical for inference quality.
 **Status:** archived
 **Confidence:** High (project-summary.md is definitive)
 
+Each transitioned project has its own Repo Map row, at its path inside the archive destination. That row, not the destination's, is what puts the project in the index.
+
 ### Topic Wiki Home
 **Signals:** Folder (typically named `topics`, `wikis`, or `kb`) containing subfolders each with a `wiki.md` file. Each subfolder represents one topic.
 
@@ -112,6 +114,8 @@ Used by `pka-wiki` for topic synthesis, ingest, and query preference. Multiple f
 **Inferred:** "Archive destination for completed projects"
 **Priority:** Archive
 **Confidence:** High if contains archived projects; Medium if only name matches
+
+Priority Archive means `pka-tools index` does not read the folder itself: loose files dropped straight into it are not searchable. The transitioned projects inside it are, each through its own Reference row (above). One exception follows from how index roots are worked out: if a folder above the destination (`knowledge/`, say) has an Active or Reference row, everything beneath that folder is indexed, the destination included, whatever its own row says.
 
 ### Generic / Unclassifiable
 **Signals:** None of the above patterns match clearly.

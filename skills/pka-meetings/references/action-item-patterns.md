@@ -84,8 +84,8 @@ The line it was extracted from is left where it is.
 ## Action Item Section Placement
 
 If notes don't have an `## Action Items` section:
-- Create it at the bottom of the file
-- After `## Attendees` if that section exists
+- Append it at the end of the file. When this filing also created `## Attendees`, that section was appended first (attendee linking runs before extraction), so `## Action Items` follows it
+- Never insert it between existing sections
 
 If notes already have an `## Action Items` section:
 - Leave the section where it is

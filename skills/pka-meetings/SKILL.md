@@ -41,7 +41,9 @@ resolve-against-transcript ──────▶        ├──▶ .pka/sessio
 Both thinkkit and pka-skills should be installed. `pka-meetings` checks for thinkkit skills at startup and degrades gracefully if absent:
 - No `take-notes`: the skill still handles routing, indexing, and logging of manually-written notes
 - No `resolve-against-transcript`: the skill skips reconciliation and routes notes as-is
-- Both absent: the skill functions as a PKA-aware meeting note router only
+- Both absent: the skill functions as a PKA-aware meeting note router, and can still write notes from a transcript when the user asks (below)
+
+Writing notes from a transcript when there are none does **not** need thinkkit. thinkkit has no skill for it (`take-notes` works from what the user types during the meeting; `resolve-against-transcript` needs notes to check), so this is PKA's own step and works the same with or without thinkkit. See "Notes from a transcript" under Mode 2.
 
 ## Pre-Flight
 
@@ -68,10 +70,22 @@ If thinkkit skills are absent, report which modes are unavailable but proceed wi
 **Trigger:** User mentions a transcript, a transcript file is detected in `team-inbox/`, or an earshot capture directory with an unreconciled `transcript.md` is detected.
 
 1. Identify transcript (from team-inbox/ detection, an earshot capture's `transcript.md`, or user-specified path)
-2. Find matching notes (today's notes, or ask user to specify; if none: offer to generate notes from transcript directly). For earshot captures, prefer the notes file whose `**Recording**:` header points at the capture directory.
-3. Invoke `resolve-against-transcript` with notes + transcript
+2. Find matching notes (today's notes, or ask user to specify; if none: offer to write notes from the transcript, see "Notes from a transcript" below). For earshot captures, prefer the notes file whose `**Recording**:` header points at the capture directory.
+3. Invoke `resolve-against-transcript` with notes + transcript. Without that skill, say that reconciliation needs thinkkit and is being skipped, and go on with the notes as they are. Skip this step too when the notes were just written from the transcript: there is nothing independent to check them against.
 4. Run Post-Processing Pipeline
 5. Ask about transcript disposition: keep in team-inbox/ / archive to knowledge destination / delete (confirm before delete). **Applies to loose team-inbox/ transcripts only** — earshot capture artifacts stay inside their capture directory; never offer to move or delete them.
+
+### Notes from a transcript
+
+For a transcript with no notes. PKA does this itself; thinkkit is not needed and not involved.
+
+1. **Offer, never assume.** "There are no notes for this transcript. Shall I write them from it?" A detected transcript is not a request.
+2. On a yes, read the transcript and write the notes in the structure thinkkit uses, so everything downstream treats them like any other notes: a title, `**Date**`, `**Attendees**` and `**Purpose**` header lines, then `## Notes`, `## Action Items` and `## Open Questions`.
+3. Add one header line that says where they came from: `**Source**: written from transcript <transcript filename>, not checked against notes taken in the meeting`.
+4. Keep to the transcript. Attribute a statement to a speaker only as the transcript labels them; where it says "Speaker 2", write that and ask the user who it is rather than guessing. An action item needs someone in the transcript committing to it. Leave out what cannot be made out.
+5. Save to `meeting-notes/<YYYY-MM-DD>-<slug>.md` (the date is the transcript's), show the user the draft, and run the Post-Processing Pipeline when they are happy with it.
+
+On a no, leave the transcript where it is and ask about its disposition only if the user wants to deal with it now.
 
 **Ordering:** reconciliation (and narration, if the user runs earshot's `/meeting-narrative`) happens **before** routing, while the notes are still in `meeting-notes/` — meeting-narrative finds notes by globbing there. If the user wants a narrative, suggest generating it now, before Step 4 moves the notes.
 
@@ -107,7 +121,7 @@ Resolve every attendee name with the registry, never by eye:
 .pka/bin/pka-tools people resolve "<name>" "<name>" …
 ```
 
-- **high** → link it under `## Attendees` at the bottom of the notes (`- [Priya](../personnel/priya/)`), and use the slug in the frontmatter `attendees` list.
+- **high** → link it under `## Attendees` (`- [Priya](../personnel/priya/)`), and use the slug in the frontmatter `attendees` list. A new `## Attendees` section is appended at the end of the note, after every section already there; an existing one is used where it is.
 - **ambiguous** → ask the user which of the candidates they mean. Never pick.
 - **none** → list the name without a link.
 
@@ -195,7 +209,9 @@ Report: filed to path, attendees linked (N of M), action items found (list), tra
 
 The PKA orchestrator's session-start scan flags transcript files in `team-inbox/` and surfaces them:
 
-> "Found a transcript in team-inbox: `GMT20260331-162935_Recording.transcript.vtt`. Do you have notes to reconcile against it, or should I generate notes from the transcript directly?"
+> "Found a transcript in team-inbox: `GMT20260331-162935_Recording.transcript.vtt`. Do you have notes to reconcile against it, or should I write notes from the transcript?"
+
+Without thinkkit's `resolve-against-transcript` the first half of that offer cannot be kept, so say what is possible: "…I can file notes you already have as they are (checking them against the transcript needs thinkkit), or write notes from the transcript."
 
 Unreconciled earshot captures are surfaced the same way:
 
@@ -208,5 +224,6 @@ Unreconciled earshot captures are surfaced the same way:
 - `**Recording**:` header pointers in notes are preserved verbatim through routing and rewrites
 - Reconcile (and narrate) before routing — notes must still be in `meeting-notes/` for earshot's meeting-narrative to find them
 - Project meeting routing always asks before routing to active project workspace
-- Degrades gracefully when thinkkit skills are absent
+- Degrades gracefully when thinkkit skills are absent: no live capture and no reconciliation, but routing, and notes written from a transcript on request, work without it
+- Notes written from a transcript say so in a `**Source**:` header line and are never produced without the user's yes
 - Never writes to project workspaces without asking

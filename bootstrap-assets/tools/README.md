@@ -87,6 +87,14 @@ Arguments are checked before anything is written: a bad `--section` or `--topic`
 
 A step that cannot do its work reports why and the later steps still run. Running it twice changes nothing. It refuses MOCs, files under `.pka/`, and anything inside an earshot capture directory. Nothing is committed: `touched` in the result lists the files it changed, for the caller to report.
 
+### Index roots
+
+`index` reads, and `search` therefore finds, what is under the index roots; `status` lists them. They are the Repo Map folders whose Priority is Active or Reference and that exist. With no such row: `knowledge/` if there is one, else every top-level folder except the inboxes, `projects/`, `meeting-notes/` and `.pkaignore` matches.
+
+- A row inside another root is folded into it. Priority is not an exclusion that reaches downwards: with `knowledge/` Active and `knowledge/archive/` Archive, the archive folder is indexed because it is inside a root. An Archive row keeps a folder out only when nothing above it is a root.
+- **Archived projects.** The archive destination's row is Archive, so the destination is not a root. A project moved into it is indexed when it has its own row with Priority Reference (the transition workflow in the pka-bootstrap skill adds it before running `index`); `status` then lists the project's folder as a root. Without that row, `index` drops the project's old `projects/…` rows and adds none, and `search` no longer finds it. Once it is a root, every file in it is indexed at any depth: the default `.pkaignore` rule `projects/*/*/*`, which limits an active project to its top-level files, does not match the new path.
+- **A folder that stops being a root** keeps its rows. A plain `index` removes rows for missing files only under the roots it reads; rows outside them whose file is gone are counted as `stale_elsewhere` and removed by `index --prune`. That is what a project restored from the archive needs: its row is taken out of the Repo Map, the folder is back under `projects/`, and `--prune` clears the rows left at the archive path. Rows for files that still exist in a folder that left the map are not removed by either.
+
 ### `actions`
 
 Read-only: it never edits a note, and an item is read in the form it was written. Each open checkbox (`- [ ]`, `* [ ]`, `1. [ ]`, at any indentation, outside fenced code blocks) is returned with `path`, `line`, `date` (the note's), `text` (the item as written), `owners`, `due` and `due_text`. A ticked box counts under `closed` and is not returned.

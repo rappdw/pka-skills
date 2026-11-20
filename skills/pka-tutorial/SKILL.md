@@ -77,7 +77,7 @@ Before teaching anything, detect the user's state:
 | Bootstrapped, workspace behind the installed release | Before any tour: "Your workspace was last set up on `<vendored_version or 'a release before v1.7.0'>`; the installed PKA is `<tool_version>`. Some of what I would show you does not work here until it is upgraded. Want me to walk you through the upgrade first? It takes a few minutes and nothing changes until you say so." When the versions are equal and only the role files are behind, say that instead: "The toolkit here is current, but the role files have not been upgraded to `<tool_version>`." Then follow **Upgrade Walkthrough and What's New** below. |
 | Bootstrapped, toolkit and roles current, index not migrated | "Your index was not migrated when this workspace was upgraded, so search and indexing are off. Say **bootstrap upgrade** and it will offer the migration again; it shows a plan and backs the database up first." No preview, no walkthrough. Then carry on as a returning user. |
 | Bootstrapped, plugin behind the workspace | "This workspace was upgraded on `<vendored_version>`, but the PKA plugin installed here is `<tool_version>`. Update the plugin (`/plugin`, then update `pka-skills`) so the skills match the workspace." Do not suggest `bootstrap upgrade`: it would replace the workspace's newer toolkit with this older one. Then carry on as a returning user. |
-| Bootstrapped, first session | "Welcome. I can give you the full tour (about 7 minutes of reading, with prompts you can try as we go), or jump to something specific — finding things, dropping files, meetings, the dashboard, project lifecycle, roles, topic wikis, or health checks. What sounds useful?" |
+| Bootstrapped, first session | "Welcome. I can give you the full tour (nine short modules, about 25 minutes if you read them all, with prompts you can try as we go; stop after any of them), or jump to something specific — finding things, dropping files, meetings, the dashboard, project lifecycle, roles, topic wikis, or health checks. What sounds useful?" |
 | Bootstrapped, returning user | "What would you like to learn about? I can cover: finding things, the team-inbox, meeting capture, the dashboard, project lifecycle, the role system, topic wikis, or health checks." When the workspace has been upgraded at some point (`.pka/upgrade-backups/` exists) and `.pka/session-log.md` has no `pka-tutorial` entry with `What's new in v<tool_version>`, put "what's new in v<tool_version>" first in that list. A workspace first set up on this release is not offered it; the tour covers everything. |
 
 The last two rows are for a current workspace. For one that is behind, the upgrade comes first, with two exceptions:
@@ -109,6 +109,9 @@ If the user upgraded without the tutorial, steps 5 and 6 are the "what's new" it
 ## The Curriculum
 
 Organized into 9 modules. Each is independently useful — users can skip around.
+The times in the headings add up to 23 minutes of reading, which is the "about
+25 minutes" the first-session greeting quotes for the full tour. Change them
+together.
 See `references/curriculum.md` for full module scripts with example prompts.
 
 ### Module 1: Orientation (2 min)
@@ -157,7 +160,10 @@ knowledge.
 
 Covers: active project workspaces, stale detection, transition workflow,
 summary generation, the reverse-transition case. Emphasizes the "payoff" —
-archived projects become searchable alongside knowledge.
+archived projects become searchable alongside knowledge. That payoff comes
+from the Repo Map row the transition gives the project (Priority Reference),
+which is added before the index is run; an active project is indexed one level
+deep, an archived one in full.
 
 ### Module 7: The Role System (2 min)
 
@@ -197,7 +203,7 @@ lint is never destructive. Points to `pka-librarian` for execution.
 - **Keep it conversational.** No walls of text. Present one idea, give an example prompt, ask "want to try it?" before moving on.
 - **Hand off, don't execute.** When the user wants to actually do something, describe the prompt they should say next. Don't perform the action inside the tutorial.
 - **Respect abandonment.** If the user asks a real question mid-tutorial, stop teaching and answer it. The tour is optional.
-- **Short modules.** Each module should be completable in 2-4 minutes of reading.
+- **Short modules.** Each module should be completable in 2-4 minutes of reading; nine of them make the full tour about 25 minutes.
 
 ## What This Skill Does NOT Do
 

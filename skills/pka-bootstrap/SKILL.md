@@ -110,12 +110,41 @@ has_local_cmd  = os.path.exists('CLAUDE.md')
 
 | Signals | Situation | Action |
 |---------|-----------|--------|
+| No `.pka/`, no `CLAUDE.md`, and no content folders (an empty folder, or only noise) | Fresh setup in an empty folder | Full bootstrap; see "An empty folder" below |
 | No `.pka/`, no `CLAUDE.md` | Fresh setup | Full bootstrap |
 | Folders present, no `.pka/`, no `CLAUDE.md` | Existing structure | Adapt bootstrap — infer, add infrastructure, don't move content |
 | `.pka/` exists but no `CLAUDE.md` | Partial/interrupted bootstrap | Resume: write `CLAUDE.md`, skip already-created infrastructure |
 | `CLAUDE.md` exists but no `.pka/` | CLAUDE.md without PKA infrastructure | Ask: "I see a CLAUDE.md but no PKA infrastructure. Treat as an existing PKA and add `.pka/`, or is this an unrelated CLAUDE.md?" |
 | `.pka/` and `CLAUDE.md` both exist | Already bootstrapped | Update mode — refresh map, extend roles, or lifecycle command |
 | `pka_root` found and `pka_root != cwd` | Inside a project workspace | Refuse. Say: "You're inside a project workspace under `<pka_root>`. Run PKA bootstrap from `<pka_root>` to manage the full system." |
+
+#### An empty folder
+
+When the structural scan (Step 3) finds no folder to put in a Repo Map, nothing can be inferred, so the outcome is fixed here rather than left to judgement:
+
+**Created without asking**, exactly as in any bootstrap: `.pkaignore`, `.pka/` and its contents (step 3b), `CLAUDE.md`, `team-inbox/` and `owner-inbox/`.
+
+**Offered, never created unasked: one starter layout.** It takes the place of Q3, since there is no map to confirm. Ask once: *"This folder is empty, so there is nothing for me to map. I can create a small starting layout: `knowledge/` for notes, with `meetings/` and `personnel/` inside it, and `projects/` for active work. Completed projects would be archived to `knowledge/archive/`. Create these, use your own folder names, or start with none?"*
+
+| Answer | Folders created | Repo Map afterwards |
+|---|---|---|
+| Yes | the five in the table below | those five rows, Confidence High (the user chose them) |
+| Their own names | the folders they name | one row each; ask which holds meeting notes, which holds people, and where completed projects go |
+| None | none | the table header and no rows; `## Archive Destination` says `not set` |
+
+```
+| Folder | Contents | Organization | Priority | Status | Confidence | Tags |
+|--------|----------|-------------|----------|--------|------------|------|
+| `knowledge/` | Notes and reference material | by topic | Active | active | High | |
+| `knowledge/meetings/` | Meeting notes | by date | Active | active | High | meeting-home |
+| `knowledge/personnel/` | Notes per person | by person | Active | active | High | people-home |
+| `knowledge/archive/` | Completed projects | by project | Archive | archived | High | |
+| `projects/` | Project workspaces | by project | Active | active | High | |
+```
+
+In every case: storage mode is Markdown-only (there are no files to count), no index is created, the pointer-layer offer (3j) is skipped because there is nothing to point at, and no notes, MOCs or person folders are written. Nothing is created inside the starter folders.
+
+With no rows, `pka-tools status` shows no index roots, no meeting folders and no people folder, and commands that need one say so (`people list` exits 3 and names the fix). That is a working state: the first file dropped in `team-inbox/` gets a routing proposal that names a folder to create, and the Repo Map gains its first row when the user agrees. Say this in the orientation (3k), and, when the starter layout was created, that a health check lists the still-empty folders under rule 4 until each holds a file.
 
 ### Step 2 — Load or generate `.pkaignore`
 
@@ -182,6 +211,8 @@ Three questions only.
 
 Show draft map including the meeting-home, people-home and daily-home tags and the archive destination. For low-confidence entries, ask specifically. Confirm archive destination: "I've identified `<folder>` as where completed project archives should live — is that right?" If none inferred, ask.
 
+In an empty folder there is no draft map; Q3 is the starter-layout question from "An empty folder".
+
 ---
 
 ## Phase 3: Write Output Files
@@ -226,7 +257,7 @@ If `python3 --version` reports older than 3.9, stop and tell the user; do not fa
 
 ### 3c — Inboxes
 
-Create `owner-inbox/` and `team-inbox/` at PKA root. Never create content folders when adapting to an existing structure.
+Create `owner-inbox/` and `team-inbox/` at PKA root. Never create content folders when adapting to an existing structure. In an empty folder, content folders are created only when the user accepts the starter layout or names their own (see "An empty folder").
 
 ### 3d — `CLAUDE.md`
 
@@ -273,7 +304,7 @@ After bootstrap the roles keep it: the orchestrator appends an entry when a stru
 .pka/bin/pka-tools index
 ```
 
-`db init` creates `.pka/knowledge.db` with the current schema; `index` fills it from the Repo Map's Active and Reference folders (markdown and text content, plus metadata and a content hash for every file). Do not write the schema or the inserts by hand. `index` lists documents that have no searchable text yet (PDFs without an OCR sidecar); hand that list to the librarian. Write `.pka/schema.md` from the output of `.pka/bin/pka-tools db schema`.
+`db init` creates `.pka/knowledge.db` with the current schema; `index` fills it from the Repo Map's Active and Reference folders (markdown and text content, plus metadata and a content hash for every file). A folder whose row says Archive is not read, unless a folder above it has an Active or Reference row; the archive destination is normally such a folder, and each project transitioned into it is indexed through a row of its own (see "Transition Workflow"). Do not write the schema or the inserts by hand. `index` lists documents that have no searchable text yet (PDFs without an OCR sidecar); hand that list to the librarian. Write `.pka/schema.md` from the output of `.pka/bin/pka-tools db schema`.
 
 See `references/sqlite-modes.md` for the schema and the commands.
 
@@ -325,20 +356,22 @@ Triggered by: "transition `<folder>` to knowledge"
      ```
      .pka/bin/pka-tools pointers rename <project path> <new path> --prefix --notes
      ```
-     Both paths are relative to the workspace root (`projects/orion`, `knowledge/archive/orion`). It prints how many links it rewrote and in which files; running it again changes nothing. It rewrites `[[wikilinks]]` only. Search for the old path afterwards (`grep -rn "<project path>" --include='*.md' .`) and show the user what is left: relative markdown links, and mentions in `CLAUDE.md` or other projects, are theirs to fix. Then run `.pka/bin/pka-tools index`.
+     Both paths are relative to the workspace root (`projects/orion`, `knowledge/archive/orion`). It prints how many links it rewrote and in which files; running it again changes nothing. It rewrites `[[wikilinks]]` only. Search for the old path afterwards (`grep -rn "<project path>" --include='*.md' .`) and show the user what is left: relative markdown links, and mentions in `CLAUDE.md` or other projects, are theirs to fix.
 
    Then copy the approved summary into the moved directory as `project-summary.md`. Nothing is committed: the move, the rewritten links and the summary are left in the working tree for the user.
-6. Update Repo Map: status → archived, Priority → Reference
-7. Librarian runs content index pass on moved directory
-8. Append to `session-log.md`
+6. **Give the project its own Repo Map row, before indexing.** Folder `<archive-destination>/<folder>/`, Priority **Reference**, Status **archived**. If the project already had a row of its own, change that row's folder, priority and status; if it was covered by the `projects/` row, add a row. The archive destination's own row is not changed.
+
+   This row is what makes the project searchable. `pka-tools index` reads the folders whose row says Active or Reference, and the archive destination's row says Archive, so without a row for the project the move takes it out of the index altogether: its old `projects/` rows are dropped and nothing replaces them. (The exception: when a folder above the destination, such as `knowledge/`, has an Active or Reference row of its own, everything beneath it is already indexed and the project's row only records its status.)
+7. Run `.pka/bin/pka-tools index`. The project's rows under `projects/` leave the index and every file of the moved folder enters it, at any depth: the `projects/*/*/*` rule in `.pkaignore`, which kept an active project to its top-level files, does not apply at the new path. Check with `.pka/bin/pka-tools status`: the project's folder is listed under index roots (or the folder above it that covers it). In markdown-only mode there is no index and this step is skipped.
+8. Append to `session-log.md`, and add an entry to `.pka/decision-log.md` (why the project was archived, who decided, `projects/<folder> → <archive-destination>/<folder>`).
 
 ### Reverse Transition
 
-1. Move back from archive destination to original location, then run `.pka/bin/pka-tools pointers rename <archive path> <original path> --prefix --notes` so wikilinks follow it, in the vault and inside the project's own notes, then `.pka/bin/pka-tools index`. If the project was graduated by an earlier release's `graduate.sh`, its original repository is still at `.pka/graduate-backups/<folder>-<timestamp>.git`: tell the user it is there and that restoring it (`mv <backup> projects/<folder>/.git`) is theirs to do. Never delete anything under `.pka/graduate-backups/`.
-2. Update Repo Map: status → active
-3. Remove from full-text index; add back to shallow index
+1. Move back from archive destination to original location, then run `.pka/bin/pka-tools pointers rename <archive path> <original path> --prefix --notes` so wikilinks follow it, in the vault and inside the project's own notes (the index is brought up to date in step 3, after the Repo Map). If the project was graduated by an earlier release's `graduate.sh`, its original repository is still at `.pka/graduate-backups/<folder>-<timestamp>.git`: tell the user it is there and that restoring it (`mv <backup> projects/<folder>/.git`) is theirs to do. Never delete anything under `.pka/graduate-backups/`.
+2. Update Repo Map: remove the project's Reference row (or, if it had its own row before the transition, set that row back to its original folder, Priority Active, Status active). The `projects/` row covers it again.
+3. Run `.pka/bin/pka-tools index --prune`. That is the whole of "remove from the full-text index, add back to the shallow one": at `projects/<folder>/` the `.pkaignore` rule limits the index to the project's top-level files again, and `--prune` drops the rows left at the archive path. It is needed here because that path stopped being an index root in step 2, and a plain `index` only clears out rows under the roots it reads; `--prune` removes rows whose file no longer exists, and nothing else.
 4. `project-summary.md` stays in project directory as context
-5. Append to session log
+5. Append to session log, and add a `.pka/decision-log.md` entry for the restore
 
 ---
 
