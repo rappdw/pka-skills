@@ -6,12 +6,12 @@ note. It needs no model and no network, so it can run from cron.
 
 Rules (numbers as in the librarian's `lint-rules.md`):
 
-  1   files left in `team-inbox/unsorted/` for more than 14 days
-  2   links to files that are not there (wikilinks and relative markdown links)
+  1   things left in `team-inbox/unsorted/` and not changed for 14 days
+  2   links to files that are not there (wikilinks and markdown links)
   3   paths in a wiki's `## Sources` that are not there
   4   Repo Map folders with nothing indexable in them
   5   notes that belong on a person's timeline and are not on it (one
-      informational finding, from the backfill planner's evidence rules)
+      informational line, from the backfill planner's evidence rules)
   8a  byte-identical files
   8b  the same text after dropping frontmatter, case and spacing
   8c  near-duplicates, and one note contained in another
@@ -19,6 +19,10 @@ Rules (numbers as in the librarian's `lint-rules.md`):
 
 `--quick` runs 1 to 4, 8a and 8b. Rules 6 and 7 need judgement and stay with
 the librarian, who appends them to the report.
+
+A set of copies is one finding, filed under the broadest rule that holds for
+it: files that are identical, re-saved and nearly the same as each other are
+one 8c finding that says how each file relates to the suggested keeper.
 
 Every finding has an id made from its rule and its subject, so the same
 problem has the same id on every run. `lint suppress <id>` records an id in
@@ -28,11 +32,16 @@ report and counted.
 Not reported: anything under `.pka/` or a dot-folder, `.pkaignore` matches,
 the contents of earshot capture directories, an OCR sidecar against its
 source (a sidecar stands in for its source's text and is never listed
-itself), and pointer rows repeated across different MOCs. A copy of a file
-in a wiki's `sources/` folder is reported as information, not as a finding.
+itself), `_MOC.md` files as duplicates, and pointer rows repeated across
+different MOCs. A copy of a file in a wiki's `sources/` folder is reported
+as information, not as a finding.
+
+Generated files (the report, the suppressions file) are never written
+through a symbolic link.
 """
 from __future__ import annotations
 
+import contextlib
 import datetime as _dt
 import difflib
 import hashlib
@@ -40,54 +49,74 @@ import json
 import math
 import os
 import re
+import time
+import unicodedata
 import zlib
+from collections import OrderedDict
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, Iterator, List, Optional, Set, Tuple
 
 from . import frontmatter, pointers
 from .errors import EXIT_FAIL, EXIT_USAGE, ToolError
 from .indexer import TEXT_EXTENSIONS, _is_sidecar, _sidecar_of
-from .markdown import WIKILINK_RE, block_mask, find_heading, link_target, protected_spans, section_end
+from .markdown import WIKILINK_RE, block_mask, find_heading, heading_of, link_target, protected_spans, section_end
 from .people import registry, words_of
-from .textio import NotText, line_body, read_text, read_text_lossy, sha256_file, split_lines, write_text_atomic
-from .workspace import MOC_NAME, UNFILED_ROOTS, Workspace
+from .textio import (
+    GeneratedRefused, NotText, generated_problem, line_body, read_text, read_text_lossy, sha256_file, split_lines,
+    write_generated,
+)
+from .workspace import CAPTURE_MARKER, MOC_NAME, UNFILED_ROOTS, Workspace
 
 REPORT_DIR = "owner-inbox"
 REPORT_RE = re.compile(r"^librarian-lint-(\d{4}-\d{2}-\d{2})\.md$")
 # Reports the tools write into owner-inbox/: never lint input.
 GENERATED_RE = re.compile(r"^(librarian-lint-|timeline-backfill-plan-).*\.md$")
 HEADER_RE = re.compile(r"^<!-- pka-lint (\{.*\}) -->\s*$")
-ID_TAG_RE = re.compile(r"\[id: ([0-9a-z]+-[0-9a-z]+)\]")
+ID_TAG_RE = re.compile(r"\[id: ([0-9a-z]+-[0-9a-z]+)(, information)?\]")
+MORE_IDS_RE = re.compile(r"^<!-- pka-lint-(info-)?ids: ([0-9a-z \-]*)-->\s*$")
 SUPPRESS_FILE = "lint-suppressions.json"
 SUPPRESS_VERSION = 1
 HEADER_VERSION = 1
+TODAY_ENV = "PKA_LINT_TODAY"        # YYYY-MM-DD; lets a test (or a rehearsal) pick the day
 
 ORPHAN_DAYS = 14
 RECENT_DAYS = 7
-INDEXABLE = (".md", ".pdf", ".docx", ".txt")
+SUPPRESS_LOOKBACK_DAYS = 30
 MARKDOWN = (".md", ".markdown")
-MIN_NORMALISED_CHARS = 80       # 8b: shorter texts are too slight to call duplicates
+INDEXABLE = MARKDOWN + (".txt", ".pdf", ".docx")
+MIN_CONTENT_CHARS = 80          # 8a (text files) and 8b: less text than this, outside headings, is not compared
+MIN_BINARY_BYTES = 16           # 8a for files that are not text
 MIN_WORDS = 200                 # 8c
 SHINGLE = 5
 SIMILARITY = 0.8
 CONTAINMENT = 0.9
 SIG_BINS = 64                   # one-permutation MinHash: 64 bins ...
 BAND_ROWS = 4                   # ... in 16 bands of 4
-SAMPLE_MASK = 7                 # containment candidates: shingles whose hash ends in three zero bits
-POSTING_CAP = 50                # a bucket or sampled shingle shared by more documents is boilerplate
+SAMPLE_MASK = 15                # containment candidates: shingles whose hash ends in four zero bits
+SMALL_BUCKET = 6                # up to this many notes sharing a band or sample: every pair is looked at
+POSTING_CAP = 50                # more than this: a family or boilerplate; compared against one representative
+SET_CACHE = 512
+REPORT_CAP = 200                # findings shown per rule in the report; `--json` has all of them
 RULE5_EXAMPLES = 20
 LIBRARIAN_MARK = "<!-- librarian:rules-6-7 -->"
-
-_MD_LINK_RE = re.compile(
-    r"(?<!\\)\[(?:[^\]\[\n]|\[[^\]\n]*\])*\]\(\s*(?:<([^>\n]+)>|([^)\s]+))(?:\s+(?:\"[^\"\n]*\"|'[^'\n]*'))?\s*\)"
+LIBRARIAN_DEFAULTS = (
+    "Not part of a quick lint.",
+    "Not run by the tool: contradiction candidates (rule 6) and uncited wiki claims (rule 7) need "
+    "the librarian. Ask for \"full lint\" in a session and the librarian adds them below this line.",
 )
+
+_LINK_OPEN_RE = re.compile(r"(?<![\w\\])!?\[(?:[^\]\[\n]|\[[^\]\n]*\])*\]\(")
+_REF_DEF_RE = re.compile(r"^ {0,3}\[(?!\^)([^\]\n]+)\]:\s*(?:<([^>\n]+)>|(\S+))")
 _SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.\-]*:")
-_SOURCE_BULLET_RE = re.compile(r"^\s*[-*+]\s+`([^`]+)`")
+_BULLET_RE = re.compile(r"^\s*(?:[-*+]|\d{1,9}[.)])\s+")
+_CODE_SPAN_RE = re.compile(r"`([^`\n]+)`")
+_PATHISH_RE = re.compile(r"(/|\.[A-Za-z0-9]{1,8}$)")
 _PERCENT_RE = re.compile(r"%([0-9A-Fa-f]{2})")
 _WORD_RE = re.compile(r"\w+", re.UNICODE)
+_LIST_ITEM_RE = re.compile(r"^\s*(?:[-*+]|\d{1,9}[.)])(\s|$)")
 
 TITLES = {
-    "1": "Files left in team-inbox/unsorted/",
+    "1": "Left in team-inbox/unsorted/",
     "2": "Broken links",
     "3": "Stale wiki sources",
     "4": "Empty Repo Map folders",
@@ -102,7 +131,8 @@ HINTS = {
     "2": "Fix or remove these references. The librarian does not remove pointer-row links by itself.",
     "3": "Update the wiki's Sources list or restore the file.",
     "4": "Remove the row from the Repo Map, or archive the folder.",
-    "5": "Ask the librarian to \"backfill timelines\". It plans first and writes nothing until you approve.",
+    "5": "Ask the librarian to \"backfill timelines\". It plans first and writes nothing until you approve. "
+         "To leave one note off every timeline, give it `no-backref: true`. This line cannot be suppressed.",
     "8a": "Keep one copy and delete or move the others yourself; links to a removed copy will then show as broken.",
     "8b": "Usually one is a re-save of the other. Keep one, or suppress the group if both are meant.",
     "8c": "Often raw notes beside a reconciled version, or a `-2` copy. Keep the fuller one, or suppress the group.",
@@ -110,12 +140,45 @@ HINTS = {
 }
 QUICK_RULES = ("1", "2", "3", "4", "8a", "8b")
 FULL_RULES = ("1", "2", "3", "4", "5", "8a", "8b", "8c", "8d")
+RELATIONS = {"keeper": "suggested keeper", "bytes": "identical bytes", "text": "same text", "near": "near copy"}
+
+
+def today() -> _dt.date:
+    forced = os.environ.get(TODAY_ENV)
+    if forced:
+        try:
+            return _dt.date.fromisoformat(forced)
+        except ValueError:
+            raise ToolError("%s must be a date like 2026-11-20, not %r" % (TODAY_ENV, forced), EXIT_USAGE)
+    return _dt.date.today()
 
 
 def fid(rule: str, *parts: str) -> str:
     """A finding's id: the rule, and a hash of what it is about."""
     digest = hashlib.sha256("\0".join(parts).encode("utf-8", "surrogateescape")).hexdigest()
     return "%s-%s" % (rule, digest[:8])
+
+
+def code(text: str) -> str:
+    """`text` as a markdown code span that cannot break its line or its span."""
+    text = text.replace("\r", "\\r").replace("\n", "\\n")
+    if "`" in text:
+        return "`` %s ``" % text
+    return "`%s`" % text
+
+
+def human_size(size: int) -> str:
+    if size < 1024:
+        return "%d B" % size
+    if size < 1024 * 1024:
+        return "%.1f KB" % (size / 1024.0)
+    if size < 1024 ** 3:
+        return "%.1f MB" % (size / 1024.0 ** 2)
+    return "%.1f GB" % (size / 1024.0 ** 3)
+
+
+def _nfc(text: str) -> str:
+    return unicodedata.normalize("NFC", text)
 
 
 def _percent_decode(text: str) -> str:
@@ -135,30 +198,85 @@ def _percent_decode(text: str) -> str:
     return pieces.decode("utf-8", "replace")
 
 
-def strip_frontmatter(text: str) -> str:
-    lines = text.split("\n")
-    if not lines or lines[0].lstrip("﻿").rstrip("\r") != "---":
-        return text
-    for idx in range(1, len(lines)):
-        if lines[idx].rstrip("\r") in ("---", "..."):
-            return "\n".join(lines[idx + 1:])
+def body_of(text: str) -> str:
+    """The text without its frontmatter. Only a block the frontmatter parser
+    accepts is dropped: a paragraph between two `---` rules is body text."""
+    lines = split_lines(text)
+    fm = frontmatter.parse(lines)
+    if fm.usable:
+        return "".join(lines[fm.close + 1:])
     return text
 
 
 def normalise(text: str) -> str:
     """Body text for comparison: no frontmatter, one case, single spaces."""
-    return " ".join(strip_frontmatter(text).casefold().split())
+    return " ".join(body_of(text).casefold().split())
+
+
+def content_chars(text: str) -> int:
+    """How much there is to compare: characters of body text outside headings."""
+    total = 0
+    for line in split_lines(body_of(text)):
+        if heading_of(line) is None:
+            total += len(" ".join(line.split()))
+    return total
+
+
+class Names:
+    """Does a path exist, by the exact name it was written with?
+
+    Asked of directory listings, never of the filesystem directly, so a
+    case-insensitive disk (macOS) and a case-sensitive one give the same
+    answer. Names are compared after Unicode normalisation.
+    """
+
+    def __init__(self) -> None:
+        self._listing: Dict[str, Tuple[Dict[str, str], Dict[str, str]]] = {}
+
+    def _entries(self, folder: Path) -> Tuple[Dict[str, str], Dict[str, str]]:
+        key = str(folder)
+        if key not in self._listing:
+            exact: Dict[str, str] = {}
+            folded: Dict[str, str] = {}
+            try:
+                names = os.listdir(key)
+            except OSError:
+                names = []
+            for name in sorted(names):
+                exact.setdefault(_nfc(name), name)
+                folded.setdefault(_nfc(name).casefold(), name)
+            self._listing[key] = (exact, folded)
+        return self._listing[key]
+
+    def find(self, base: Path, parts: Tuple[str, ...]) -> Tuple[str, Optional[Path]]:
+        """("ok" | "case" | "missing", the path found)."""
+        current = base
+        state = "ok"
+        for part in parts:
+            if part in ("", "."):
+                continue
+            exact, folded = self._entries(current)
+            wanted = _nfc(part)
+            if wanted in exact:
+                current = current / exact[wanted]
+            elif wanted.casefold() in folded:
+                current = current / folded[wanted.casefold()]
+                state = "case"
+            else:
+                return "missing", None
+        return state, current
 
 
 class Scan:
     """One walk of the workspace, and what the rules share."""
 
-    def __init__(self, ws: Workspace, today: _dt.date):
+    def __init__(self, ws: Workspace, day: _dt.date):
         self.ws = ws
-        self.today = today
+        self.today = day
         self.files: List[Path] = []
         self.unreadable: List[str] = []
         self.notes: List[str] = []
+        self.names = Names()
         self._text: Dict[Path, Optional[str]] = {}
         self.inbound: Dict[str, Set[str]] = {}
         starts = [ws.root]
@@ -200,81 +318,228 @@ class Scan:
     def in_inbox(self, rel: str) -> bool:
         return rel.split("/", 1)[0] in UNFILED_ROOTS
 
-    def member(self, path: Path) -> dict:
-        rel = self.ws.rel(path)
-        try:
-            stat = path.stat()
-            size, modified = stat.st_size, _dt.date.fromtimestamp(stat.st_mtime).isoformat()
-            mtime = stat.st_mtime
-        except OSError:
-            size, modified, mtime = 0, "", 0.0
-        return {"path": rel, "size": size, "modified": modified, "inbound": len(self.inbound.get(rel, ())),
-                "inbox": self.in_inbox(rel), "_mtime": mtime}
-
-    def group_members(self, paths: List[Path]) -> Tuple[List[dict], str]:
-        members = [self.member(p) for p in sorted(paths, key=lambda p: self.ws.rel(p))]
-        keeper = sorted(members, key=lambda m: (-m["inbound"], m["inbox"], m["_mtime"], m["path"]))[0]["path"]
-        for item in members:
-            item.pop("_mtime")
-        return members, keeper
-
 
 def _in_wiki_sources(path: Path) -> bool:
     return path.parent.name == "sources" and (path.parent.parent / "wiki.md").is_file()
 
 
+def _last_change(path: Path) -> Optional[float]:
+    """When a file last changed here: the later of its modification time and
+    its status-change time. A file copied in with an old date still has a
+    status change from the day it arrived."""
+    try:
+        stat = os.lstat(str(path))
+    except OSError:
+        return None
+    return max(stat.st_mtime, stat.st_ctime)
+
+
 # ------------------------------------------------------------ rule 1
 
 def rule_orphans(scan: Scan) -> List[dict]:
-    out = []
+    ws = scan.ws
+    folder = ws.root / "team-inbox" / "unsorted"
+    items: Dict[str, float] = {}
     prefix = "team-inbox/unsorted/"
     for path in scan.files:
-        rel = scan.ws.rel(path)
-        if not rel.startswith(prefix):
-            continue
-        try:
-            age = (scan.today - _dt.date.fromtimestamp(path.stat().st_mtime)).days
-        except OSError:
-            continue
+        rel = ws.rel(path)
+        if rel.startswith(prefix):
+            stamp = _last_change(path)
+            if stamp is not None:
+                items[rel] = stamp
+    if folder.is_dir() and not folder.is_symlink():
+        # An earshot capture directory is one thing to route, not its files.
+        for current, dirs, names in os.walk(str(folder)):
+            dirs[:] = sorted(d for d in dirs if not d.startswith(".")
+                             and not os.path.islink(os.path.join(current, d)))
+            if CAPTURE_MARKER in names and Path(current) != folder:
+                dirs[:] = []
+                stamps = [s for s in (_last_change(Path(current) / n) for n in names) if s is not None]
+                own = _last_change(Path(current))
+                if own is not None:
+                    stamps.append(own)
+                if stamps:
+                    rel = ws.rel(Path(current)) + "/"
+                    if not ws.ignore.match(rel.rstrip("/"), True):
+                        items[rel] = max(stamps)
+    out = []
+    for rel, stamp in sorted(items.items()):
+        age = (scan.today - _dt.date.fromtimestamp(stamp)).days
         if age > ORPHAN_DAYS:
+            what = "capture directory, " if rel.endswith("/") else ""
             out.append({"id": fid("1", rel), "rule": "1", "severity": "finding", "path": rel, "age_days": age,
-                        "text": "`%s` (there for %d days)" % (rel, age)})
+                        "text": "%s (%slast changed %d days ago)" % (code(rel), what, age)})
     return out
 
 
 # ------------------------------------------------------------ rule 2
 
-def _resolve_wikilink(ws: Workspace, target: str) -> Optional[Path]:
-    found = pointers.resolve_link(ws, target)
-    if found is not None:
-        return found
-    for base in (ws.vault, ws.root):
-        candidate = base / target
-        if candidate.is_dir():
-            return candidate
-        if base != ws.vault:
-            for option in (Path(str(candidate) + ".md"), candidate):
-                if option.is_file():
-                    return option
-    return None
+def _line_masks(lines: List[str]) -> List[bool]:
+    """Lines that hold no links to check: fenced blocks and HTML comments,
+    Obsidian `%%` comment blocks, `$$` math blocks and indented code blocks."""
+    mask = block_mask(lines)
+    inside: Optional[str] = None
+    previous_blank = True
+    previous_code = False
+    previous_text = ""
+    for idx, line in enumerate(lines):
+        if mask[idx]:
+            previous_blank, previous_code = False, False
+            continue
+        body = line_body(line)
+        stripped = body.strip()
+        if inside is not None:
+            mask[idx] = True
+            if stripped.endswith(inside) or stripped == inside:
+                inside = None
+            continue
+        for fence in ("%%", "$$"):
+            if stripped.startswith(fence) and stripped.count(fence) % 2 == 1:
+                inside = fence
+                mask[idx] = True
+                break
+        if mask[idx]:
+            continue
+        if not stripped:
+            previous_blank = True
+            continue
+        indented = body.startswith("    ") or body.startswith("\t")
+        if indented and (previous_code or (previous_blank and not _LIST_ITEM_RE.match(previous_text)
+                                           and not previous_text.startswith((" ", "\t")))):
+            mask[idx] = True
+            previous_code = True
+        else:
+            previous_code = False
+            previous_text = body
+        previous_blank = False
+    return mask
+
+
+def _guarded_spans(body: str) -> List[Tuple[int, int]]:
+    """Inline code and comments, plus `%%…%%` and `$$…$$` on one line."""
+    spans = protected_spans(body)
+    for fence in ("%%", "$$"):
+        start = body.find(fence)
+        while start != -1:
+            close = body.find(fence, start + 2)
+            if close == -1:
+                break
+            spans.append((start, close + 2))
+            start = body.find(fence, close + 2)
+    return spans
+
+
+def _destination(body: str, start: int) -> Optional[str]:
+    """The destination of an inline link whose `(` ends at `start`, or None
+    when what follows is not a link destination. Parentheses may nest."""
+    idx = start
+    while idx < len(body) and body[idx] in " \t":
+        idx += 1
+    if idx < len(body) and body[idx] == "<":
+        close = body.find(">", idx + 1)
+        return body[idx + 1:close] if close != -1 else None
+    depth = 0
+    begin = idx
+    while idx < len(body):
+        char = body[idx]
+        if char == "\\" and idx + 1 < len(body):
+            idx += 2
+            continue
+        if char in " \t":
+            break
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            if depth == 0:
+                break
+            depth -= 1
+        idx += 1
+    if idx >= len(body) or depth:
+        return None
+    return body[begin:idx] or None
+
+
+class Links:
+    """Resolves links the way they are written, and remembers who links where."""
+
+    def __init__(self, scan: Scan):
+        self.scan = scan
+        self.ws = scan.ws
+        self.root = str(self.ws.root)
+        self._bare: Optional[Dict[str, List[Path]]] = None
+
+    def bare(self, name: str) -> List[Path]:
+        """Vault files a bare `[[name]]` could mean (by file name or note name)."""
+        if self._bare is None:
+            self._bare = {}
+            vault = self.ws.vault
+            for candidate in self.scan.files:
+                if vault != candidate.parent and vault not in candidate.parents:
+                    continue
+                keys = {_nfc(candidate.name).casefold()}
+                if candidate.suffix.lower() in MARKDOWN:
+                    keys.add(_nfc(candidate.stem).casefold())
+                for key in keys:
+                    self._bare.setdefault(key, []).append(candidate)
+        return self._bare.get(_nfc(name).casefold(), [])
+
+    def wikilink(self, target: str) -> Tuple[str, Optional[Path], Optional[str]]:
+        """(state, file, suggestion) for a wikilink target."""
+        ws = self.ws
+        target = target.lstrip("/")
+        parts = tuple(target.split("/"))
+        if not target or ".." in parts:
+            return "skip", None, None
+        best = "missing"
+        for base in ((ws.vault, ws.root) if ws.vault != ws.root else (ws.root,)):
+            for option in (parts[:-1] + (parts[-1] + ".md",), parts):
+                state, found = self.scan.names.find(base, option)
+                if state == "ok":
+                    return "ok", found, None
+                if state == "case":
+                    best = "case"
+        if "/" not in target:
+            same = self.bare(target)
+            if len(same) == 1:
+                if ws.obsidian_present:
+                    return "ok", same[0], None      # Obsidian's shortest-path link
+                rel = ws.vault_rel(same[0])
+                return best, None, "[[%s]]" % (rel[:-3] if rel.lower().endswith(".md") else rel)
+            if len(same) > 1 and ws.obsidian_present:
+                return "ambiguous", None, "%d notes have that name" % len(same)
+        return best, None, None
+
+    def path_link(self, source: Path, dest: str) -> Tuple[str, Optional[Path]]:
+        """(state, file) for a relative markdown destination."""
+        if not dest or dest.startswith(("#", "/", "\\")) or _SCHEME_RE.match(dest):
+            return "skip", None
+        dest = _percent_decode(dest.split("#", 1)[0].split("?", 1)[0])
+        if not dest:
+            return "skip", None
+        candidate = os.path.normpath(os.path.join(str(source.parent), dest))
+        if candidate != self.root and not candidate.startswith(self.root.rstrip(os.sep) + os.sep):
+            return "skip", None                 # outside the workspace: not ours to judge
+        parts = tuple(os.path.relpath(candidate, self.root).split(os.sep))
+        return self.scan.names.find(self.ws.root, parts)
 
 
 def rule_links(scan: Scan) -> List[dict]:
     """Broken links. Also fills `scan.inbound` (who links to each file)."""
     ws = scan.ws
-    root = str(ws.root)
+    links = Links(scan)
     broken: Dict[Tuple[str, str], dict] = {}
-    names: Optional[Dict[str, List[str]]] = None
 
-    def note_inbound(target: Path, source_rel: str) -> None:
-        if target.is_file():
+    def note_inbound(target: Optional[Path], source_rel: str) -> None:
+        if target is not None and target.is_file():
             try:
                 scan.inbound.setdefault(ws.rel(target), set()).add(source_rel)
             except ValueError:
                 pass
 
-    def add(source_rel: str, shown: str, line_no: int, topic: Optional[str], kind: str) -> None:
-        slot = broken.setdefault((source_rel, shown), {"lines": [], "topic": topic, "kind": kind})
+    def add(source_rel: str, shown: str, line_no: int, topic: Optional[str], state: str,
+            suggestion: Optional[str]) -> None:
+        slot = broken.setdefault((source_rel, shown), {"lines": [], "topic": topic, "state": state,
+                                                       "suggestion": suggestion})
         slot["lines"].append(line_no)
         if topic and not slot["topic"]:
             slot["topic"] = topic
@@ -287,7 +552,7 @@ def rule_links(scan: Scan) -> List[dict]:
             continue
         source_rel = ws.rel(path)
         lines = split_lines(text)
-        mask = block_mask(lines)
+        mask = _line_masks(lines)
         topics: Dict[int, str] = {}
         if path.name == MOC_NAME:
             table = pointers.locate(lines)
@@ -297,7 +562,7 @@ def rule_links(scan: Scan) -> List[dict]:
             if mask[idx] or "[" not in line:
                 continue
             body = line_body(line)
-            guarded = protected_spans(body)
+            guarded = _guarded_spans(body)
 
             def hidden(start: int) -> bool:
                 return any(a <= start < b for a, b in guarded)
@@ -309,51 +574,48 @@ def rule_links(scan: Scan) -> List[dict]:
                 target = link_target(match.group("target"))
                 if not target:
                     continue
-                found = _resolve_wikilink(ws, target)
-                if found is not None:
+                state, found, suggestion = links.wikilink(target)
+                if state == "ok":
                     note_inbound(found, source_rel)
-                else:
-                    add(source_rel, "[[%s]]" % target, idx + 1, topics.get(idx), "wikilink")
-            for match in _MD_LINK_RE.finditer(body):
+                elif state != "skip":
+                    add(source_rel, "[[%s]]" % target, idx + 1, topics.get(idx), state, suggestion)
+            destinations: List[Tuple[int, str]] = []
+            for match in _LINK_OPEN_RE.finditer(body):
                 if hidden(match.start()):
                     continue
-                dest = (match.group(1) or match.group(2) or "").strip()
-                if not dest or dest.startswith(("#", "/", "\\")) or _SCHEME_RE.match(dest):
-                    continue
-                shown = dest
-                dest = _percent_decode(dest.split("#", 1)[0].split("?", 1)[0])
-                if not dest:
-                    continue
-                candidate = os.path.normpath(os.path.join(str(path.parent), dest))
-                if candidate != root and not candidate.startswith(root.rstrip(os.sep) + os.sep):
-                    continue                    # outside the workspace: not ours to judge
-                if os.path.exists(candidate):
-                    note_inbound(Path(candidate), source_rel)
-                else:
-                    add(source_rel, shown, idx + 1, topics.get(idx), "markdown")
+                dest = _destination(body, match.end())
+                if dest is not None:
+                    destinations.append((match.start(), dest.strip()))
+            definition = _REF_DEF_RE.match(body)
+            if definition and not hidden(0):
+                destinations.append((0, (definition.group(2) or definition.group(3) or "").strip()))
+            for _start, dest in destinations:
+                state, found = links.path_link(path, dest)
+                if state == "ok":
+                    note_inbound(found, source_rel)
+                elif state != "skip":
+                    add(source_rel, dest, idx + 1, topics.get(idx), state, None)
 
     out = []
     for (source_rel, shown), slot in sorted(broken.items()):
-        suggestion = None
-        if slot["kind"] == "wikilink" and "/" not in shown:
-            if names is None:
-                names = {}
-                for candidate in scan.files:
-                    if candidate.suffix.lower() in MARKDOWN and ws.vault in candidate.parents:
-                        names.setdefault(candidate.stem.casefold(), []).append(ws.vault_rel(candidate))
-            same = names.get(shown[2:-2].casefold(), [])
-            if len(same) == 1:
-                suggestion = "[[%s]]" % same[0][:-3] if same[0].lower().endswith(".md") else "[[%s]]" % same[0]
         lines = sorted(set(slot["lines"]))
         where = "%s:%s" % (source_rel, ",".join(str(n) for n in lines[:5]) + ("…" if len(lines) > 5 else ""))
-        text = "`%s` → `%s` (missing" % (where, shown)
+        if slot["state"] == "case":
+            reason = "differs only in upper and lower case from a file that is there"
+        elif slot["state"] == "ambiguous":
+            reason = "ambiguous: %s" % slot["suggestion"]
+        else:
+            reason = "missing"
+        text = "%s → %s (%s" % (code(where), code(shown), reason)
         if slot["topic"]:
             text += "; in the Pointers row for topic '%s'" % slot["topic"]
         text += ")"
+        suggestion = slot["suggestion"] if slot["state"] != "ambiguous" else None
         if suggestion:
-            text += "; the only note of that name is `%s`" % suggestion
+            text += "; the only note of that name is %s" % code(suggestion)
         out.append({"id": fid("2", source_rel, shown), "rule": "2", "severity": "finding", "source": source_rel,
-                    "target": shown, "lines": lines, "topic": slot["topic"], "suggestion": suggestion, "text": text})
+                    "target": shown, "lines": lines, "topic": slot["topic"], "suggestion": suggestion,
+                    "reason": slot["state"], "text": text})
     return out
 
 
@@ -381,18 +643,25 @@ def rule_wiki_sources(scan: Scan) -> List[dict]:
         for idx in range(head + 1, section_end(lines, mask, head)):
             if mask[idx]:
                 continue
-            match = _SOURCE_BULLET_RE.match(line_body(lines[idx]))
-            if not match:
+            body = line_body(lines[idx])
+            if not _BULLET_RE.match(body):
                 continue
-            cited = match.group(1).strip()
-            if not cited or cited in seen or any(char in cited for char in "<>{}") or _SCHEME_RE.match(cited):
-                continue
-            seen.add(cited)
-            plain = cited.lstrip("/")
-            if any((base / plain).exists() for base in (ws.root, ws.vault, wiki.parent)):
-                continue
-            out.append({"id": fid("3", wiki_rel, cited), "rule": "3", "severity": "finding", "wiki": wiki_rel,
-                        "cited": cited, "text": "`%s` cites `%s` (missing)" % (wiki_rel, cited)})
+            for match in _CODE_SPAN_RE.finditer(body):
+                cited = match.group(1).strip()
+                if (not cited or cited in seen or any(char in cited for char in "<>{}")
+                        or _SCHEME_RE.match(cited) or not _PATHISH_RE.search(cited.split("#", 1)[0])):
+                    continue
+                seen.add(cited)
+                plain = cited.split("#", 1)[0].lstrip("/")
+                if not plain:
+                    continue
+                parts = tuple(plain.split("/"))
+                if ".." in parts:
+                    continue
+                if any(scan.names.find(base, parts)[0] == "ok" for base in (ws.root, ws.vault, wiki.parent)):
+                    continue
+                out.append({"id": fid("3", wiki_rel, cited), "rule": "3", "severity": "finding", "wiki": wiki_rel,
+                            "cited": cited, "text": "%s cites %s (missing)" % (code(wiki_rel), code(cited))})
     return out
 
 
@@ -414,7 +683,7 @@ def rule_repo_map(scan: Scan) -> List[dict]:
         else:
             state = "nothing indexable in it"
         out.append({"id": fid("4", entry.folder), "rule": "4", "severity": "finding", "folder": entry.folder,
-                    "text": "`%s/` — %s" % (entry.folder, state)})
+                    "text": "%s — %s" % (code(entry.folder + "/"), state)})
     return out
 
 
@@ -436,102 +705,29 @@ def rule_timelines(scan: Scan) -> List[dict]:
     if not pairs:
         return []
     notes = sorted({note for note, _ in pairs})
-    examples = ["`%s` → %s" % pair for pair in pairs[:RULE5_EXAMPLES]]
+    people = len({slug for _, slug in pairs})
+    examples = ["%s → %s" % (code(note), slug) for note, slug in pairs[:RULE5_EXAMPLES]]
     text = "%d note%s (%d timeline line%s) across %d %s" % (
         len(notes), "" if len(notes) == 1 else "s", len(pairs), "" if len(pairs) == 1 else "s",
-        len({slug for _, slug in pairs}), "person" if len({slug for _, slug in pairs}) == 1 else "people")
+        people, "person" if people == 1 else "people")
     return [{"id": "5-timelines", "rule": "5", "severity": "info", "notes": len(notes), "lines": len(pairs),
              "examples": examples, "more": max(0, len(pairs) - RULE5_EXAMPLES), "text": text}]
 
 
-# ------------------------------------------------------------ rule 8a, 8b
-
-def _duplicate_finding(scan: Scan, rule: str, paths: List[Path], detail: str) -> dict:
-    members, keeper = scan.group_members(paths)
-    outside = [p for p in paths if not _in_wiki_sources(p)]
-    copy = len(outside) <= 1 and len(outside) < len(paths)
-    return {"id": fid(rule, *[m["path"] for m in members]), "rule": rule,
-            "severity": "info" if copy else "finding", "members": members, "keeper": keeper,
-            "wiki_source_copy": copy, "detail": detail,
-            "text": "%d files%s" % (len(members), (", " + detail) if detail else "")}
-
-
-def rule_identical(scan: Scan) -> Tuple[List[dict], Dict[Path, str]]:
-    by_size: Dict[int, List[Path]] = {}
-    for path in scan.files:
-        if _is_sidecar(path):
-            continue
-        try:
-            size = path.stat().st_size
-        except OSError:
-            continue
-        if size:
-            by_size.setdefault(size, []).append(path)
-    by_hash: Dict[str, List[Path]] = {}
-    for size, paths in by_size.items():
-        if len(paths) < 2:
-            continue
-        for path in paths:
-            try:
-                by_hash.setdefault(sha256_file(path), []).append(path)
-            except OSError:
-                continue
-    out = []
-    group_of: Dict[Path, str] = {}
-    for digest, paths in sorted(by_hash.items(), key=lambda kv: scan.ws.rel(sorted(kv[1], key=str)[0])):
-        if len(paths) < 2:
-            continue
-        finding = _duplicate_finding(scan, "8a", paths, "byte for byte the same")
-        for path in paths:
-            group_of[path] = finding["id"]
-        out.append(finding)
-    return out, group_of
-
+# ------------------------------------------------------------ rule 8a, 8b, 8c
 
 class Doc:
-    __slots__ = ("path", "rel", "norm_hash", "words")
+    """A file the duplicate rules consider."""
+    __slots__ = ("path", "rel", "size", "sha", "norm_hash", "words")
 
-    def __init__(self, path: Path, rel: str, norm_hash: str, words: int):
+    def __init__(self, path: Path, rel: str, size: int):
         self.path = path
         self.rel = rel
-        self.norm_hash = norm_hash
-        self.words = words
+        self.size = size
+        self.sha: Optional[str] = None
+        self.norm_hash: Optional[str] = None
+        self.words = 0
 
-
-def text_documents(scan: Scan) -> List[Doc]:
-    """Every file with comparable text (its own or its sidecar's)."""
-    docs = []
-    for path in scan.files:
-        if _is_sidecar(path) or path.name == MOC_NAME:
-            continue
-        text = scan.body_text(path)
-        if text is None:
-            continue
-        norm = normalise(text)
-        if len(norm) < MIN_NORMALISED_CHARS:
-            continue
-        docs.append(Doc(path, scan.ws.rel(path), hashlib.sha256(norm.encode("utf-8", "replace")).hexdigest(),
-                        len(_WORD_RE.findall(norm))))
-    return docs
-
-
-def rule_same_text(scan: Scan, docs: List[Doc], identical: Dict[Path, str]) -> List[dict]:
-    groups: Dict[str, List[Doc]] = {}
-    for doc in docs:
-        groups.setdefault(doc.norm_hash, []).append(doc)
-    out = []
-    for _digest, members in sorted(groups.items(), key=lambda kv: kv[1][0].rel):
-        if len(members) < 2:
-            continue
-        ids = {identical.get(doc.path) for doc in members}
-        if len(ids) == 1 and None not in ids:
-            continue                            # all byte-identical: reported under 8a
-        out.append(_duplicate_finding(scan, "8b", [doc.path for doc in members],
-                                      "the same text once frontmatter, case and spacing are set aside"))
-    return out
-
-
-# ------------------------------------------------------------ rule 8c
 
 def shingle_hashes(norm: str) -> Set[int]:
     """Hashes of the 5-word shingles of normalised text. CRC-32, so the
@@ -563,99 +759,280 @@ def compare(a: Set[int], b: Set[int]) -> Tuple[float, float]:
     return shared / float(len(a) + len(b) - shared), shared / float(min(len(a), len(b)))
 
 
-def rule_near(scan: Scan, docs: List[Doc], identical: Dict[Path, str]) -> List[dict]:
-    longer = [doc for doc in docs if doc.words >= MIN_WORDS]
-    sets: Dict[int, Set[int]] = {}
+class _Union:
+    def __init__(self, size: int):
+        self.parent = list(range(size))
 
-    def hashes_of(index: int) -> Set[int]:
-        if index not in sets:
-            if len(sets) >= 512:
-                sets.pop(next(iter(sets)))
-            sets[index] = shingle_hashes(normalise(scan.body_text(longer[index].path) or ""))
-        return sets[index]
-
-    bands: Dict[Tuple[int, Tuple[int, ...]], List[int]] = {}
-    postings: Dict[int, List[int]] = {}
-    sample_count: List[int] = []
-    for index, doc in enumerate(longer):
-        hashes = shingle_hashes(normalise(scan.body_text(doc.path) or ""))
-        sig = signature(hashes)
-        for band in range(SIG_BINS // BAND_ROWS):
-            rows = tuple(sig[band * BAND_ROWS:(band + 1) * BAND_ROWS])
-            if any(value != -1 for value in rows):
-                bands.setdefault((band, rows), []).append(index)
-        sampled = [value for value in hashes if not value & SAMPLE_MASK]
-        sample_count.append(len(sampled))
-        for value in sampled:
-            postings.setdefault(value, []).append(index)
-
-    candidates: Set[Tuple[int, int]] = set()
-    boilerplate = 0
-    for members in bands.values():
-        if len(members) < 2:
-            continue
-        if len(members) > POSTING_CAP:
-            boilerplate += 1
-            continue
-        for i, first in enumerate(members):
-            for second in members[i + 1:]:
-                candidates.add((first, second))
-    shared: Dict[Tuple[int, int], int] = {}
-    for members in postings.values():
-        if len(members) < 2:
-            continue
-        if len(members) > POSTING_CAP:
-            boilerplate += 1
-            continue
-        for i, first in enumerate(members):
-            for second in members[i + 1:]:
-                shared[(first, second)] = shared.get((first, second), 0) + 1
-    for pair, count in shared.items():
-        if count >= max(2, int(math.ceil(0.5 * min(sample_count[pair[0]], sample_count[pair[1]])))):
-            candidates.add(pair)
-    if boilerplate:
-        scan.notes.append("Rule 8c: %d passage(s) shared by more than %d notes were treated as boilerplate "
-                          "and not used to pair notes." % (boilerplate, POSTING_CAP))
-
-    parent = list(range(len(longer)))
-
-    def find(index: int) -> int:
+    def find(self, index: int) -> int:
+        parent = self.parent
         while parent[index] != index:
             parent[index] = parent[parent[index]]
             index = parent[index]
         return index
 
-    evidence: Dict[Tuple[int, int], Tuple[float, float]] = {}
-    for first, second in sorted(candidates):
-        a, b = longer[first], longer[second]
-        if a.norm_hash == b.norm_hash:
-            continue                            # 8a or 8b has it
-        group = identical.get(a.path)
-        if group is not None and group == identical.get(b.path):
+    def join(self, a: int, b: int) -> None:
+        ra, rb = self.find(a), self.find(b)
+        if ra != rb:
+            if ra < rb:
+                self.parent[rb] = ra            # the lowest index stays the root: a stable representative
+            else:
+                self.parent[ra] = rb
+
+
+def near_edges(scan: Scan, docs: List[Doc]) -> List[Tuple[int, int, float, float]]:
+    """Pairs of `docs` (indices) that are near-duplicates or one inside the
+    other, as (first, second, similarity, containment).
+
+    Candidates come from MinHash bands (similar pairs) and from an index of
+    sampled shingles (one note inside a longer one, which bands cannot see).
+    A cheap estimate from the signatures or the samples decides whether a
+    pair is worth reading both files for; the files then settle it exactly.
+    Notes sharing a band or a sample with many others are compared against
+    one representative, so a large family costs one comparison per member.
+    """
+    count = len(docs)
+    sigs: List[List[int]] = []
+    sample_count: List[int] = []
+    bands: Dict[Tuple[int, Tuple[int, ...]], List[int]] = {}
+    postings: Dict[int, object] = {}
+    cache: "OrderedDict[int, Set[int]]" = OrderedDict()
+
+    def hashes_of(index: int) -> Set[int]:
+        if index in cache:
+            cache.move_to_end(index)
+            return cache[index]
+        value = shingle_hashes(normalise(scan.body_text(docs[index].path) or ""))
+        cache[index] = value
+        if len(cache) > SET_CACHE:
+            cache.popitem(last=False)
+        return value
+
+    for index in range(count):
+        hashes = shingle_hashes(normalise(scan.body_text(docs[index].path) or ""))
+        sig = signature(hashes)
+        sigs.append(sig)
+        for band in range(SIG_BINS // BAND_ROWS):
+            rows = tuple(sig[band * BAND_ROWS:(band + 1) * BAND_ROWS])
+            if any(value != -1 for value in rows):
+                bands.setdefault((band, rows), []).append(index)
+        sampled = 0
+        for value in hashes:
+            if not value & SAMPLE_MASK:
+                sampled += 1
+                held = postings.get(value)
+                if held is None:
+                    postings[value] = index
+                elif isinstance(held, list):
+                    held.append(index)
+                else:
+                    postings[value] = [held, index]
+        sample_count.append(sampled)
+
+    union = _Union(count)
+    edges: List[Tuple[int, int, float, float]] = []
+    settled: Dict[Tuple[int, int], bool] = {}
+
+    def exact(first: int, second: int) -> bool:
+        key = (first, second) if first < second else (second, first)
+        if key not in settled:
+            similarity, containment = compare(hashes_of(key[0]), hashes_of(key[1]))
+            settled[key] = similarity >= SIMILARITY or containment >= CONTAINMENT
+            if settled[key]:
+                edges.append((key[0], key[1], similarity, containment))
+                union.join(key[0], key[1])
+        return settled[key]
+
+    def alike(first: int, second: int) -> bool:
+        """From the signatures alone: could these two be 80% similar?"""
+        a, b = sigs[first], sigs[second]
+        both = same = 0
+        for x, y in zip(a, b):
+            if x != -1 or y != -1:
+                both += 1
+                if x == y:
+                    same += 1
+        return both > 0 and same >= 0.55 * both
+
+    boilerplate = 0
+    for members in bands.values():
+        if len(members) < 2:
             continue
-        similarity, containment = compare(hashes_of(first), hashes_of(second))
-        if similarity >= SIMILARITY or containment >= CONTAINMENT:
-            evidence[(first, second)] = (similarity, containment)
-            parent[find(second)] = find(first)
+        if len(members) <= SMALL_BUCKET:
+            for i, first in enumerate(members):
+                for second in members[i + 1:]:
+                    if union.find(first) != union.find(second) and alike(first, second):
+                        exact(first, second)
+            continue
+        # A family, or boilerplate: compare everyone with a representative,
+        # then (for what is left) with the next one, a few times over.
+        remaining = members
+        rounds = 1 if len(members) > POSTING_CAP else 4
+        for _ in range(rounds):
+            if len(remaining) < 2:
+                break
+            head, rest = remaining[0], []
+            for other in remaining[1:]:
+                if union.find(other) == union.find(head):
+                    continue
+                if not (alike(head, other) and exact(head, other)):
+                    rest.append(other)
+            remaining = rest
+        if len(members) > POSTING_CAP and len(remaining) > POSTING_CAP:
+            boilerplate += 1
+
+    # Containment: count sampled shingles shared between the representatives
+    # of what is not already joined.
+    shared: Dict[Tuple[int, int], int] = {}
+    for held in postings.values():
+        if not isinstance(held, list):
+            continue
+        reps = sorted({union.find(index) for index in held})
+        if len(reps) < 2:
+            continue
+        if len(reps) <= SMALL_BUCKET * 2:
+            for i, first in enumerate(reps):
+                for second in reps[i + 1:]:
+                    shared[(first, second)] = shared.get((first, second), 0) + 1
+        else:
+            if len(reps) > POSTING_CAP:
+                boilerplate += 1
+            head = reps[0]
+            for other in reps[1:]:
+                shared[(head, other)] = shared.get((head, other), 0) + 1
+    for (first, second), number in sorted(shared.items()):
+        smaller = min(sample_count[first], sample_count[second])
+        larger = max(sample_count[first], sample_count[second])
+        if number < 2 or union.find(first) == union.find(second):
+            continue
+        if smaller >= 16:
+            estimate_containment = number / float(smaller)
+            estimate_similarity = number / float(smaller + larger - number)
+            if estimate_containment < 0.75 and estimate_similarity < 0.65:
+                continue
+        elif number < int(math.ceil(0.5 * smaller)):
+            continue
+        exact(first, second)
+    if boilerplate:
+        scan.notes.append("Rule 8c: %d passage(s) shared by more than %d otherwise different notes were treated "
+                          "as boilerplate; notes that share only that are not paired." % (boilerplate, POSTING_CAP))
+    return edges
+
+
+def rule_duplicates(scan: Scan, near: bool) -> List[dict]:
+    """8a, 8b and (when `near`) 8c: one finding per set of copies, filed
+    under the broadest rule that holds for the set."""
+    ws = scan.ws
+    docs: List[Doc] = []
+    for path in scan.files:
+        if _is_sidecar(path) or path.name == MOC_NAME:
+            continue
+        try:
+            size = path.stat().st_size
+        except OSError:
+            continue
+        if not size:
+            continue
+        doc = Doc(path, ws.rel(path), size)
+        is_text = path.suffix.lower() in TEXT_EXTENSIONS
+        text = scan.body_text(path)
+        if text is not None and content_chars(text) >= MIN_CONTENT_CHARS:
+            norm = normalise(text)
+            doc.norm_hash = hashlib.sha256(norm.encode("utf-8", "replace")).hexdigest()
+            doc.words = len(_WORD_RE.findall(norm))
+        elif is_text or size < MIN_BINARY_BYTES:
+            continue                            # too slight to call a duplicate of anything
+        docs.append(doc)
+
+    union = _Union(len(docs))
+    by_size: Dict[int, List[int]] = {}
+    for index, doc in enumerate(docs):
+        by_size.setdefault(doc.size, []).append(index)
+    by_sha: Dict[str, int] = {}
+    for indices in by_size.values():
+        if len(indices) < 2:
+            continue
+        for index in indices:
+            try:
+                docs[index].sha = sha256_file(docs[index].path)
+            except OSError:
+                continue
+            first = by_sha.setdefault(docs[index].sha, index)
+            union.join(first, index)
+    by_norm: Dict[str, int] = {}
+    for index, doc in enumerate(docs):
+        if doc.norm_hash is not None:
+            first = by_norm.setdefault(doc.norm_hash, index)
+            union.join(first, index)
+    evidence: Dict[int, Tuple[float, float]] = {}
+    if near:
+        # One representative per distinct text: copies of it are already joined.
+        reps = [index for index in sorted(by_norm.values()) if docs[index].words >= MIN_WORDS]
+        edges = near_edges(scan, [docs[index] for index in reps])
+        for first, second, _similarity, _containment in edges:
+            union.join(reps[first], reps[second])
+        for first, _second, similarity, containment in edges:
+            root = union.find(reps[first])
+            best = evidence.get(root, (0.0, 0.0))
+            evidence[root] = (max(best[0], similarity), max(best[1], containment))
 
     groups: Dict[int, List[int]] = {}
-    for first, second in evidence:
-        root = find(first)
-        for index in (first, second):
-            if index not in groups.setdefault(root, []):
-                groups[root].append(index)
+    for index in range(len(docs)):
+        groups.setdefault(union.find(index), []).append(index)
     out = []
-    for root, members in sorted(groups.items(), key=lambda kv: min(longer[i].rel for i in kv[1])):
-        pairs = [(pair, value) for pair, value in evidence.items() if find(pair[0]) == root]
-        best_similarity = max(value[0] for _, value in pairs)
-        best_containment = max(value[1] for _, value in pairs)
-        if best_similarity >= SIMILARITY:
-            detail = "up to %d%% alike" % int(best_similarity * 100)
+    for root, indices in sorted(groups.items(), key=lambda kv: docs[kv[1][0]].rel):
+        if len(indices) < 2:
+            continue
+        members = []
+        for index in indices:
+            doc = docs[index]
+            if doc.sha is None:
+                try:
+                    doc.sha = sha256_file(doc.path)
+                except OSError:
+                    doc.sha = "unreadable:" + doc.rel
+            stamp = _last_change(doc.path) or 0.0
+            try:
+                mtime = doc.path.stat().st_mtime
+            except OSError:
+                mtime = 0.0
+            members.append({"path": doc.rel, "size": doc.size,
+                            "modified": _dt.date.fromtimestamp(mtime).isoformat() if mtime else "",
+                            "inbound": len(scan.inbound.get(doc.rel, ())), "inbox": scan.in_inbox(doc.rel),
+                            "_mtime": mtime, "_sha": doc.sha, "_norm": doc.norm_hash, "_stamp": stamp})
+        members.sort(key=lambda m: m["path"])
+        keeper = sorted(members, key=lambda m: (-m["inbound"], m["inbox"], m["_mtime"], m["path"]))[0]
+        texts = {m["_norm"] for m in members}
+        shas = {m["_sha"] for m in members}
+        if len(texts) > 1:
+            rule = "8c"
+            similarity, containment = evidence.get(root, (0.0, 0.0))
+            detail = ("up to %d%% alike" % int(similarity * 100)) if similarity >= SIMILARITY \
+                else ("one holds %d%% of another" % int(containment * 100))
+        elif len(shas) > 1:
+            rule, detail = "8b", "the same text once frontmatter, case and spacing are set aside"
         else:
-            detail = "one holds %d%% of another" % int(best_containment * 100)
-        finding = _duplicate_finding(scan, "8c", [longer[i].path for i in members], detail)
-        finding["similarity"] = round(best_similarity, 3)
-        finding["containment"] = round(best_containment, 3)
+            rule, detail = "8a", "byte for byte the same"
+        for member in members:
+            if member is keeper:
+                member["relation"] = "keeper"
+            elif member["_sha"] == keeper["_sha"]:
+                member["relation"] = "bytes"
+            elif member["_norm"] is not None and member["_norm"] == keeper["_norm"]:
+                member["relation"] = "text"
+            else:
+                member["relation"] = "near"
+        outside = [m for m in members if not _in_wiki_sources(ws.root / m["path"])]
+        copy = len(outside) <= 1 and len(outside) < len(members)
+        for member in members:
+            for key in ("_mtime", "_sha", "_norm", "_stamp"):
+                member.pop(key)
+        finding = {"id": fid(rule, *[m["path"] for m in members]), "rule": rule,
+                   "severity": "info" if copy else "finding", "members": members, "keeper": keeper["path"],
+                   "wiki_source_copy": copy, "detail": detail,
+                   "text": "%d files, %s" % (len(members), detail)}
+        if rule == "8c":
+            finding["similarity"] = round(evidence.get(root, (0.0, 0.0))[0], 3)
+            finding["containment"] = round(evidence.get(root, (0.0, 0.0))[1], 3)
         out.append(finding)
     return out
 
@@ -686,7 +1063,7 @@ def rule_entities(scan: Scan) -> List[dict]:
             a, b = ws.rel(first.folder), ws.rel(second.folder)
             out.append({"id": fid("8d", "person", first.slug, second.slug), "rule": "8d", "severity": "finding",
                         "kind": "person", "subjects": [a, b],
-                        "text": "person folders `%s/` and `%s/`: %s" % (a, b, why)})
+                        "text": "person folders %s and %s: %s" % (code(a + "/"), code(b + "/"), why)})
 
     topics: Dict[str, List[str]] = {}
     for wiki in _wiki_pages(scan):
@@ -702,7 +1079,7 @@ def rule_entities(scan: Scan) -> List[dict]:
         if len(pages) > 1:
             out.append({"id": fid("8d", "wiki", topic), "rule": "8d", "severity": "finding", "kind": "wiki",
                         "subjects": sorted(pages),
-                        "text": "wikis sharing the topic '%s': %s" % (topic, ", ".join("`%s`" % p for p in sorted(pages)))})
+                        "text": "wikis sharing the topic '%s': %s" % (topic, ", ".join(code(p) for p in sorted(pages)))})
 
     for moc in scan.files:
         if moc.name != MOC_NAME:
@@ -727,8 +1104,8 @@ def rule_entities(scan: Scan) -> List[dict]:
             if len(row_lines) > 1:
                 out.append({"id": fid("8d", "topic", moc_rel, slug), "rule": "8d", "severity": "finding",
                             "kind": "topic", "subjects": [moc_rel],
-                            "text": "`%s` has %d Pointers rows for the topic '%s' (lines %s)" % (
-                                moc_rel, len(row_lines), shown[slug], ", ".join(str(n) for n in row_lines))})
+                            "text": "%s has %d Pointers rows for the topic '%s' (lines %s)" % (
+                                code(moc_rel), len(row_lines), shown[slug], ", ".join(str(n) for n in row_lines))})
     return out
 
 
@@ -738,86 +1115,204 @@ def _suppress_path(ws: Workspace) -> Path:
     return ws.pka / SUPPRESS_FILE
 
 
+def _refuse_generated(ws: Workspace, path: Path) -> None:
+    problem = generated_problem(ws.root, path)
+    if problem:
+        raise ToolError("%s. Lint does not write through links or over things that are not its own files; "
+                        "nothing was written." % problem, EXIT_FAIL)
+
+
 def load_suppressions(ws: Workspace) -> dict:
     """The whole file as data, with `suppressed` guaranteed to be a mapping.
     Keys and entries this version does not know are kept as they are."""
     path = _suppress_path(ws)
+    _refuse_generated(ws, path)
     if not path.is_file():
         return {"version": SUPPRESS_VERSION, "suppressed": {}}
+    rel = ws.rel(path)
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
+        data = json.loads(path.read_bytes().decode("utf-8-sig"))
+    except (OSError, ValueError, RecursionError) as exc:
+        reason = "it is nested too deeply" if isinstance(exc, RecursionError) else str(exc)
         raise ToolError("%s could not be read as JSON (%s). Nothing was changed; fix or remove the file and "
-                        "run again." % (ws.rel(path), exc), EXIT_FAIL)
+                        "run again." % (rel, reason), EXIT_FAIL)
     if not isinstance(data, dict) or not isinstance(data.get("suppressed", {}), dict):
         raise ToolError("%s is not a lint suppressions file (expected an object with a \"suppressed\" object). "
-                        "Nothing was changed; fix or remove the file and run again." % ws.rel(path), EXIT_FAIL)
+                        "Nothing was changed; fix or remove the file and run again." % rel, EXIT_FAIL)
     data.setdefault("suppressed", {})
     return data
 
 
+def _newer_version(data: dict) -> bool:
+    version = data.get("version", SUPPRESS_VERSION)
+    return isinstance(version, int) and not isinstance(version, bool) and version > SUPPRESS_VERSION
+
+
 def _save_suppressions(ws: Workspace, data: dict) -> None:
+    if _newer_version(data):
+        raise ToolError("%s was written by a later release (version %s). This release reads it but will not "
+                        "rewrite it; update pka-tools (bootstrap upgrade) and try again."
+                        % (ws.rel(_suppress_path(ws)), data.get("version")), EXIT_FAIL)
     data.setdefault("version", SUPPRESS_VERSION)
+    try:
+        write_generated(ws.root, _suppress_path(ws),
+                        json.dumps(data, indent=1, ensure_ascii=False, sort_keys=True) + "\n")
+    except GeneratedRefused as exc:
+        raise ToolError("%s; nothing was written." % exc, EXIT_FAIL)
+
+
+@contextlib.contextmanager
+def _locked(ws: Workspace) -> Iterator[None]:
+    """One writer at a time for the suppressions file (read, change, write)."""
+    _refuse_generated(ws, _suppress_path(ws))
     ws.pka.mkdir(parents=True, exist_ok=True)
-    write_text_atomic(_suppress_path(ws), json.dumps(data, indent=1, ensure_ascii=False, sort_keys=True) + "\n")
+    try:
+        import fcntl
+    except ImportError:                         # no fcntl (Windows): a lock file instead
+        fcntl = None                            # type: ignore[assignment]
+    if fcntl is not None:
+        handle = os.open(str(ws.pka), os.O_RDONLY)
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            yield
+        finally:
+            try:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+            finally:
+                os.close(handle)
+        return
+    lock = ws.pka / ".lint-suppressions.lock"
+    for _ in range(200):
+        try:
+            os.close(os.open(str(lock), os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            break
+        except FileExistsError:
+            time.sleep(0.05)
+    else:
+        raise ToolError("another lint command is changing the suppressions (or left %s behind); try again, or "
+                        "remove that file" % ws.rel(lock), EXIT_FAIL)
+    try:
+        yield
+    finally:
+        try:
+            os.unlink(str(lock))
+        except OSError:
+            pass
 
 
-def _reports(ws: Workspace) -> List[Tuple[str, Path]]:
+def _reports(ws: Workspace) -> List[Tuple[_dt.date, Path]]:
+    """Lint reports with a real date that is not in the future, oldest first.
+    Links and anything that is not a regular file do not count."""
     folder = ws.root / REPORT_DIR
     out = []
-    if folder.is_dir():
+    if folder.is_dir() and not folder.is_symlink():
+        day = today()
         for entry in os.scandir(str(folder)):
             match = REPORT_RE.match(entry.name)
-            if match and entry.is_file(follow_symlinks=False):
-                out.append((match.group(1), Path(entry.path)))
+            if not match or entry.is_symlink() or not entry.is_file(follow_symlinks=False):
+                continue
+            try:
+                date = _dt.date.fromisoformat(match.group(1))
+            except ValueError:
+                continue
+            if date <= day:
+                out.append((date, Path(entry.path)))
     return sorted(out)
 
 
-def _last_ids(ws: Workspace) -> Optional[Dict[str, str]]:
-    """id -> the line that shows it, from the newest report; None when there is no report."""
-    reports = _reports(ws)
-    if not reports:
-        return None
+def _report_ids(path: Path) -> Tuple[Dict[str, str], Set[str], dict]:
+    """(id -> the line that shows it, ids that are informational, header)."""
+    ids: Dict[str, str] = {}
+    info: Set[str] = set()
+    header: dict = {}
     try:
-        text = reports[-1][1].read_text(encoding="utf-8", errors="replace")
+        text = path.read_text(encoding="utf-8", errors="replace")
     except OSError:
-        return None
-    out: Dict[str, str] = {}
-    for line in text.splitlines():
+        return ids, info, header
+    for number, line in enumerate(text.splitlines()):
+        if number == 0:
+            match = HEADER_RE.match(line)
+            if match:
+                try:
+                    parsed = json.loads(match.group(1))
+                    header = parsed if isinstance(parsed, dict) else {}
+                except ValueError:
+                    header = {}
+            continue
+        if LIBRARIAN_MARK in line:
+            break
+        more = MORE_IDS_RE.match(line)
+        if more:
+            for ident in more.group(2).split():
+                ids.setdefault(ident, "(not shown in the report; `pka-tools lint --json` has it)")
+                if more.group(1):
+                    info.add(ident)
+            continue
         for match in ID_TAG_RE.finditer(line):
             subject = ID_TAG_RE.sub("", line).strip().lstrip("-#* ").strip()
-            out.setdefault(match.group(1), subject[:240])
-    return out
+            ids.setdefault(match.group(1), subject[:240])
+            if match.group(2):
+                info.add(match.group(1))
+    return ids, info, header
 
 
-def suppress(ws: Workspace, ident: str, reason: str = "") -> dict:
-    data = load_suppressions(ws)
-    entries = data["suppressed"]
-    if ident in entries:
-        return {"id": ident, "suppressed": True, "already": True, "entry": entries[ident]}
-    known = _last_ids(ws)
-    if known is None:
-        raise ToolError("there is no lint report to take the id from; run `pka-tools lint` first", EXIT_USAGE)
-    if ident not in known:
-        near = difflib.get_close_matches(ident, sorted(known), n=5, cutoff=0.5)
-        rule = ident.split("-", 1)[0]
-        near += [other for other in sorted(known) if other.split("-", 1)[0] == rule and other not in near][:5]
-        hint = ("; near matches: %s" % ", ".join(near[:8])) if near else ""
-        raise ToolError("no finding with the id %r in the last lint report%s" % (ident, hint), EXIT_USAGE)
-    entry = {"at": _dt.datetime.now().isoformat(timespec="seconds"), "reason": reason or "",
-             "rule": ident.split("-", 1)[0], "subject": known[ident]}
-    entries[ident] = entry
-    _save_suppressions(ws, data)
-    return {"id": ident, "suppressed": True, "already": False, "entry": entry}
+def _find_id(ws: Workspace, ident: str) -> Tuple[Optional[str], List[str], bool]:
+    """(subject or None, ids to offer as near matches, whether any report exists)."""
+    day = today()
+    recent = [(date, path) for date, path in _reports(ws) if (day - date).days <= SUPPRESS_LOOKBACK_DAYS]
+    known: List[str] = []
+    for _date, path in reversed(recent):
+        ids, _info, _header = _report_ids(path)
+        if ident in ids:
+            return ids[ident], [], True
+        known += [other for other in sorted(ids) if other not in known]
+    return None, known, bool(recent)
+
+
+def suppress(ws: Workspace, ident: str, reason: Optional[str] = None) -> dict:
+    if ident.split("-", 1)[0] == "5":
+        raise ToolError("rule 5 is information, not a finding, and cannot be suppressed (that would hide every "
+                        "note that is later left off a timeline). To clear it, ask the librarian to \"backfill "
+                        "timelines\"; to leave one note off every timeline, give it `no-backref: true`.", EXIT_USAGE)
+    with _locked(ws):
+        data = load_suppressions(ws)
+        entries = data["suppressed"]
+        if ident in entries:
+            entry = entries[ident] if isinstance(entries[ident], dict) else {}
+            updated = reason is not None and entry.get("reason", "") != reason
+            if updated:
+                entry["reason"] = reason
+                entries[ident] = entry
+                _save_suppressions(ws, data)
+            return {"id": ident, "suppressed": True, "already": True, "updated": updated, "entry": entry}
+        subject, known, any_report = _find_id(ws, ident)
+        if not any_report:
+            raise ToolError("there is no lint report from the last %d days to take the id from; run "
+                            "`pka-tools lint` first" % SUPPRESS_LOOKBACK_DAYS, EXIT_USAGE)
+        if subject is None:
+            near = difflib.get_close_matches(ident, known, n=5, cutoff=0.5)
+            rule = ident.split("-", 1)[0]
+            near += [other for other in known if other.split("-", 1)[0] == rule and other not in near][:5]
+            hint = ("; near matches: %s" % ", ".join(near[:8])) if near else ""
+            raise ToolError("no finding with the id %r in the lint reports of the last %d days%s"
+                            % (ident, SUPPRESS_LOOKBACK_DAYS, hint), EXIT_USAGE)
+        entry = {"at": _dt.datetime.now().isoformat(timespec="seconds"), "reason": reason or "",
+                 "rule": ident.split("-", 1)[0], "subject": subject}
+        entries[ident] = entry
+        _save_suppressions(ws, data)
+        return {"id": ident, "suppressed": True, "already": False, "updated": False, "entry": entry}
 
 
 def unsuppress(ws: Workspace, ident: str) -> dict:
-    data = load_suppressions(ws)
-    if ident not in data["suppressed"]:
-        raise ToolError("%r is not suppressed" % ident, EXIT_USAGE)
-    entry = data["suppressed"].pop(ident)
-    _save_suppressions(ws, data)
-    return {"id": ident, "suppressed": False, "entry": entry}
+    with _locked(ws):
+        data = load_suppressions(ws)
+        if ident not in data["suppressed"]:
+            raise ToolError("%r is not suppressed" % ident, EXIT_USAGE)
+        if _newer_version(data):
+            _save_suppressions(ws, data)        # raises: a later version's file is not rewritten
+        entry = data["suppressed"].pop(ident)
+        _save_suppressions(ws, data)
+        return {"id": ident, "suppressed": False, "entry": entry}
 
 
 def suppressions(ws: Workspace) -> dict:
@@ -829,15 +1324,23 @@ def suppressions(ws: Workspace) -> dict:
         items.append({"id": ident, "rule": entry.get("rule", ident.split("-", 1)[0]),
                       "subject": entry.get("subject", ""), "reason": entry.get("reason", ""),
                       "at": entry.get("at", "")})
-    return {"file": ws.rel(_suppress_path(ws)), "suppressed": items}
+    return {"file": ws.rel(_suppress_path(ws)), "suppressed": items, "read_only": _newer_version(data)}
 
 
 # ------------------------------------------------------------ run and report
 
 def run(ws: Workspace, quick: bool = False, write_report: bool = True) -> dict:
-    suppressed_ids = set(load_suppressions(ws)["suppressed"])
-    today = _dt.date.today()
-    scan = Scan(ws, today)
+    day = today()
+    target = ws.root / REPORT_DIR / ("librarian-lint-%s.md" % day.isoformat())
+    if write_report:
+        _refuse_generated(ws, target)           # before any work: a refusal should be immediate
+    stored = load_suppressions(ws)
+    # Rule 5 is never hidden, whatever a file says.
+    suppressed_ids = {ident for ident in stored["suppressed"] if ident.split("-", 1)[0] != "5"}
+    scan = Scan(ws, day)
+    if _newer_version(stored):
+        scan.notes.append("%s was written by a later release; it was used as it is and not changed."
+                          % ws.rel(_suppress_path(ws)))
     rules = QUICK_RULES if quick else FULL_RULES
     found: List[dict] = []
     links = rule_links(scan)            # first: the duplicate rules use its inbound counts
@@ -847,12 +1350,7 @@ def run(ws: Workspace, quick: bool = False, write_report: bool = True) -> dict:
     found += rule_repo_map(scan)
     if "5" in rules:
         found += rule_timelines(scan)
-    identical, group_of = rule_identical(scan)
-    found += identical
-    docs = text_documents(scan)
-    found += rule_same_text(scan, docs, group_of)
-    if "8c" in rules:
-        found += rule_near(scan, docs, group_of)
+    found += rule_duplicates(scan, near="8c" in rules)
     if "8d" in rules:
         found += rule_entities(scan)
 
@@ -861,22 +1359,39 @@ def run(ws: Workspace, quick: bool = False, write_report: bool = True) -> dict:
     shown = [f for f in found if f["id"] not in suppressed_ids]
     hidden = [f for f in found if f["id"] in suppressed_ids]
     counts = {rule: sum(1 for f in shown if f["rule"] == rule and f["severity"] == "finding") for rule in rules}
+    info_counts = {rule: sum(1 for f in shown if f["rule"] == rule and f["severity"] == "info") for rule in rules}
     result = {
-        "date": today.isoformat(), "mode": "quick" if quick else "full", "rules": list(rules),
+        "date": day.isoformat(), "mode": "quick" if quick else "full", "rules": list(rules),
         "scanned": len(scan.files), "markdown": sum(1 for p in scan.files if p.suffix.lower() in MARKDOWN),
-        "findings": sum(1 for f in shown if f["severity"] == "finding"),
-        "info": sum(1 for f in shown if f["severity"] == "info"),
+        "findings": sum(counts.values()), "info": sum(info_counts.values()),
         "suppressed": len(hidden), "suppressed_ids": sorted(f["id"] for f in hidden),
         "stale_suppressions": sorted(suppressed_ids - {f["id"] for f in found}) if not quick else [],
-        "counts": counts, "items": shown, "notes": scan.notes,
-        "unreadable": sorted(set(scan.unreadable)), "unreadable_names": ws.unreadable_names, "report": None,
+        "counts": counts, "info_counts": info_counts, "items": shown, "notes": scan.notes,
+        "unreadable": sorted(set(scan.unreadable)), "unreadable_names": ws.unreadable_names,
+        "report": None, "report_kept": None,
     }
     if write_report:
-        folder = ws.root / REPORT_DIR
-        folder.mkdir(parents=True, exist_ok=True)
-        target = folder / ("librarian-lint-%s.md" % result["date"])
+        carried = None
+        if target.is_file():
+            try:
+                existing = target.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                existing = ""
+            _ids, _info, header = _report_ids(target)
+            if quick and header.get("mode") == "full":
+                result["report_kept"] = ws.rel(target)
+                scan.notes.append("Today's full report (%s) was kept: a quick lint does not replace it."
+                                  % ws.rel(target))
+                return result
+            if LIBRARIAN_MARK in existing:
+                tail = existing.split(LIBRARIAN_MARK, 1)[1]
+                if tail.strip() and tail.strip() not in LIBRARIAN_DEFAULTS:
+                    carried = tail
         result["report"] = ws.rel(target)
-        write_text_atomic(target, render(result))
+        try:
+            write_generated(ws.root, target, render(result, carried))
+        except GeneratedRefused as exc:
+            raise ToolError("%s; the report was not written." % exc, EXIT_FAIL)
     return result
 
 
@@ -884,7 +1399,16 @@ def _plural(count: int, one: str, many: str) -> str:
     return "%d %s" % (count, one if count == 1 else many)
 
 
-def render(result: dict) -> str:
+def _counted(real: int, info: int) -> str:
+    parts = []
+    if real or not info:
+        parts.append(_plural(real, "finding", "findings"))
+    if info:
+        parts.append("%d informational" % info)
+    return ", ".join(parts)
+
+
+def render(result: dict, carried: Optional[str] = None) -> str:
     header = {"version": HEADER_VERSION, "date": result["date"], "mode": result["mode"],
               "findings": result["findings"], "info": result["info"], "suppressed": result["suppressed"],
               "scanned": result["scanned"]}
@@ -898,6 +1422,9 @@ def render(result: dict) -> str:
     out.append("- Findings: %d" % result["findings"])
     out.append("- Informational: %d" % result["info"])
     out.append("- Suppressed: %d" % result["suppressed"])
+    skipped = len(result["unreadable"]) + result["unreadable_names"]
+    if skipped:
+        out.append("- Not read: %s (see \"Not read\" below)" % _plural(skipped, "file", "files"))
     out.append("")
     out.append("## Summary")
     out.append("")
@@ -907,65 +1434,80 @@ def render(result: dict) -> str:
     if not result["items"]:
         out.append("Nothing to report.")
     for rule in result["rules"]:
-        items = by_rule.get(rule)
-        if items:
-            real = sum(1 for item in items if item["severity"] == "finding")
-            info = len(items) - real
-            parts = []
-            if real:
-                parts.append(_plural(real, "finding", "findings"))
-            if info:
-                parts.append("%d informational" % info)
-            out.append("- Rule %s, %s: %s" % (rule, TITLES[rule].lower(), ", ".join(parts)))
+        if by_rule.get(rule):
+            out.append("- Rule %s, %s: %s" % (rule, TITLES[rule][0].lower() + TITLES[rule][1:],
+                                             _counted(result["counts"][rule], result["info_counts"][rule])))
     for rule in result["rules"]:
         items = by_rule.get(rule)
         if not items:
             continue
-        out += ["", "## %s. %s (%d)" % (rule, TITLES[rule], len(items)), "", HINTS[rule], ""]
-        for item in items:
-            tag = "[id: %s]" % item["id"]
+        out += ["", "## %s. %s (%s)" % (rule, TITLES[rule], _counted(result["counts"][rule],
+                                                                    result["info_counts"][rule])),
+                "", HINTS[rule], ""]
+        for item in items[:REPORT_CAP]:
+            info = item["severity"] == "info"
+            tag = "[id: %s%s]" % (item["id"], ", information" if info else "")
             if rule in ("8a", "8b", "8c"):
                 label = "Wiki source copy (information)" if item["wiki_source_copy"] else item["text"].capitalize()
-                names = ["`%s`" % member["path"] for member in item["members"][:3]]
+                names = [code(member["path"]) for member in item["members"][:3]]
                 if len(item["members"]) > 3:
                     names.append("and %d more" % (len(item["members"]) - 3))
                 out.append("### %s: %s %s" % (label, ", ".join(names), tag))
                 out.append("")
-                out.append("| File | Size | Modified | Links to it | |")
+                out.append("| File | Size | Modified | Links to it | Compared with the keeper |")
                 out.append("|---|---|---|---|---|")
                 for member in item["members"]:
-                    out.append("| `%s` | %d | %s | %d | %s |" % (
-                        member["path"].replace("|", "\\|"), member["size"], member["modified"], member["inbound"],
-                        "suggested keeper" if member["path"] == item["keeper"] else ""))
+                    out.append("| %s | %s | %s | %d | %s |" % (
+                        code(member["path"]).replace("|", "\\|"), human_size(member["size"]), member["modified"],
+                        member["inbound"], RELATIONS[member["relation"]]))
                 out.append("")
             elif rule == "5":
-                out.append("- %s are not on the timeline of someone they involve %s" % (item["text"], tag))
+                out.append("- Information: %s are not on the timeline of someone they involve %s" % (item["text"], tag))
                 out += ["  - %s" % example for example in item["examples"]]
                 if item["more"]:
                     out.append("  - … and %d more" % item["more"])
             else:
-                out.append("- %s %s" % (item["text"], tag))
-    if result["unreadable"]:
-        out += ["", "## Not read", "",
-                "Not valid UTF-8, so their links and text were not checked:", ""]
-        out += ["- `%s`" % rel for rel in result["unreadable"]]
+                out.append("- %s%s %s" % ("Information: " if info else "", item["text"], tag))
+        if len(items) > REPORT_CAP:
+            rest = items[REPORT_CAP:]
+            out.append("")
+            out.append("… and %d more; `pka-tools lint --json` has all of them." % len(rest))
+            real = [item["id"] for item in rest if item["severity"] != "info"]
+            extra = [item["id"] for item in rest if item["severity"] == "info"]
+            if real:
+                out.append("<!-- pka-lint-ids: %s -->" % " ".join(real))
+            if extra:
+                out.append("<!-- pka-lint-info-ids: %s -->" % " ".join(extra))
+    if skipped:
+        out += ["", "## Not read", ""]
+        if result["unreadable"]:
+            out.append("%s not valid UTF-8, so the links and text in %s were not checked. Re-save as UTF-8 "
+                       "to have %s checked:" % (("These are", "them", "them") if len(result["unreadable"]) != 1
+                                                 else ("This is", "it", "it")))
+            out.append("")
+            out += ["- %s" % code(rel) for rel in result["unreadable"]]
+        if result["unreadable_names"]:
+            out.append("")
+            out.append("%s a name that is not valid UTF-8 and %s skipped entirely. Rename %s to have %s checked."
+                       % (("%d files have" % result["unreadable_names"], "were", "them", "them")
+                          if result["unreadable_names"] != 1 else ("1 file has", "was", "it", "it")))
     if result["notes"] or result["stale_suppressions"]:
         out += ["", "## Notes", ""]
         out += ["- %s" % note for note in result["notes"]]
         if result["stale_suppressions"]:
-            out.append("- %s no longer match anything and can be removed with `pka-tools lint unsuppress <id>`: %s"
-                       % (_plural(len(result["stale_suppressions"]), "suppression", "suppressions"),
+            number = len(result["stale_suppressions"])
+            out.append("- %s no longer %s anything and can be removed with `pka-tools lint unsuppress <id>`: %s"
+                       % (_plural(number, "suppression", "suppressions"), "matches" if number == 1 else "match",
                           ", ".join(result["stale_suppressions"])))
     out += ["", "## Hiding a finding you have dealt with", "",
             "`.pka/bin/pka-tools lint suppress <id> --reason \"why\"` hides one finding from later reports "
             "(`lint suppressions` lists them, `lint unsuppress <id>` brings one back). An id belongs to the "
             "exact files or link it names: if a group of duplicates gains or loses a file, it is a new finding.",
-            "", "## Librarian checks (rules 6 and 7)", "", LIBRARIAN_MARK]
-    if result["mode"] == "quick":
-        out.append("Not part of a quick lint.")
-    else:
-        out.append("Not run by the tool: contradiction candidates (rule 6) and uncited wiki claims (rule 7) need "
-                   "the librarian. Ask for \"full lint\" in a session and the librarian adds them below this line.")
+            "", "## Librarian checks (rules 6 and 7)", ""]
+    if carried is not None:
+        return "\n".join(out) + "\n" + LIBRARIAN_MARK + carried
+    out.append(LIBRARIAN_MARK)
+    out.append(LIBRARIAN_DEFAULTS[0] if result["mode"] == "quick" else LIBRARIAN_DEFAULTS[1])
     return "\n".join(out) + "\n"
 
 
@@ -976,24 +1518,21 @@ def latest(ws: Workspace) -> dict:
     if not reports:
         return {"report": None, "date": None, "age_days": None, "findings": None, "info": None,
                 "suppressed": None, "mode": None, "recent": False, "mention": False}
-    date_text, path = reports[-1]
-    header: dict = {}
-    try:
-        with open(str(path), "r", encoding="utf-8", errors="replace") as handle:
-            match = HEADER_RE.match(handle.readline())
-        if match:
-            parsed = json.loads(match.group(1))
-            if isinstance(parsed, dict):
-                header = parsed
-    except (OSError, ValueError):
-        header = {}
-    try:
-        age = (_dt.date.today() - _dt.date.fromisoformat(date_text)).days
-    except ValueError:
-        age = None
-    findings = header.get("findings") if isinstance(header.get("findings"), int) else None
-    recent = age is not None and 0 <= age <= RECENT_DAYS
-    return {"report": ws.rel(path), "date": date_text, "age_days": age, "findings": findings,
+    date, path = reports[-1]
+    ids, info, header = _report_ids(path)
+    age = (today() - date).days
+    findings: Optional[int] = header.get("findings") if isinstance(header.get("findings"), int) else None
+    if header and findings is not None:
+        # What is still open: the report's findings less what has been suppressed since.
+        try:
+            hidden = set(load_suppressions(ws)["suppressed"])
+        except ToolError:
+            hidden = set()
+        listed = [ident for ident in ids if ident not in info]
+        if listed or findings == 0:
+            findings = sum(1 for ident in listed if ident not in hidden)
+    recent = 0 <= age <= RECENT_DAYS
+    return {"report": ws.rel(path), "date": date.isoformat(), "age_days": age, "findings": findings,
             "info": header.get("info") if isinstance(header.get("info"), int) else None,
             "suppressed": header.get("suppressed") if isinstance(header.get("suppressed"), int) else None,
             "mode": header.get("mode"), "recent": recent, "mention": bool(recent and findings)}
@@ -1006,12 +1545,17 @@ def _xml(text: str) -> str:
 def schedule(ws: Workspace) -> dict:
     root = str(ws.root)
     tool = str(ws.pka / "bin" / "pka-tools")
-    label = "org.pka-skills.lint.%s" % (re.sub(r"[^A-Za-z0-9]+", "-", ws.root.name).strip("-").lower() or "workspace")
+    log = str(ws.pka / "lint-cron-log.txt")
+    slug = re.sub(r"[^A-Za-z0-9]+", "-", ws.root.name).strip("-").lower()
+    digest = hashlib.sha256(root.encode("utf-8", "surrogateescape")).hexdigest()[:8]
+    label = "org.pka-skills.lint.%s" % ("%s-%s" % (slug, digest) if slug else digest)
 
     def quoted(text: str) -> str:
         return "'" + text.replace("'", "'\\''") + "'"
 
-    cron = "0 9 * * 1 /usr/bin/env python3 %s lint --quick --workspace %s >/dev/null 2>&1" % (quoted(tool), quoted(root))
+    command = "/usr/bin/env python3 %s lint --quick --workspace %s >> %s 2>&1" % (
+        quoted(tool), quoted(root), quoted(log))
+    cron = "0 9 * * 1 " + command.replace("%", "\\%")      # cron reads a bare % as a newline
     plist = "\n".join([
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
@@ -1028,6 +1572,8 @@ def schedule(ws: Workspace) -> dict:
         "    <string>--workspace</string>",
         "    <string>%s</string>" % _xml(root),
         "  </array>",
+        "  <key>StandardOutPath</key><string>%s</string>" % _xml(log),
+        "  <key>StandardErrorPath</key><string>%s</string>" % _xml(log),
         "  <key>StartCalendarInterval</key>",
         "  <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>9</integer>"
         "<key>Minute</key><integer>0</integer></dict>",
@@ -1035,4 +1581,5 @@ def schedule(ws: Workspace) -> dict:
         "</plist>",
     ])
     return {"workspace": root, "label": label, "cron": cron, "launchd_plist": plist,
-            "launchd_path": "~/Library/LaunchAgents/%s.plist" % label, "installed": False}
+            "launchd_path": "~/Library/LaunchAgents/%s.plist" % label, "log": ws.rel(ws.pka / "lint-cron-log.txt"),
+            "installed": False}

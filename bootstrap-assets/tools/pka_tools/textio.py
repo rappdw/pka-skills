@@ -124,3 +124,63 @@ def sha256_file(path: Path) -> str:
 
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+# ---------------------------------------------------------------- generated files
+
+def generated_problem(root: Path, path: Path) -> str:
+    """Why a file the tools generate (a report, a plan, their own state) must
+    not be written at `path`, or "" when it may be.
+
+    A user's note is written through a symbolic link, as an editor would. A
+    generated file never is: a link at its path, or at a folder on the way to
+    it, would send the tool's output over some other file. So every folder
+    from the workspace root down must be a real folder (or not exist yet), and
+    the path itself must be a regular file (or not exist yet).
+    """
+    root = Path(root)
+    path = Path(path)
+    try:
+        parts = path.relative_to(root).parts
+    except ValueError:
+        return "%s is outside the workspace" % path
+    folder = root
+    for part in parts[:-1]:
+        folder = folder / part
+        shown = folder.relative_to(root).as_posix()
+        if folder.is_symlink():
+            return "%s is a symbolic link, not a folder in this workspace" % shown
+        if os.path.lexists(str(folder)) and not folder.is_dir():
+            return "%s is not a folder" % shown
+    shown = path.relative_to(root).as_posix()
+    if path.is_symlink():
+        return "%s is a symbolic link" % shown
+    if os.path.lexists(str(path)) and not path.is_file():
+        return "%s is not a regular file" % shown
+    return ""
+
+
+def write_generated(root: Path, path: Path, text: str) -> None:
+    """Write a generated file atomically, never through a link. Raises
+    `OSError` with a one-line, workspace-relative message when it may not."""
+    problem = generated_problem(root, path)
+    if problem:
+        raise GeneratedRefused(problem)
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix="." + path.name + ".", suffix=".pka-tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(text.encode("utf-8"))
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, str(path))
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+class GeneratedRefused(Exception):
+    """A generated file could not be written where it belongs (see `generated_problem`)."""

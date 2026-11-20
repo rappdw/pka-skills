@@ -125,14 +125,14 @@ The mechanical rules run in the tool, with no model: `.pka/bin/pka-tools lint --
 
 | Rule | What it finds | Quick |
 |---|---|---|
-| 1 | Files left in `team-inbox/unsorted/` for more than 14 days | yes |
+| 1 | Things left in `team-inbox/unsorted/` and not changed for more than 14 days | yes |
 | 2 | Broken links: `[[wikilinks]]` in every form, and relative markdown links | yes |
 | 3 | Wiki `## Sources` entries whose file is gone | yes |
 | 4 | Repo Map folders that are empty or missing | yes |
-| 5 | Notes that belong on a person's timeline and are not on it (one informational line; the fix is "backfill timelines") | no |
-| 8 | Duplicates: identical files (8a), the same text re-saved (8b), near-duplicates and one note inside another (8c), duplicate people, wiki topics and pointer topics (8d) | 8a, 8b |
+| 5 | Notes that belong on a person's timeline and are not on it (one informational line that cannot be suppressed; the fix is "backfill timelines") | no |
+| 8 | Duplicates: identical files (8a), the same text re-saved (8b), near-duplicates and one note inside another (8c), duplicate people, wiki topics and pointer topics (8d). One set of copies is one finding | 8a, 8b |
 
-Rules 6 (contradiction candidates) and 7 (uncited wiki claims) need judgement and are yours. On a **full** lint, run the tool, then append your findings for those two under the `<!-- librarian:rules-6-7 -->` line of the report it wrote.
+Rules 6 (contradiction candidates) and 7 (uncited wiki claims) need judgement and are yours. On a **full** lint, run the tool, then append your findings for those two under the `<!-- librarian:rules-6-7 -->` line of the report it wrote. A later run the same day keeps what is below that line, and a quick lint never replaces a same-day full report.
 
 Then tell the user the count per rule, the report path and the findings most worth acting on. Lint reports only: fix, merge or delete nothing unless the user asks, one finding at a time.
 

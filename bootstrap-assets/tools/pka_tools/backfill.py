@@ -46,7 +46,8 @@ from .errors import EXIT_FAIL, EXIT_NOT_READY, EXIT_USAGE, ToolError
 from .markdown import block_mask, heading_of
 from .people import INDEX, Person, Registry, registry, require_home
 from .textio import (
-    NotText, detect_newline, line_body, read_text, sha256_file, split_lines, write_text_atomic,
+    GeneratedRefused, NotText, detect_newline, generated_problem, line_body, read_text, sha256_file, split_lines,
+    write_generated, write_text_atomic,
 )
 from .workspace import MOC_NAME, UNFILED_ROOTS, Workspace
 
@@ -267,16 +268,21 @@ def plan(
         "sample": sample, "plan_file": None, "report_file": None,
     }
     if write:
-        folder = ws.pka / "backfill"
-        folder.mkdir(parents=True, exist_ok=True)
-        plan_file = folder / ("plan-%s.json" % plan_id)
-        report_dir = ws.root / "owner-inbox"
-        report_dir.mkdir(parents=True, exist_ok=True)
-        report_file = report_dir / ("timeline-backfill-plan-%s.md" % plan_id)
+        plan_file = ws.pka / "backfill" / ("plan-%s.json" % plan_id)
+        report_file = ws.root / "owner-inbox" / ("timeline-backfill-plan-%s.md" % plan_id)
+        # Generated files never go through a link (a linked owner-inbox/ or
+        # .pka/backfill/ would send them somewhere else): check both first.
+        for target in (plan_file, report_file):
+            problem = generated_problem(ws.root, target)
+            if problem:
+                raise ToolError("%s; the plan was not written." % problem, EXIT_FAIL)
         result["plan_file"] = ws.rel(plan_file)
         result["report_file"] = ws.rel(report_file)
-        write_text_atomic(plan_file, json.dumps(result, indent=1, ensure_ascii=False) + "\n")
-        write_text_atomic(report_file, report(result))
+        try:
+            write_generated(ws.root, plan_file, json.dumps(result, indent=1, ensure_ascii=False) + "\n")
+            write_generated(ws.root, report_file, report(result))
+        except GeneratedRefused as exc:
+            raise ToolError("%s; the plan was not written." % exc, EXIT_FAIL)
     return result
 
 
@@ -432,6 +438,9 @@ def _save(backup: Path, record: dict) -> None:
 
 def _new_backup(ws: Workspace) -> Path:
     root = ws.pka / "backups"
+    problem = generated_problem(ws.root, root / "x")
+    if problem:
+        raise ToolError("%s; no backup can be kept there, so nothing was applied." % problem, EXIT_FAIL)
     root.mkdir(parents=True, exist_ok=True)
     while True:
         backup = root / _stamp()
