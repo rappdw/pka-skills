@@ -49,8 +49,8 @@ When a match is found, add a relative path reference under `## Attendees` (where
 ```markdown
 ## Attendees
 - [Priya](../personnel/priya/) — matched
-- [Sarah Chen](../personnel/sarah-chen/) — matched
-- Marcus Johnson — no personnel folder found
+- [Robin Smith](../personnel/robin-smith/) — matched
+- Northwind's account manager — no personnel folder found
 ```
 
 ### Path Calculation

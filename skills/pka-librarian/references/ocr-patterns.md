@@ -39,7 +39,7 @@ which tesseract 2>/dev/null && echo "tesseract available"
 2. Fall back to pypdf if pdfplumber unavailable
 3. Extract all pages; concatenate with page separators
 4. Store in sidecar `.txt` file alongside original
-5. Store in `file_index.ocr_text` and `search_fts.content`
+5. Run `.pka/bin/pka-tools index <file>` (or let `post-route` do it when the file is being filed): it reads the sidecar into the index. Never write index rows by hand
 
 ### Image-Only PDFs
 1. Requires tesseract

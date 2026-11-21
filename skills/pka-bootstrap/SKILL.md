@@ -31,7 +31,7 @@ Everything related to PKA setup and management:
 - Inferring and maintaining the Repo Map
 - Initializing and managing SQLite
 - Defining and extending the role team
-- Managing project lifecycle (active → archiving → archived → restored)
+- Managing project lifecycle (active → archived, and restored to active)
 
 ## Trigger Phrases
 
@@ -238,6 +238,7 @@ Written in Phase 1 if absent. See `references/pkaignore-defaults.md`.
 ├── owner-profile.md
 ├── session-log.md
 ├── decision-log.md
+├── schema.md             (index mode only; written in 3i)
 └── knowledge.db          (index mode only)
 ```
 
@@ -338,12 +339,14 @@ Then offer the weekly health check: run `.pka/bin/pka-tools lint schedule` and s
 ### Proactive Detection (Session Start)
 
 Check all project workspace folders (contain `CLAUDE.md` at root, not in `.pka/`):
-- No file modifications in 60+ days → flag for archiving/transition suggestion
+- No file modifications in 60+ days → flag, and suggest a transition
 - Referenced consistently in past tense in session log → flag similarly
 
 ### Transition Workflow
 
-Triggered by: "transition `<folder>` to knowledge"
+Triggered by: "transition `<folder>` to knowledge", or "archive `<folder>`".
+
+Both phrasings ask for this workflow. "Archive X" is not a lighter step: there is no "archiving" state that is recorded anywhere, and nothing marks a project as winding down. A project is active (a folder under `projects/`) until this workflow moves it. If the user says "archive X" and does not want it moved yet, tell them so and leave it; do not write a status. What records the outcome is the Repo Map row of step 6 (Status `archived`), the session log and the decision log.
 
 1. Read archive destination from `## Archive Destination` in `CLAUDE.md`
 2. Read project `CLAUDE.md` + top-level markdown → generate `project-summary.md` draft using `references/project-summary-template.md` → save to `owner-inbox/<folder>-summary-draft.md`
@@ -474,6 +477,8 @@ Full step-by-step algorithm in `references/upgrade.md`. Summary:
    - If there is no Obsidian vault and no `_MOC.md` anywhere in `knowledge/`, mention that the pointer layer is opt-in (step 3j of base bootstrap).
    - If the workspace has a `.meta` file at root, tell the user what changed for it (see "Workspaces with nested repositories").
    - Mention the manual bullet-merges into `## Key Competencies` and `## Output Conventions` (the upgrade does not touch these — see `references/upgrade.md` for the rationale).
+   - Say that `CLAUDE.md` was not edited (the upgrade never edits it), and offer to show the two steps a workspace set up before v1.11.0 lacks there: the health-check step of the Session Start Protocol and the dashboard step of the Session End Protocol, as `references/claude-md-template.md` has them. The user adds them, or asks for them to be added; the refreshed "Session-start checks" section of the orchestrator's role file carries both in the meantime.
+   - If there is a `dashboard.html` at the workspace root without a `pka:loader:start` block, it was made by an earlier release and the upgrade did not touch it: tell the user to say "Update my dashboard" (`pka-interface` backs the old page up as `dashboard.html.bak-<date>` and rebuilds it).
    - If the summary lists pinned models, say that roles no longer pin a model and that each listed `model:` line can be removed so the role follows the session's model. Offer to remove them; do it only on a yes, per file, and set that role's Model cell in `roster.md` to `session`.
    - Show the weekly health-check entry: run `.pka/bin/pka-tools lint schedule` and relay what it prints. Nothing is installed; installing it is the user's to do, and they can skip it. If they already installed it for this workspace, there is nothing to change.
 
@@ -490,27 +495,73 @@ Re-running on an already-upgraded workspace produces no further role-file change
 
 ### Output
 
-The helper prints (and the orchestrator surfaces):
+The helper prints the summary below (and the orchestrator surfaces it). This is a real run, on a workspace whose role files were seeded by v1.7.0 and never edited; only the workspace path and the backup's timestamp are replaced. A block is left out when it has nothing to list.
 ```
 Role upgrade summary
 ------------------------
-Backup:  /workspace/.pka/upgrade-backups/<timestamp>/roles
+Backup:  /home/sam/pka/.pka/upgrade-backups/<timestamp>/roles
 
-Shared references seeded:           N (M already present)
-orchestrator: added K section(s):
-  + ## Session-start checks (cached for the session)
-  + ## File references in responses
-  ...
-librarian:    added K section(s):
-  + ## Obsidian coexistence (gated on `obsidian_present`)
-  + ## Pointer-row maintenance (…)
-researcher:   added K section(s):
-  ...
+Shared references seeded:        1
+  + _obsidian.md
+Shared references already present: 0
+_obsidian.md:
+  already had 2 section(s):
+    = ## Pointer Layer (added in v1.6.1)
+    = ## Person timeline (added in v1.7.0)
 
-NOTE: This upgrade only ADDS new H2 sections. It does NOT modify
-      existing sections (e.g., 'Key Competencies', 'Output Conventions',
-      or 'Invocation'). See references/role-definitions.md for any
-      bullet-level additions you may want to merge manually.
+orchestrator:
+  added 2 section(s):
+    + ## Answering and delegating
+    + ## Owner profile and decision log
+  already had 3 section(s):
+    = ## Session-start checks (cached for the session)
+    = ## File references in responses
+    = ## Bootstrap dispatch
+librarian:
+  added 1 section(s):
+    + ## Owner profile and decision log
+  already had 4 section(s):
+    = ## Obsidian coexistence (gated on `obsidian_present`)
+    = ## Pointer-row maintenance (gated only on routing into a domain — NOT on `obsidian_present`)
+    = ## Indexing pointer rows
+    = ## Rename / graduate propagation
+researcher:
+  added 2 section(s):
+    + ## Filing a brief
+    + ## Owner profile and decision log
+  already had 1 section(s):
+    = ## Obsidian coexistence (gated on `obsidian_present`)
+
+Sections seeded by an earlier version:
+  orchestrator.md: ## Session-start checks (cached for the session)  — can be refreshed (unchanged since it was seeded)
+  orchestrator.md: ## Bootstrap dispatch  — can be refreshed (unchanged since it was seeded)
+  librarian.md: ## Obsidian coexistence (gated on `obsidian_present`)  — can be refreshed (unchanged since it was seeded)
+  librarian.md: ## Rename / graduate propagation  — can be refreshed (unchanged since it was seeded)
+  Run again with --refresh to update the unchanged ones (a backup is taken first).
+
+Obsolete (pka-skills no longer commits, pushes or sets up nested repositories):
+  _git-protocol.md (whole file)  — can be removed (unchanged since it was seeded)
+  orchestrator.md: ## Session-end protocol (extended)  — can be removed (unchanged since it was seeded)
+  orchestrator.md: ## Mid-session push handling  — can be removed (unchanged since it was seeded)
+  librarian.md: ## Commit/push protocol (gated on `hybrid_monorepo_present`)  — can be removed (unchanged since it was seeded)
+  researcher.md: ## Commit/push protocol (gated on `hybrid_monorepo_present`)  — can be removed (unchanged since it was seeded)
+  Run again with --refresh to remove the unchanged ones (a backup is taken first).
+  WARNING: while any of these remain, the role files still tell the roles to commit,
+  push or run helper scripts that are no longer there. Nothing does that any more:
+  remove or reword them, and do not run git on a role file's instruction.
+
+Pinned models (frontmatter is never changed by the upgrade):
+  librarian.md: model: claude-opus-4-5  — left alone
+  orchestrator.md: model: claude-opus-4-5  — left alone
+  researcher.md: model: claude-opus-4-5  — left alone
+  Role files are now seeded without a `model:` line, so a role runs on the session's
+  model. A pinned model can now be removed by hand: delete the line from the file's
+  frontmatter. Keep it if you set it on purpose.
+
+NOTE: Sections outside the seeded set (e.g. 'Key Competencies', 'Output
+      Conventions', 'Invocation') are never modified. If you want later
+      bullet-level additions there, see references/role-definitions.md and
+      merge manually.
 ```
 
 ---

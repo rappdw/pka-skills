@@ -22,7 +22,7 @@ Evaluate in order. Stop at first match.
 - Existing 1-1 notes may be named `-1on1`, `-1-1` or `-1-on-1`, with or without a name after the marker. All are recognised; never rename them to match.
 
 **Example:**
-- Title: "1-1 with Priya", Attendees: Dan, Priya
+- Title: "1-1 with Priya", Attendees: Sam, Priya
 - Repo Map has `knowledge/personnel/priya/`
 - Route to: `knowledge/personnel/priya/2026-03-31-1-1-priya.md`
 

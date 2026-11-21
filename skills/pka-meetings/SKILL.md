@@ -173,7 +173,7 @@ In order: frontmatter and a `- [[note]]` bullet in its folder's `_MOC.md` (when 
     --summary-for robin-smith="Drafts the Q1 hiring plan"
 ```
 
-Who goes on a timeline is decided by the tool from the note (the person's folder, `person` / `attendees` frontmatter, `## Attendees` links, the filename) — see `.pka/bin/pka-tools timeline who <note>`. Meetings with more than 8 resolved attendees add none of them unless the user asks (`--include-large`). In "ask before everything" mode, run `post-route … --dry-run` first and show the timeline lines in the confirmation. Relay any step that reports `skipped` with its reason, and a `Note: not committed…` line if the summary has one.
+Who goes on a timeline is decided by the tool from the note (the person's folder, `person` / `attendees` frontmatter, `## Attendees` links, the filename) — see `.pka/bin/pka-tools timeline who <note>`. Meetings with more than 8 resolved attendees add none of them unless the user asks (`--include-large`). In "ask before everything" mode, run `post-route … --dry-run` first and show the timeline lines in the confirmation. Relay any step that reports `skipped` or `nobody` with its reason (a large meeting reports `timeline nobody`), and a `Note: not committed…` line if the summary has one.
 
 If the meeting has an earshot capture with a `narrative.md`, index the narrative in place as well — it is the richest artifact for the meeting, and its capture directory never moves:
 

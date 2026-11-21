@@ -36,14 +36,14 @@ answer without requiring the user to remember.
 ### Example Entries
 
 ```markdown
-## 2026-03-31 | Archive team-charter project
+## 2026-03-31 | Archive the Lyra project
 
-**Context:** No commits in 90+ days, deliverables shipped, Dan confirmed it's done.
+**Context:** No file changed in 60+ days, deliverables shipped, Sam confirmed it's done.
 **Decision:** Transition to knowledge archive with full summary.
 **Alternatives considered:** Keep active as reference workspace — rejected because
 it clutters the Repo Map and the summary captures everything needed.
-**Decided by:** Dan
-**Relates to:** projects/team-charter → knowledge/team-charter
+**Decided by:** Sam
+**Relates to:** projects/lyra → knowledge/archive/lyra
 
 ## 2026-04-01 | Switch to index mode
 
@@ -51,12 +51,12 @@ it clutters the Repo Map and the summary captures everything needed.
 **Decision:** Enable SQLite index mode for faster search.
 **Alternatives considered:** Stay markdown-only — rejected because search across
 400+ files was noticeably slow.
-**Decided by:** @orchestrator recommendation, Dan approved
+**Decided by:** @orchestrator recommendation, Sam approved
 **Relates to:** .pka/knowledge.db
 
 ## 2026-04-02 | Add @analyst role
 
-**Context:** Dan is doing weekly data reviews and wants structured output.
+**Context:** Sam is doing weekly data reviews and wants structured output.
 **Decision:** Add a data analyst role specializing in metrics summaries.
 **Alternatives considered:** Extend @researcher — rejected because the working
 style (weekly cadence, dashboard-like output) is distinct enough.

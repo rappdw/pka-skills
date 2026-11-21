@@ -33,7 +33,7 @@ Sections are generated from the Active and Reference folders of the Repo Map. No
 | Project workspaces (`projects/`) | `projects` | no |
 | Anything else | `files` | yes |
 
-Use the tags first; without a tag, look at the folder: date-prefixed filenames → `timeline`, subfolders with a few files each → `topics`, flat or mixed → `files`.
+Use the tags first; without a tag, look at the folder: date-prefixed filenames → `timeline`, subfolders with a few files each → `topics`, flat or mixed → `files`. `calendar` is never chosen by looking: it is used only for a folder tagged `daily-home`, so an untagged folder of `YYYY-MM-DD.md` notes gets `timeline`.
 
 ---
 
@@ -76,7 +76,7 @@ One card per project: a status badge, the name (linked to the folder), how long 
 | Archived (grey) | `status` is `archived` |
 | quiet for N days (amber, beside Active) | an active project unchanged for 60 days or more: a prompt to the user, not a status |
 
-The status comes from the data (see `rendering-paths.md`); the page does not decide that a project is winding down.
+The status comes from the data (see `rendering-paths.md`); the page does not decide that a project is winding down. Today the data gives `active` for every project: nothing writes the lifecycle events it is taken from, so the Winding down and Archived badges are not seen in practice, and a project transitioned out of `projects/` is not listed at all.
 
 ## `files`: file table
 

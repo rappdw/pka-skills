@@ -67,7 +67,9 @@ CREATE VIRTUAL TABLE search_fts USING fts5(
     tokenize = 'porter unicode61'
 );
 
--- Project lifecycle tracking
+-- Project lifecycle events. The table is created and the dashboard data
+-- reads it, but nothing in this release writes a row to it: no pka-tools
+-- command and no skill step. Do not insert rows by hand.
 CREATE TABLE project_lifecycle (
     id INTEGER PRIMARY KEY,
     project_slug TEXT NOT NULL,
@@ -83,11 +85,11 @@ CREATE TABLE pka_meta (key TEXT PRIMARY KEY, value TEXT);
 
 ### Per-folder tables (optional)
 
-A role may add a table for a folder when the user has a structured question to ask of it (for example `personnel_index` with `person_slug`, `note_type`). The naming rule is unchanged: the table name is the folder slug plus `_index`, never a generic category name (`personnel/` → `personnel_index`, `lab-notebook/` → `lab_notebook_index`). `pka-tools` neither creates nor alters these tables, and a migration leaves them as they are. Nothing in the skills depends on them.
+Earlier releases let a role add a table per folder, named with the folder slug plus `_index` (`personnel/` → `personnel_index`, `lab-notebook/` → `lab_notebook_index`). Nothing reads them now: do not create one. `pka-tools` neither creates nor alters these tables, and a migration leaves the ones a workspace already has as they are.
 
 ### Schema documentation
 
-`.pka/schema.md` describes the tables and which Repo Map folder each per-folder table belongs to. The orchestrator writes it at bootstrap and after any schema change, taking the table and column list from the live database rather than from memory:
+`.pka/schema.md` describes the tables. The orchestrator writes it at bootstrap and after any schema change, taking the table and column list from the live database rather than from memory:
 
 ```
 .pka/bin/pka-tools db schema
@@ -167,7 +169,7 @@ A pointer hit is a shortcut: read the 2–5 files it lists rather than every bod
 
 ### How the MATCH string is built
 
-For anyone writing a query by hand (the dashboard does):
+This is what `pka-tools search` does for you. It is written down so the behaviour can be checked, not as a recipe: a role runs `.pka/bin/pka-tools search`, and does not write a `MATCH` query of its own. (The dashboard page queries nothing; it reads `dashboard-data.js`.)
 
 FTS5 parses the string as a query language: a hyphen is the NOT/column operator, and `?`, `/`, `[`, `+`, `:` and the words `AND`, `OR`, `NOT`, `NEAR` are syntax. Unquoted, the slugs that pointer rows are made of fail outright:
 
@@ -182,7 +184,7 @@ FTS5 parses the string as a query language: a hyphen is the NOT/column operator,
 3. In each term, double any `"` character (`"` → `""`), then wrap the term in double quotes.
 4. Join the terms with a single space (FTS5 treats that as AND).
 
-`northwind-partnership-2026 pricing` becomes `"northwind-partnership-2026" "pricing"`. Pass the result as a bound parameter (`MATCH ?`), never by string concatenation into the SQL.
+`northwind-partnership-2026 pricing` becomes `"northwind-partnership-2026" "pricing"`. The tool passes the result as a bound parameter (`MATCH ?`), never by string concatenation into the SQL. The query it runs:
 
 ```sql
 SELECT

@@ -44,7 +44,7 @@ The command changes no other file. It refuses to write through a symbolic link, 
 window.PKA_DATA = {
 "version": 1,
 "generated_at": "2026-11-20T09:30:00Z",        // UTC
-"generated_by": "pka-tools 1.10.0",
+"generated_by": "pka-tools 1.11.0",
 "mode": "index",                                // or "markdown-only"
 "indexed_at": "2026-11-20T09:29:58Z",          // newest index entry; "" without an index
 "root": "",                                     // from the data file's folder to the workspace root: "" or "../"…
@@ -88,7 +88,8 @@ Field notes:
 |---|---|
 | `files` rows | In `file_columns` order. `dir` is a position in `dirs`, `tags` are positions in `tags`. `title` is the note's frontmatter `title`, else its first `#` heading, else `""` (the loader then makes one from the filename). `date` is the note's own date (filename prefix, else frontmatter `date`), `""` when it has none. `modified` is the day the file last changed. `summary` is frontmatter `summary` or `description`, else the first paragraph, at most 160 characters. `headings` are up to six `#`–`###` headings |
 | `people[].index` | The person's `index.md`, `""` when there is none. `timeline` holds the newest 50 entries of the managed timeline block, newest first; `timeline_total` counts all of them. An entry's `path` is `""` when its note cannot be found |
-| `projects[].status` | `active`, `archiving` or `archived`, from the last event in the index's `project_lifecycle` table (`created`, `restored` → active; `archiving`; `transitioned` → archived). Without an index, or without events, a project that has a folder is `active`. `folder` is `""` for a project that is only in the table. `events` are the table's rows for it (`event`, `date`, `notes`) |
+| `projects[]` | One entry per folder directly under `projects/`, plus any project that is only in the index's `project_lifecycle` table (`folder` is then `""`). A project that was transitioned to the archive destination has no folder under `projects/` any more, so it is not in this list |
+| `projects[].status` | `active`, `archiving` or `archived`, from the last event in the index's `project_lifecycle` table (`created`, `restored` → active; `archiving`; `transitioned` → archived); without an index, or without events, `active`. **Nothing in this release writes that table**: no `pka-tools` command and no skill step. So in practice every project in the data is `active` with `events` empty. The Repo Map's Status column is not read. `events` are the table's rows for the project (`event`, `date`, `notes`) |
 | `actions` | Unticked checkboxes in dated notes under the meeting and people folders (what `pka-tools actions --all-dates` lists), newest note first, at most 200. `counts.open_actions` is the full number |
 | `activity` | The last 20 well-formed entries of `.pka/session-log.md`, newest first |
 | `sections[].files`, `latest` | How many listed files are under the folder, and the newest `modified` among them |
@@ -148,7 +149,7 @@ Never write a `file:///` link or an absolute path into the page. With relative l
 
 The page header shows when the data was written, the storage mode, and how to refresh ("ask your assistant to refresh the dashboard data, or run `.pka/bin/pka-tools dashboard data`, then reload"). After seven days the line is shown in the warning colour.
 
-The data is never refreshed by the page and never by `post-route`. `SKILL.md` ("Refresh the data") says when a role runs the command.
+The data is never refreshed by the page and never by `post-route`. `SKILL.md` ("Refresh the data") says when a role runs the command; the one automatic occasion is the orchestrator's session end, once, when both dashboard files exist.
 
 ---
 
@@ -175,7 +176,7 @@ When the user asks for an update or a refresh of such a page, say what it is and
 1. Save the old page as `dashboard.html.bak-<date>`.
 2. Generate the new page from the template.
 3. Carry over the user's customizations: their own sections outside the markers, their colours and wording. For each old marked section, write the new section for the same folder.
-4. Write the data and tell the user what changed: it opens by double-click in any browser, makes no network request, and its search covers titles, tags, headings and summaries.
+4. Write the data and tell the user what changed: it opens by double-click in any current browser, makes no network request, and its search covers titles, tags, headings and summaries.
 
 Do not repair the old page in place by adding a snapshot to its SQL queries: its sections query tables that `pka-tools` does not create.
 

@@ -19,8 +19,8 @@ natural responses and only asks follow-ups for gaps.
 
 | Field | Question | Example |
 |-------|----------|---------|
-| **Name** | "What's your first name?" | Dan |
-| **Role / title** | "What do you do — title or one-liner is fine?" | VP Engineering at Acme / independent researcher / grad student in ML |
+| **Name** | "What's your first name?" | Sam |
+| **Role / title** | "What do you do — title or one-liner is fine?" | VP Engineering at Northwind / independent researcher / grad student in ML |
 | **Domain expertise** | "What are you strongest in? A few keywords is enough." | distributed systems, team leadership, Rust |
 
 ### Optional Fields (inferred or asked as follow-ups)

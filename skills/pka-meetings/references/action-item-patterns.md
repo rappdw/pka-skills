@@ -13,12 +13,12 @@ Scan each line of the notes for these patterns:
 | Pattern | Example | Priority |
 |---------|---------|----------|
 | `- [ ]` | `- [ ] Send Priya the architecture doc` | High — explicit task checkbox |
-| `→` or `->` | `→ Dan to follow up on headcount` | High — action arrow |
+| `→` or `->` | `→ Sam to follow up on headcount` | High — action arrow |
 | `AI:` or `A/I:` | `AI: Schedule follow-up meeting` | High — explicit action item marker |
 | `Action:` | `Action: Review the proposal by Friday` | High — explicit marker |
 | `TODO:` or `Todo:` | `TODO: Update the RACI before next meeting` | High — explicit marker |
 | `FOLLOW UP:` or `Follow up:` | `Follow up: Check with legal on compliance` | Medium — follow-up marker |
-| `needs to` | `Dan needs to send the comparison doc` | Low — natural language |
+| `needs to` | `Sam needs to send the comparison doc` | Low — natural language |
 | `will` (commitment) | `Priya will take the MCP adapter work` | Low — natural language |
 | `by <date>` | `Complete the review by end of month` | Low — deadline signal |
 
@@ -67,7 +67,7 @@ The line it was extracted from is left where it is.
 ### Owner Extraction
 - Look for `@name`, "name to...", "name will...", "name needs to..."
 - If no owner identified: omit the `@owner` field
-- Normalize to first name only: `@Priya`, `@Dan`
+- Normalize to first name only: `@Priya`, `@Sam`
 
 ### Due Date Extraction
 - Look for explicit dates: "by March 31", "before Friday", "end of month", "by EOD"
@@ -143,9 +143,9 @@ When the user asks "What action items do I have from meetings this week?":
 
 1. Run the scan. It reads the notes themselves, because full-text search cannot find `- [ ]` (the tokenizer drops the punctuation):
    ```
-   .pka/bin/pka-tools actions --since <YYYY-MM-DD> [--until <YYYY-MM-DD>] [--json]
+   .pka/bin/pka-tools actions [--since <YYYY-MM-DD>] [--until <YYYY-MM-DD>] [--json]
    ```
-   - `--since` is the first day of the period asked about ("this week" → Monday's date). Without it the window is the last 7 days. `--all-dates` removes the window.
+   - **"This week" means the last 7 days**, which is the default window: run the command with no `--since`. It does not mean "since Monday": on a Monday that would hide everything from the meetings of the days before. Pass `--since` only when the user names another period ("since the offsite", "this month" → the first day of it). `--all-dates` removes the window.
    - Scope: the folders tagged `meeting-home` in the Repo Map plus the people folder (1-1 notes live there). `--scope all` scans every index root; `--under <folder>` scans just that folder.
    - A note's date is its filename prefix (`YYYY-MM-DD-`), else its frontmatter `date`. File modification time is never used (routing, indexing and sync all touch it). Notes with no date are left out unless `--include-undated` is given.
    - Open boxes (`- [ ]`, `* [ ]`, nested or numbered) are returned with file, line number, owners and due date, read as described under "Forms `actions` reads". A ticked box (`- [x]`) is closed and not returned. Boxes inside fenced code blocks are examples and are ignored.
@@ -155,11 +155,11 @@ When the user asks "What action items do I have from meetings this week?":
 4. Surface with source file links:
 
 ```
-Action items from meetings this week:
-- [ ] Send Priya architecture comparison doc — @Dan
+Action items from meetings in the last 7 days:
+- [ ] Send Priya architecture comparison doc — @Sam
   Source: knowledge/personnel/priya/2026-03-31-1-1-priya.md
 
-- [ ] Review Q2 budget proposal — @Dan — by 2026-04-07
+- [ ] Review Q2 budget proposal — @Sam — by 2026-04-07
   Source: knowledge/leadership/2026-03-31-slt-q2-planning.md
 
 - [ ] Draft the Q1 hiring plan — Robin — by 2026-04-10

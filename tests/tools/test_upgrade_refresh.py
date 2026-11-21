@@ -202,8 +202,15 @@ class Obsolete(support.ToolsCase):
         out = self.run_upgrade("--refresh")
         self.assertIn("_git-protocol.md (whole file)  — removed", out)
         self.assertFalse(self.path(".pka/roles/_git-protocol.md").exists())
+        # Unseeded sections are never rewritten, so the librarian keeps the
+        # Key Competencies line v1.7.0 seeded (a manual follow-up in upgrade.md).
+        current = "- SQLite index maintenance through `pka-tools index` (never by writing rows or tables by hand)"
+        seeded_by_v170 = "- SQLite index maintenance (file_index, search_fts, per-folder tables)"
+        self.assertIn(current, seed_with_model("librarian"))
+        expected = {"librarian.md": seed_with_model("librarian").replace(current, seeded_by_v170),
+                    "researcher.md": seed_with_model("researcher")}
         for name in ("librarian.md", "researcher.md"):
-            self.assertEqual(self.text(".pka/roles/" + name), seed_with_model(name[:-3]), name)
+            self.assertEqual(self.text(".pka/roles/" + name), expected[name], name)
         # The orchestrator's unseeded sections (Key Competencies, Output
         # Conventions, Invocation) are the owner's and are never rewritten,
         # so only its seeded sections can be compared with the current seed.
@@ -355,6 +362,16 @@ class ProfileAndDecisionLog(support.ToolsCase):
         self.assertIn("@researcher", body)
         self.assertNotIn("Never does knowledge work directly", seed)
 
+    def test_the_orchestrator_seed_refreshes_the_dashboard_at_session_end(self):
+        # In a seeded (refreshable) section, so an existing workspace gets it.
+        body = self.section(seed_file("orchestrator"), "## Session-start checks (cached for the session)")
+        normal = " ".join(body.split())
+        self.assertIn("### At session end", body)
+        self.assertIn("`dashboard.html` and `dashboard-data.js` are both at the workspace root", normal)
+        self.assertIn("`.pka/bin/pka-tools dashboard data` once", normal)
+        self.assertIn("skip this and say nothing", normal)
+        self.assertIn("lint latest --json", normal)
+
     def test_the_claude_md_template_points_at_both_files(self):
         template = (self.REFS / "claude-md-template.md").read_text(encoding="utf-8")
         block = template.split("```markdown", 1)[1].split("\n```", 1)[0]
@@ -364,7 +381,11 @@ class ProfileAndDecisionLog(support.ToolsCase):
         start = block.split("## Session Start Protocol", 1)[1].split("## Session End Protocol", 1)[0]
         self.assertIn("1. Read `.pka/owner-profile.md`", start)
         steps = [line[:2] for line in start.split("\n") if line[:1].isdigit()]
-        self.assertEqual(steps, ["1.", "2.", "3.", "4.", "5.", "6."])
+        self.assertEqual(steps, ["1.", "2.", "3.", "4.", "5.", "6.", "7."])
+        self.assertIn("lint latest --json", start)
+        end = block.split("## Session End Protocol", 1)[1].split("## Project Lifecycle Commands", 1)[0]
+        self.assertIn("pka-tools dashboard data", end)
+        self.assertIn("`dashboard.html` and `dashboard-data.js`", end)
         self.assertNotIn("never carry out knowledge work", " ".join(block.split()))
         self.assertIn("I answer lookups myself", block)
 

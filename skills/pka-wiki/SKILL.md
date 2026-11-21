@@ -79,7 +79,7 @@ Key guarantees:
 - Every claim cites a source path
 - Contradictions surfaced for user resolution, never auto-decided
 - Full diff shown before write
-- Changelog and decision-log entries on every ingest
+- A changelog entry on the page and a session-log entry on every ingest; a decision-log entry only when the ingest resolved a contradiction (creating and retiring a wiki are logged there too)
 
 ### Mode 3: Query
 
@@ -121,10 +121,10 @@ is named `wiki.md`); see `references/wiki-page-schema.md`.
   output mode is part of researcher's role definition
 - **pka-librarian** — lint verifies wiki sources exist, flags broken wikilinks,
   surfaces contradiction candidates
-- **pka-meetings** — post-processing can optionally surface "this note mentions
-  topic X which has a wiki — ingest?" (v1.1 feature, not in MVP)
-- **pka-interface** — dashboard can render `wiki-home` sections as topic cards
-  (future)
+- **pka-meetings** — filing a note does not offer an ingest; the user asks for
+  one
+- **pka-interface** — the dashboard shows a `wiki-home` folder with its `topics`
+  view, a card per wiki
 
 ## Constraints
 

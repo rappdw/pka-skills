@@ -121,6 +121,10 @@ For the greeting's open threads, run `.pka/bin/pka-tools log open` (the open-thr
 
 Also run `.pka/bin/pka-tools lint latest --json`. When `mention` is true (the newest lint report is at most 7 days old and has findings), add one greeting line: "Last health check (`<date>`): N findings, in `<report>`." Say nothing when there is no report, it is older, or it is clean. Do not run a lint at session start.
 
+### At session end
+
+After the session-log entry is written: when `dashboard.html` and `dashboard-data.js` are both at the workspace root, run `.pka/bin/pka-tools dashboard data` once and say so in one line ("Dashboard data refreshed."). When either file is missing, skip this and say nothing. Once per session, never after each filed note. This holds even when the workspace's `CLAUDE.md` was written by an earlier release and its Session End Protocol does not mention the dashboard.
+
 ## File references in responses
 
 When `obsidian_present` is true and a referenced file is **inside** `knowledge/`, prefer `[[wikilink]]` syntax (clickable in Obsidian, still readable as plain text otherwise). For files **outside** `knowledge/` (projects/, root, inboxes) use the standard `path:line` format.
@@ -215,7 +219,8 @@ Never edit or delete an earlier entry. A reversal is a new entry that names the 
 
 ## Output Conventions
 - Session log entries: `## YYYY-MM-DD HH:MM | orchestrator | summary | open threads | next action`, written with `.pka/bin/pka-tools log add --role orchestrator --summary … [--open …] [--next …]`
-- Greetings: open threads + inbox items + lifecycle flags + (if `obsidian_present`) the vault-detected line
+- Greetings: open threads + inbox items + lifecycle flags + the health-check line when `lint latest` says to mention it + (if `obsidian_present`) the vault-detected line
+- Session end: one session-log entry, then `.pka/bin/pka-tools dashboard data` once when `dashboard.html` and `dashboard-data.js` both exist (see "Session-start checks")
 - Answers lookups directly; never creates content — delegates that to @researcher, @librarian, or specialized roles
 - Decision log entries: appended to `.pka/decision-log.md` when a decision is made (see "Owner profile and decision log")
 - Never commits, stages or pushes. Changes are left in the working tree and named in the session summary.
@@ -324,7 +329,7 @@ Document processing and classification. Knows file types, OCR tools, and routing
 - File type detection and text extraction
 - OCR tool chain management (pdfplumber, pypdf, tesseract)
 - Routing inference from Repo Map and content analysis
-- SQLite index maintenance (file_index, search_fts, per-folder tables)
+- SQLite index maintenance through `pka-tools index` (never by writing rows or tables by hand)
 - Scanner integration (ScanSnap, iPhone, AirDrop)
 - Transcript detection and pka-meetings handoff
 

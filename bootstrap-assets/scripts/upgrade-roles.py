@@ -101,6 +101,10 @@ Nothing is committed or pushed for the user. Filing a note changes files in the 
 For the greeting's open threads, run `.pka/bin/pka-tools log open` (the open-threads field of the last 20 session-log entries, newest first) rather than reading the log by eye. `.pka/bin/pka-tools status` reports the predicate, the index state and whether the index needs migrating.
 
 Also run `.pka/bin/pka-tools lint latest --json`. When `mention` is true (the newest lint report is at most 7 days old and has findings), add one greeting line: "Last health check (`<date>`): N findings, in `<report>`." Say nothing when there is no report, it is older, or it is clean. Do not run a lint at session start.
+
+### At session end
+
+After the session-log entry is written: when `dashboard.html` and `dashboard-data.js` are both at the workspace root, run `.pka/bin/pka-tools dashboard data` once and say so in one line ("Dashboard data refreshed."). When either file is missing, skip this and say nothing. Once per session, never after each filed note. This holds even when the workspace's `CLAUDE.md` was written by an earlier release and its Session End Protocol does not mention the dashboard.
 """,
     ),
     (
@@ -359,8 +363,8 @@ Compact retrieval rows maintained by the librarian. Format: one row per concept 
 
 | Topic | Entities | Files |
 |---|---|---|
-| northwind-partnership-2026 | sasha-ortega, jamie-lin, taylor-brooks | [[northwind/2026-04-23-joint-partnership-meeting]], [[northwind/northwind_partnership_proposal]] |
-| ai-adoption-research | satya-nadella, sundar-pichai | [[AI/ai-adoption-tier-productivity-gap-research]], [[AI/companies/vendor-landscape-research]] |
+| northwind-partnership-2026 | priya, robin-smith, northwind | [[northwind/2026-04-23-joint-partnership-meeting]], [[northwind/northwind_partnership_proposal]] |
+| ai-adoption-research | orion, lyra | [[AI/ai-adoption-tier-productivity-gap-research]], [[AI/companies/vendor-landscape-research]] |
 ```
 
 ### Row schema
@@ -653,8 +657,8 @@ Compact retrieval rows maintained by the librarian. Format: one row per concept 
 
 | Topic | Entities | Files |
 |---|---|---|
-| northwind-partnership-2026 | sasha-ortega, jamie-lin, taylor-brooks | [[northwind/2026-04-23-joint-partnership-meeting]], [[northwind/northwind_partnership_proposal]] |
-| ai-adoption-research | satya-nadella, sundar-pichai | [[AI/ai-adoption-tier-productivity-gap-research]], [[AI/companies/vendor-landscape-research]] |
+| northwind-partnership-2026 | priya, robin-smith, northwind | [[northwind/2026-04-23-joint-partnership-meeting]], [[northwind/northwind_partnership_proposal]] |
+| ai-adoption-research | orion, lyra | [[AI/ai-adoption-tier-productivity-gap-research]], [[AI/companies/vendor-landscape-research]] |
 ```
 
 ### Row schema
@@ -995,6 +999,7 @@ KNOWN_SECTION_HASHES = {
     ],
     "_obsidian.md:## Pointer Layer (added in v1.6.1)": [
         "0828652fcbd3498a",
+        "34a56c7884b92949",
         "387e539222cb1a1b",
         "480c1093f80bc9a4",
         "934d75cb738d5168",
@@ -1069,6 +1074,7 @@ KNOWN_SECTION_HASHES = {
     "orchestrator.md:## Session-start checks (cached for the session)": [
         "0c4cbe1747459038",
         "2f287173daffc1c5",
+        "38f0492756a3076d",
         "84e84c3377a6019d",
         "869f4908fcf2777e",
     ],

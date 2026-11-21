@@ -186,8 +186,8 @@ Compact retrieval rows maintained by the librarian. Format: one row per concept 
 
 | Topic | Entities | Files |
 |---|---|---|
-| northwind-partnership-2026 | sasha-ortega, jamie-lin, taylor-brooks | [[northwind/2026-04-23-joint-partnership-meeting]], [[northwind/northwind_partnership_proposal]] |
-| ai-adoption-research | satya-nadella, sundar-pichai | [[AI/ai-adoption-tier-productivity-gap-research]], [[AI/companies/vendor-landscape-research]] |
+| northwind-partnership-2026 | priya, robin-smith, northwind | [[northwind/2026-04-23-joint-partnership-meeting]], [[northwind/northwind_partnership_proposal]] |
+| ai-adoption-research | orion, lyra | [[AI/ai-adoption-tier-productivity-gap-research]], [[AI/companies/vendor-landscape-research]] |
 ```
 
 ### Row schema
