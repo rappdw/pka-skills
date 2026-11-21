@@ -7,7 +7,7 @@ Two shorter routes cover the same ground:
 - The [walkthrough site](https://rappdw.github.io/pka-skills/) shows one concept per screen.
 - Inside your own workspace, say *"Give me a tour"*. The `pka-tutorial` skill teaches the same material with your folder names.
 
-**About the examples.** Sam is the owner of the workspace at `~/pka/`. Priya and Robin Smith are colleagues, Orion and Lyra are projects, Northwind is a vendor. All of them are made up. The conversations are illustrations, and the wording you see will differ. File formats and `pka-tools` output are shown as v1.10.0 writes them.
+**About the examples.** Sam is the owner of the workspace at `~/pka/`. Priya and Robin Smith are colleagues, Orion and Lyra are projects, Northwind is a vendor. All of them are made up. The conversations are illustrations, and the wording you see will differ. File formats and `pka-tools` output are shown as v1.11.0 writes them: the terminal figures were captured by running the tool on scratch copies of Sam's workspace, and only the workspace path and the timestamps inside generated ids were changed.
 
 ## Contents
 
@@ -59,7 +59,7 @@ The skills are prose that Claude follows. The mechanical steps (index updates, t
 
 - **To make PDFs searchable:** `pdfplumber` or `pypdf` (Python packages) for PDFs that contain text, `tesseract` for scans. Without them a PDF is still filed, but its contents are not searchable.
 - **For a search index:** a Python whose built-in SQLite includes FTS5. The tool tells you if yours does not.
-- **thinkkit**, a separate plugin, for taking notes live during a meeting and for checking notes against a transcript. Without it PKA still files notes you wrote yourself. See section 8.
+- **thinkkit**, a separate plugin, for taking notes live during a meeting and for checking notes against a transcript. Without it PKA still files notes you wrote yourself and can write notes from a transcript. See section 8.
 - **Obsidian** is not required for anything here. If `knowledge/` is an Obsidian vault, PKA works alongside it. See section 10.
 
 ### Install
@@ -117,7 +117,7 @@ Bootstrap reads what is there before it asks anything.
 | Ask before destructive actions (recommended) | Creates and reads go ahead. Moves, overwrites and deletes are confirmed |
 | Hands-off | It acts and reports afterwards. Press Escape to interrupt |
 
-Some things are asked at every level, hands-off included: ingesting into a topic wiki or deleting one, approving a project summary before a project is archived, filing a meeting note into an active project, migrating the search index during an upgrade, and overwriting a `CLAUDE.md` that PKA did not write.
+Some things are asked at every level, hands-off included: ingesting into a topic wiki or deleting one, approving a project summary before a project is archived, filing a meeting note into an active project, migrating the search index during an upgrade, overwriting a `CLAUDE.md` that PKA did not write, writing notes from a transcript, what happens to a transcript after it is used, and moving a project folder that holds its own repository.
 
 ### What it writes
 
@@ -142,6 +142,7 @@ Some things are asked at every level, hands-off included: ingesting into a topic
 │   ├── owner-profile.md
 │   ├── session-log.md
 │   ├── decision-log.md
+│   ├── schema.md         index mode only: the index's tables
 │   └── knowledge.db      index mode only
 ├── knowledge/            yours, left as it was
 └── projects/             yours, left as it was
@@ -149,9 +150,9 @@ Some things are asked at every level, hands-off included: ingesting into a topic
 
 When bootstrap adapts to an existing structure it adds this infrastructure and does not move your content.
 
-In an empty folder it writes the same infrastructure. Content folders are created only if you accept the one starter layout it offers (`knowledge/` with `meetings/`, `personnel/` and `archive/` inside, plus `projects/`) or name your own. You can also start with none.
+In an empty folder it writes the same infrastructure. Content folders are created only if you accept the one starter layout it offers (`knowledge/` with `meetings/`, `personnel/` and `archive/` inside, plus `projects/`) or name your own. You can also start with none. In an empty folder the storage mode is markdown-only and no index is created. If you start with no folders, the Repo Map has no rows and the archive destination is `not set`; the first file you drop in `team-inbox/` gets a routing proposal that names a folder to create. If you take the starter layout, a health check lists the still-empty folders (rule 4) until each holds a file.
 
-Two offers follow the summary. You can decline both and take them up later.
+Two offers come at the end, one before the summary and one after it. You can decline both and take them up later. (In an empty folder the first is skipped: there is nothing to point at yet.)
 
 - **Pointer tables**, if you do not use Obsidian: a small `_MOC.md` per knowledge folder so filed notes get a searchable topic row. Useful once there are hundreds of notes. See section 10.
 - **A weekly health check.** Bootstrap shows you a schedule entry for a quick lint every Monday. It installs nothing; installing it is yours to do. See section 14.
@@ -192,12 +193,17 @@ claude
 
 At the start of a session the orchestrator:
 
-1. reads the open threads of the last 20 session-log entries;
-2. scans `team-inbox/` for new files and flags transcripts;
-3. compares your top-level folders with the Repo Map and flags new ones;
-4. checks project folders for 60 or more days without a file change;
-5. looks at the newest health-check report. If it is at most 7 days old and still has findings, the greeting gets one line about it. No lint is run at session start;
-6. greets you with what it found.
+1. reads `.pka/owner-profile.md`, once, so it writes for you the same way all session;
+2. reads the open threads of the last 20 session-log entries;
+3. looks at the newest health-check report. If it is at most 7 days old and still has findings, the greeting gets one line about it. No lint is run at session start;
+4. scans `team-inbox/` for new files, and flags transcripts and unreconciled earshot captures;
+5. compares your top-level folders with the Repo Map and flags new ones;
+6. checks project folders for 60 or more days without a file change;
+7. greets you with what it found.
+
+At the end of a session it writes one session-log entry and, if you have a dashboard, refreshes the dashboard's data once (section 12).
+
+Both lists are written into `CLAUDE.md` at setup and into the orchestrator's role file. A workspace set up before v1.11.0 has an older `CLAUDE.md`, which an upgrade never edits; section 16 says what that means.
 
 > **Claude (orchestrator):** Good morning, Sam. Two threads are open: `vendor-contract.pdf` still needs OCR, and you owe Priya the architecture comparison today. 1 new file in `team-inbox/`. Lyra has had no file changes in 67 days. Last health check (2026-11-20): 4 findings, in `owner-inbox/librarian-lint-2026-11-20.md`. What are you working on?
 
@@ -205,11 +211,9 @@ You did not ask for any of that. If nothing is urgent, just start.
 
 ### The session log
 
-`.pka/session-log.md` is a work diary you never write. Each significant action adds one line with five fields: date and time, the role, a summary, open threads, and the next action. Every role writes the same form through one command, `pka-tools log add`.
+`.pka/session-log.md` is a work diary you never write. Each significant action adds one line with five fields, `## date time | role | summary | open threads | next action`. Every role writes the same form through one command, `pka-tools log add`.
 
 ```
-## date time | role | summary | open threads | next action
-
 ## 2026-11-17 15:40 | pka-meetings | Filed Northwind proposal review → knowledge/leadership/2026-11-17-northwind-proposal-review.md | — | —
 ## 2026-11-17 15:41 | pka-meetings | Action item from 2026-11-17-northwind-proposal-review.md | Send Priya the architecture comparison — @Sam — by 2026-11-21 | —
 ## 2026-11-20 11:18 | librarian | Routed 2 files: 1 to leadership/, 1 to personnel/priya/ | vendor-contract.pdf needs OCR | Install tesseract
@@ -228,12 +232,12 @@ There is no "close" command. The greeting reads the last 20 entries, so an old t
 
 ### The decision log
 
-A second file, `.pka/decision-log.md`, records decisions with their context and the alternatives considered: the storage mode chosen at setup, why a project was archived, why a role was added. A decision is appended when it is made. It is what answers *"Why did I archive Lyra?"*
+A second file, `.pka/decision-log.md`, records decisions with their context and the alternatives considered: the storage mode chosen at setup, why a project was archived, why a role was added. A decision is appended when it is made, by the orchestrator (structure, project lifecycle, roles, autonomy, policies) or the librarian (routing policies). Entries are never edited; a reversal is a new entry. The log is read when a question or a recommendation calls for it, not at session start. It is what answers *"Why did I pick index mode?"*
 
 **Try this**
 
 - *"What did I leave open last time?"*
-- *"Why did I archive `<project>`?"*
+- *"Why did I archive `<project>`?"* (once you have archived one)
 
 ---
 
@@ -245,7 +249,8 @@ A table at the bottom of `CLAUDE.md` describes every folder. It is the first thi
 ## Repo Map
 <!-- Last updated: 2026-11-20 -->
 <!-- Priority: Active | Reference | Archive -->
-<!-- Status: active | archiving | archived -->
+<!-- Status: active | archived -->
+<!-- Tags: meeting-home (dated meeting notes), people-home (one subfolder per person; at most one folder), daily-home (YYYY-MM-DD.md journal), wiki-home (topic wikis). pka-meetings, pka-wiki and pka-tools read these. -->
 <!-- Archive destination: knowledge/archive -->
 
 | Folder | Contents | Organization | Priority | Status | Confidence | Tags |
@@ -254,12 +259,14 @@ A table at the bottom of `CLAUDE.md` describes every folder. It is the first thi
 | `knowledge/leadership/` | Meeting and strategy notes | By date | Active | active | High | meeting-home |
 | `knowledge/topics/` | Topic wikis | By topic | Reference | active | High | wiki-home |
 | `knowledge/research/` | Research outputs | By topic | Reference | active | Medium | |
-| `knowledge/archive/` | Completed projects | By project | Archive | active | High | |
+| `knowledge/archive/` | Completed projects | By project | Archive | archived | High | |
 | `projects/orion/` | Orion project workspace | Flat | Active | active | High | |
 | `projects/lyra/` | Lyra project workspace | Flat | Active | active | High | |
 ```
 
 **Priority.** Active and Reference folders are the ones indexed and shown on the dashboard. Archive marks the folder that finished projects move into; each archived project gets its own Reference row.
+
+**Status** is `active`, or `archived` for the archive folder and for the row of a project that has been moved into it. A `CLAUDE.md` written by an earlier release also lists `archiving` in that comment; nothing ever wrote it.
 
 **Confidence.** Low-confidence rows are the ones bootstrap asks you about before it writes the map.
 
@@ -278,7 +285,7 @@ A table at the bottom of `CLAUDE.md` describes every folder. It is the first thi
 
 **Keeping it current.** The orchestrator maintains the table; it is marked "do not hand-edit". At the start of each session new top-level folders are flagged, and archiving a project or creating a wiki updates the row. To change it yourself, say *"Update my repo map"*.
 
-The rest of `CLAUDE.md` records your autonomy level, communication style, storage mode, archive destination, and what to do at the start and end of a session. It is plain markdown, so another tool that accepts markdown context can read it too.
+The rest of `CLAUDE.md` records your autonomy level, communication style, storage mode, archive destination, where the owner profile and the decision log are and when they are read, and what to do at the start and end of a session. It is plain markdown, so another tool that accepts markdown context can read it too.
 
 **Try this**
 
@@ -303,9 +310,11 @@ Three roles ship with PKA. Name one with an @mention, or describe what you want.
 
 **Roles and skills are different things.** Skills are what the plugin installs. Roles are markdown files that bootstrap writes into your folder, in `.pka/roles/`. You can read and edit them, and `roster.md` lists them. An upgrade adds new sections to those files and never rewrites a section you edited (section 16).
 
-**Adding a role.** Say *"Add a data analyst to my team"*. The researcher writes a competency brief to `owner-inbox/research-<role>-<date>.md`, a role file is written to `.pka/roles/`, the roster gains a row, and you are shown the definition to confirm before it is final.
+A role file names no model: a role runs on whatever model your session uses, and `roster.md` shows `session` in its Model column. Add a `model:` line to a role file yourself if you want one role pinned. (Workspaces set up before v1.11.0 have such a line in every role file; section 16.)
 
-**Writing for you.** `.pka/owner-profile.md` holds your communication style. The orchestrator reads it once at the start of a session, and the roles write in that style. If summaries run long, say *"Update my communication style, I prefer shorter summaries"* and the profile is updated.
+**Adding a role.** Say *"Add a data analyst to my team"*. The researcher writes a competency brief to `owner-inbox/research-<role>-<date>.md`, a role file is written to `.pka/roles/`, the roster gains a row, and you are shown the definition to confirm before it is final. The reason is recorded in the decision log.
+
+**Writing for you.** `.pka/owner-profile.md` holds how you like things written, what you already know and what you are working towards. The orchestrator reads it once at the start of a session and is the only role that changes it; the other roles use what it holds. If summaries run long, say *"Update my communication style, I prefer shorter summaries"* and the profile is updated. Your autonomy level is not in it; that is in `CLAUDE.md`.
 
 **Try this**
 
@@ -324,10 +333,10 @@ This is the most-used capability. You ask a question; the orchestrator uses the 
 | You ask | What happens |
 |---|---|
 | *"What do I know about Priya?"* | A lookup. Works for people, topics, projects and decisions |
-| *"Find everything I've written about the Northwind partnership"* | A search across everything indexed, ranked and grouped by folder |
+| *"Find everything I've written about the Northwind partnership"* | A search across everything indexed: one ranked list, topic rows first, each result with its path |
 | *"What's the state of Orion?"* | Reads the project's own `CLAUDE.md` and top-level documents |
-| *"What did I decide about hiring last quarter?"* | A search scoped by date |
-| *"Why did I archive Lyra?"* | Reads the decision log, which records the reasons |
+| *"What did I decide about hiring last quarter?"* | A search, narrowed to notes dated in that period |
+| *"Why did I pick index mode?"* | Reads the decision log, which records the reasons |
 
 > **You:** What do I know about Priya?
 >
@@ -359,11 +368,13 @@ A note that a skill files is indexed as part of filing. A note you add or edit b
 
 ```
 $ .pka/bin/pka-tools index
-Index: 10 added, 1 updated, 0 removed, 6 unchanged (0.00s)
-Scope: knowledge/leadership, knowledge/personnel, knowledge/research, knowledge/topics, projects/lyra, projects/orion
+Index: 5 added, 4 updated, 1 removed, 13 unchanged (0.00s)
+Scope: knowledge/leadership, knowledge/personnel, knowledge/research, knowledge/topics, projects/lyra, projects/orion, meeting-notes
 Documents with no searchable text (write an OCR sidecar `<file>.txt`, then re-index) (1):
   - knowledge/topics/mcp/sources/mcp-spec.pdf
 ```
+
+That run followed a few days of Sam editing by hand: two notes added, one deleted, some changed. The scope is the Active and Reference folders of the Repo Map; `meeting-notes` is listed when that folder exists, so that an earshot narrative in it is indexed where it is (section 8).
 
 The last lines are worth reading: the index does not extract text from PDFs itself. It lists the documents that have none yet, and the librarian extracts it.
 
@@ -454,7 +465,7 @@ robin: drafts q1 hiring plan
 which vendors make the shortlist? not settled
 ```
 
-Each fragment is expanded into a sentence or two and appended to the file at once. Start a line with `name:` to attribute it; without that it is recorded as an observation, and a speaker is never guessed. A commitment is added under Action Items. A question left unanswered goes under Open Questions. Say *"end notes"* or *"done"* to finish.
+Each fragment is expanded into a sentence or two and appended to the file at once. Start a line with `name:` to attribute it; without that it is recorded as an observation, and a speaker is never guessed. A commitment is added under Action Items. A question left unanswered goes under Open Questions. Say *"end notes"* or *"wrap up"* to finish.
 
 What the file holds then:
 
@@ -499,6 +510,8 @@ The transcript is treated as the truth, and the notes are what get corrected. th
 >
 > **Notes (current):** [not present]
 >
+> **Issue:** A commitment made in the meeting is not in Action Items.
+>
 > **Proposed resolution:** `- [ ] **Robin**: Send Priya the interview panel list (due: 2026-11-20)`
 >
 > Accept, modify, or skip?
@@ -523,7 +536,7 @@ However the notes were written, the same things happen. For a note you wrote you
 
 1. **Route.** A 1-1 goes to that person's folder, if they have one. A leadership or general meeting goes to a `meeting-home` folder; with several, or none, you are asked. A meeting about an active project always gets a question, at every autonomy level: file it in the project, or in knowledge?
 2. **Link attendees.** Each name is checked against your people folders with `pka-tools people resolve`. A certain match is linked under `## Attendees`, which is appended at the end of the note if the note has none. An ambiguous one is asked about. No match is listed without a link.
-3. **Extract action items** and ask: "Found N action items. Add to session log open threads?" On a yes they appear in the next session's greeting.
+3. **Extract action items.** Checkbox lines already in the note are left exactly as written. An item written another way (an `Action:` line, a `→` line, a bullet under `## Next Steps`) is added to `## Action Items` as `- [ ] <action> — @<owner> — by <date>`; the line it came from stays. Then it asks: "Found N action items. Add to session log open threads?" On a yes they appear in the next session's greeting.
 4. **Save.** The note is saved in the destination as `YYYY-MM-DD-meeting-slug.md`. A 1-1 is `YYYY-MM-DD-1-1-<person>.md`. Existing 1-1 notes named another way are recognised as they are and never renamed.
 5. **Post-route.** The step every filed note gets (section 7), including a line on each attendee's timeline with a summary written from the note.
 6. **Log and report** the path, attendees linked (N of M), action items, and what happened to the transcript.
@@ -539,10 +552,12 @@ post-route knowledge/leadership/2026-11-14-slt-sync.md
   frontmatter  not-applicable — not an Obsidian vault
   moc-link     not-applicable — not an Obsidian vault
   pointers     written — knowledge/leadership/_MOC.md: extended
-  timeline     written — priya: added; robin-smith: added
-  index        indexed — 4 added, 0 updated
+  timeline     written — priya: created-index; robin-smith: created-index
+  index        indexed — 3 added, 1 updated
 Files changed besides the note: knowledge/leadership/_MOC.md, knowledge/personnel/priya/index.md, knowledge/personnel/robin-smith/index.md
 ```
+
+`extended` means the topic row was already in the table (the Northwind proposal had been filed under it) and the note was added to it. `created-index` means Priya and Robin each had a folder and no page yet, so `index.md` was created with the line in it; on a page that exists it says `added`. The index count covers the note, the two new pages and the changed table.
 
 A step that cannot do its work says why and the later steps still run. Running it twice changes nothing.
 
@@ -552,22 +567,24 @@ You choose: keep it in `team-inbox/`, archive it beside the note, or delete it a
 
 ### Action items later
 
-*"What action items do I have this week?"* scans the dated notes in your meeting folders and people folders for unticked `- [ ]` boxes. It goes by the date in the filename (by default the last 7 days) and lists each item with its source file. Checkboxes inside code blocks are not picked up.
+*"What action items do I have this week?"* scans the dated notes in your meeting folders and people folders for unticked `- [ ]` boxes. "This week" means the last 7 days, which is the default; name another period and it starts there. It goes by the note's date (the filename prefix, or a frontmatter `date`), never by when the file was last changed, and lists each item with its source file. Checkboxes inside code blocks are not picked up.
+
+This is the list on 2026-11-20:
 
 ```
 $ .pka/bin/pka-tools actions
-4 open action item(s), since 2026-11-13, in 3 note(s) under: knowledge/leadership, knowledge/personnel
+4 open action item(s), since 2026-11-13, in 2 note(s) under: knowledge/leadership, knowledge/personnel
 - [ ] **Priya**: Run the adapter spike
-      knowledge/leadership/2026-11-14-slt-sync.md:17
+      knowledge/leadership/2026-11-14-slt-sync.md:17  [owner: Priya]
 - [ ] **Robin**: Draft the Q1 hiring plan
-      knowledge/leadership/2026-11-14-slt-sync.md:18
+      knowledge/leadership/2026-11-14-slt-sync.md:18  [owner: Robin]
 - [ ] **Robin**: Send Priya the interview panel list (due: 2026-11-20)
-      knowledge/leadership/2026-11-14-slt-sync.md:19
+      knowledge/leadership/2026-11-14-slt-sync.md:19  [owner: Robin; due: 2026-11-20]
 - [ ] Send Priya the architecture comparison — @Sam — by 2026-11-21
-      knowledge/leadership/2026-11-17-northwind-proposal-review.md:5
+      knowledge/leadership/2026-11-17-northwind-proposal-review.md:8  [owner: Sam; due: 2026-11-21]
 ```
 
-Each item is shown as it is written in the note. Both forms above are read. An owner is a bold name with a colon at the start of the item (`**Robin**:`, the form thinkkit writes) or an `@name`. A due date is `(due: …)` or `by YYYY-MM-DD`; a bare date at the end of the item, after a dash, also counts. A due phrase that is not a date, such as "Friday", is shown as written, not guessed.
+Each item is shown as it is written in the note, and the owner and due date the tool read are shown in brackets after the location. The first three were captured by thinkkit; the last is from a note Sam wrote by hand. Both forms are read. An owner is a bold name with a colon at the start of the item (`**Robin**:`, the form thinkkit writes) or an `@name`. A due date is `(due: …)` or `by YYYY-MM-DD`; a bare date at the end of the item, after a dash, also counts. A due phrase that is not a date, such as "Friday", is shown as written, not guessed.
 
 Filing never rewrites a checkbox line that is already in the note. Tick the box in the note to close an item.
 
@@ -587,7 +604,12 @@ A person you keep a folder for has a page, `index.md`. Filing a note that involv
 ---
 type: person
 name: Priya
+role: ""
+org: ""
+aliases: []
+tags: [person]
 ---
+
 # Priya
 
 ## Timeline
@@ -598,7 +620,7 @@ name: Priya
 <!-- /pka:timeline -->
 ```
 
-The top line was written when the meeting note was filed, with a summary. The two below were added by a backfill of older notes, which adds no summaries.
+This page was created by the tool when the SLT sync was filed: Priya had a folder and no `index.md`. The top line was written then, with a summary. The two below were added by a backfill of older notes, which adds no summaries. The frontmatter is yours to fill in; `aliases` is where a nickname you teach PKA is saved.
 
 **Line format.** `- date · kind · link — summary`. Kind is `meeting`, `1on1` or `doc`. A summary is at most 140 characters: the decisions, and what that person owns. For a 1-1 it lists topics only. You can edit a summary freely. A line you edited is never rewritten, except to follow a note that was renamed.
 
@@ -650,7 +672,7 @@ In conversation: *"From now on, 'Rob' means Robin Smith."*
 
 Timelines start empty and fill in as you file new notes. The backfill puts the notes you already had on them. It plans first, applies only when you approve, and can be undone with one command.
 
-1. **Plan.** Say *"Backfill the timelines from my old notes"*. The librarian works out whose timeline each dated note belongs on, by the same evidence rules as a newly filed note. A link in an old "Mentioned in", "Related meetings" or "References" section on a person's own page also counts. It writes a report to `owner-inbox/timeline-backfill-plan-<date>.md` and a plan file under `.pka/backfill/`. Nothing else changes.
+1. **Plan.** Say *"Backfill the timelines from my old notes"*. The librarian works out whose timeline each dated note belongs on, by the same evidence rules as a newly filed note. A link in an old "Mentioned in", "Related meetings" or "References" section on a person's own page also counts. It writes a report to `owner-inbox/timeline-backfill-plan-<id>.md` and a plan file under `.pka/backfill/` (the id is a date, a time and six characters). Nothing else changes.
 2. **Settle names.** The report lists what it could not place: ambiguous names, frequent names with no person folder, notes with no date, large meetings. You confirm an alias or leave it, then it plans again. Planning is cheap.
 3. **Apply.** Only when you approve. Every page it will touch is backed up to `.pka/backups/` first. It adds only lines for notes not already on the timeline, then checks that every link resolves and that nothing else changed. If a check fails, the pages are put back.
 4. **Undo** if you want to. The apply prints the restore command. It refuses to overwrite a page you edited after the backfill unless you force it.
@@ -836,7 +858,7 @@ xdg-open dashboard.html    # Linux
 | `dashboard.html` | The page: layout, styles, one section per folder | the `pka-interface` skill, from a template |
 | `dashboard-data.js` | The data the page shows: a snapshot of the workspace | `pka-tools dashboard data` |
 
-The snapshot holds one row per file (title, the note's date, the day it last changed, tags, a short summary, its headings), the Repo Map folders, people with their newest timeline entries, projects and their status, the newest open action items, and the recent session log. It does not hold the text of your notes.
+The snapshot holds one row per file (title, the note's date, the day it last changed, tags, a short summary, its headings), the Repo Map folders, people with their newest timeline entries, the project folders under `projects/`, the newest open action items, and the recent session log. It does not hold the text of your notes, and folders with Archive priority are left out.
 
 The page loads that file with a script tag and loads nothing else: no library, no CDN, no folder picker. It works the same in index mode and in a markdown-only workspace, offline, in any current browser. (It was checked in Chromium and Firefox, not in Safari.)
 
@@ -852,10 +874,14 @@ Sections are generated from the Active and Reference folders in your Repo Map. E
 | Dated meeting or strategy notes (`meeting-home`) | Notes by date, newest first, grouped by month |
 | A subfolder per topic (research, wikis) | A card per subfolder with its files |
 | A journal of dated notes (`daily-home`) | A square per day for recent months, then the entries |
-| `projects/` | A card per project: status, days since last change |
+| `projects/` | A card per project folder under `projects/`: days since last change, top-level files |
 | Anything else | A sortable, filterable table |
 
 Three sections are always there: **Search**, **Open actions** (unticked checkboxes in dated meeting and person notes) and **Activity** (the last 20 session-log entries and the files changed last).
+
+The calendar is used only for a folder tagged `daily-home`. A folder of dated notes without that tag gets the by-date list.
+
+Every project card carries an Active badge. The page has badges for "winding down" and "archived" as well, but nothing records those states where the page's data looks for them, so you will not see them; and a project you have transitioned (section 13) leaves the Projects section, because its folder is no longer under `projects/`. Its files appear under the folder it moved to once that folder has an Active or Reference row.
 
 ### What search covers
 
@@ -865,21 +891,23 @@ Search in the page looks at titles, paths, tags, headings and the one-line summa
 
 The page shows the workspace as it was when the data was written, and its header says when that was. After seven days that line is shown in a warning colour.
 
-- *"Refresh the dashboard"* rewrites `dashboard-data.js`; then reload the page. `dashboard.html` is not touched.
-- The data is also refreshed once at the end of a session in which notes were filed or changed, if you have a dashboard. It is not refreshed after every filed note.
+- *"Refresh the dashboard"* rewrites `dashboard-data.js`; then reload the page. `dashboard.html` is not touched. In index mode a refresh runs the index first: the snapshot is as fresh as the last index run.
+- The data is also refreshed once at the end of a session, if both dashboard files are there, and the orchestrator says so in one line. It is not refreshed after every filed note. In a workspace set up before v1.11.0 this starts once you have run *"bootstrap upgrade"* and accepted the refresh of the orchestrator's role section (section 16); until then, ask.
+- Also ask for a refresh after a bulk import, a timeline backfill or a project transition.
 - *"Add a timeline view for `<folder>`"* or *"Update the dashboard"* after the Repo Map changed edits the page in place. The skill changes only the sections it marked as its own and keeps what you added outside them. It asks before removing a section.
 
 Links are relative to the page, so the workspace folder can be renamed, moved or synced to another machine and they still work. A note opens the way your browser opens a `.md` file: as plain text, or as a download.
 
 ### If you have a dashboard from an earlier release
 
-It is not touched and behaves exactly as it did, including its request to a CDN for a script. To get the new one, run *"bootstrap upgrade"* (for the new `pka-tools`) and then ask for the dashboard to be updated. The skill recognises the old page, keeps a copy as `dashboard.html.bak-<date>`, rebuilds the page with your sections and customizations, and writes the data.
+It is not touched and behaves exactly as it did, including its request to a CDN for a script. Opened by double-click, that old page never loaded its data, so its sections were empty. To get the new one, run *"bootstrap upgrade"* (for the new `pka-tools`) and then say *"Update my dashboard"*. The skill recognises the old page, says so and offers to rebuild it: on your yes it keeps a copy as `dashboard.html.bak-<date>`, rebuilds the page with your sections and customizations, and writes the data.
 
 **Try this**
 
 - *"Generate my dashboard"*
 - *"Refresh the dashboard"*
 - *"Add a timeline view for `<folder>`"*
+- *"Update my dashboard"* (if yours was made before v1.11.0)
 
 ---
 
@@ -905,7 +933,8 @@ A project folder is a workspace while the work is live. When it is done, a trans
 2. **Pause.** It waits for your approval, whatever your autonomy level.
 3. **Cleanup.** Build leftovers (what `.pkaignore` matches) are listed. You confirm before they are deleted.
 4. **Move.** The folder goes to your archive destination, here `knowledge/archive/lyra/`. Wikilinks that pointed at the old location are rewritten. Anything else that still names the old path, such as relative markdown links or mentions in `CLAUDE.md`, is shown to you to fix. The approved summary is copied into the moved folder as `project-summary.md`.
-5. **Update the map, then re-index.** The moved project gets its own row in the Repo Map first: priority `Reference`, status `archived`. Then the index is run. The order matters, because the index reads the folders the map lists; indexing first would drop the project from search.
+5. **Update the map, then re-index.** The moved project gets its own row in the Repo Map first: priority `Reference`, status `archived`. Then the index is run (index mode; a markdown-only workspace has none). The order matters: the index reads the folders the map lists as Active or Reference, and the archive folder is neither unless a folder above it is, so indexing first can drop the project from search.
+6. **Log.** A session-log entry, and a decision-log entry saying why it was archived and who decided.
 
 If the project folder is its own git repository, the move stops and asks first. What happens to that history is your decision. Nothing is committed for you at any step.
 
@@ -922,9 +951,9 @@ If the project folder is its own git repository, the move stops and asks first. 
 - `knowledge/personnel/robin-smith/` — primary stakeholder notes
 ```
 
-**Not ready to move it?** *"Archive Lyra"* marks it `archiving` in the Repo Map for a later transition.
+***"Archive Lyra"*** asks for the same transition. There is no in-between state: a project is active until the transition moves it, and what records the outcome is its Repo Map row (status `archived`), the session log and the decision log. If you are not ready to move it, leave it; the 60-day notice will come round again.
 
-**Changing your mind.** *"Restore Lyra to active"* moves it back, and its links follow. The index is then pruned (`pka-tools index --prune`); until that runs, stale rows for the archive path stay in it.
+**Changing your mind.** *"Restore Lyra to active"* moves it back, and its links follow. Its Repo Map row goes back to `projects/lyra/`, Active (a row added only for the archive is removed), and then the index is pruned (`pka-tools index --prune`), which clears the rows left at the archive path. `project-summary.md` stays in the project.
 
 ### Meetings about a live project
 
@@ -955,7 +984,7 @@ Since v1.10.0 most of lint is done by `pka-tools lint`, with no model and no net
 | 4. Empty Repo Map folders | A Repo Map row whose folder is missing or holds no documents | yes |
 | 5. Notes not on a timeline | Dated notes that belong on someone's timeline and are not on it. One informational line, not a finding | no |
 | 6. Contradiction candidates | A wiki not updated for 30 days, with 3 or more newer notes on its topic that it does not cite | no |
-| 7. Uncited wiki claims | Wiki paragraphs with no citation | no |
+| 7. Uncited wiki claims | A wiki with an empty Sources list, or paragraphs in "What it is" or "Key concepts" with no citation | no |
 | 8a. Identical files | Files that are byte for byte the same, of any type | yes |
 | 8b. The same text | The same text once frontmatter, upper and lower case and spacing are set aside | yes |
 | 8c. Near-copies | Notes of 200 words or more that are at least 80% alike, or where one holds at least 90% of the other. Often raw notes beside a reconciled version, or a `-2` copy | no |
@@ -966,11 +995,11 @@ Rules 6 and 7 need judgement, so the librarian works them out in a session and a
 ### Quick and full
 
 - **Quick** (*"quick lint"*): rules 1 to 4, 8a and 8b. About a second for a few thousand notes.
-- **Full** (the default): everything. A few seconds, plus the time the two wiki rules take.
+- **Full** (the default): everything. A few seconds, plus the time rules 6 and 7 take.
 
 ```
 $ .pka/bin/pka-tools lint --quick
-Lint (quick): 4 finding(s), 0 informational, 0 suppressed; 20 files scanned
+Lint (quick): 4 finding(s), 0 informational, 0 suppressed; 24 files scanned
   rule 2  Broken links                         2 findings
   rule 4  Empty Repo Map folders               1 finding
   rule 8a Byte-identical files                 1 finding
@@ -978,7 +1007,7 @@ Report: owner-inbox/librarian-lint-2026-11-20.md
 Nothing was changed. Rules 6 and 7 are the librarian's to add.
 
 $ .pka/bin/pka-tools lint
-Lint (full): 5 finding(s), 1 informational, 0 suppressed; 20 files scanned
+Lint (full): 5 finding(s), 1 informational, 0 suppressed; 24 files scanned
   rule 2  Broken links                         2 findings
   rule 4  Empty Repo Map folders               1 finding
   rule 5  Notes not on a person's timeline     1 informational
@@ -992,18 +1021,24 @@ The full lint found one thing the quick one could not: a near-copy. A quick lint
 
 ### Reading the report
 
-The report lands in `owner-inbox/librarian-lint-<date>.md`: counts at the top, then one section per rule with a hint about what to do. Every finding ends with an id. This is the full report from Sam's workspace, shortened where marked:
+The report lands in `owner-inbox/librarian-lint-<date>.md`: counts and a summary at the top, then one section per rule with a hint about what to do. Every finding ends with an id. This is the full report from Sam's workspace, shortened wherever there is a `[…]`:
 
 ```markdown
+<!-- pka-lint {"date": "2026-11-20", "findings": 5, "info": 1, "mode": "full", "scanned": 24, "suppressed": 0, "version": 1} -->
 # Knowledge Base Health — 2026-11-20
 
 Written by `pka-tools lint`. Nothing was changed: lint reports, you decide.
 
-- Scanned: 20 files (17 markdown)
+- Scanned: 24 files (21 markdown)
 - Checks run: rule 1, rule 2, rule 3, rule 4, rule 5, rule 8a, rule 8b, rule 8c, rule 8d
 - Findings: 5
 - Informational: 1
 - Suppressed: 0
+
+## Summary
+
+- Rule 2, broken links: 2 findings
+[…]
 
 ## 2. Broken links (2 findings)
 
@@ -1033,19 +1068,23 @@ Keep one copy and delete or move the others yourself; links to a removed copy wi
 
 | File | Size | Modified | Links to it | Compared with the keeper |
 |---|---|---|---|---|
-| `knowledge/research/vendor-landscape/research.md` | 283 B | 2026-11-20 | 0 | suggested keeper |
-| `projects/orion/vendor-landscape.md` | 283 B | 2026-11-20 | 0 | identical bytes |
+| `knowledge/research/vendor-landscape/research.md` | 234 B | 2026-11-20 | 0 | suggested keeper |
+| `projects/orion/vendor-landscape.md` | 234 B | 2026-11-20 | 0 | identical bytes |
 
 ## 8c. Near-duplicates and contained notes (1 finding)
 
 Often raw notes beside a reconciled version, or a `-2` copy. Keep the fuller one, or suppress the group.
 
-### 2 files, up to 92% alike: `knowledge/leadership/2026-11-17-northwind-proposal-review-2.md`, `knowledge/leadership/2026-11-17-northwind-proposal-review.md` [id: 8c-c13af50b]
+### 2 files, up to 86% alike: `knowledge/leadership/2026-11-17-northwind-proposal-review-2.md`, `knowledge/leadership/2026-11-17-northwind-proposal-review.md` [id: 8c-c13af50b]
 
 | File | Size | Modified | Links to it | Compared with the keeper |
 |---|---|---|---|---|
-| `knowledge/leadership/2026-11-17-northwind-proposal-review-2.md` | 1.7 KB | 2026-11-20 | 0 | near copy |
-| `knowledge/leadership/2026-11-17-northwind-proposal-review.md` | 1.5 KB | 2026-11-20 | 1 | suggested keeper |
+| `knowledge/leadership/2026-11-17-northwind-proposal-review-2.md` | 1.6 KB | 2026-11-20 | 0 | near copy |
+| `knowledge/leadership/2026-11-17-northwind-proposal-review.md` | 1.4 KB | 2026-11-20 | 1 | suggested keeper |
+
+## Hiding a finding you have dealt with
+
+[…]
 
 ## Librarian checks (rules 6 and 7)
 
@@ -1059,7 +1098,7 @@ What each of these is, in Sam's workspace:
 - **The empty folder.** `knowledge/archive/` is in the Repo Map and nothing has been archived yet.
 - **The timeline line.** Sam wrote a 1-1 note by hand on the 19th, after the backfill. It is information, not a finding, and it cannot be hidden. It goes away at the next backfill.
 - **The identical files.** The research brief was copied into the Orion project.
-- **The near-copy.** The proposal review was filed twice, the second time with a paragraph added.
+- **The near-copy.** The proposal review was saved twice, the second time with a paragraph added.
 
 ### How duplicates are reported
 
@@ -1097,7 +1136,7 @@ $ .pka/bin/pka-tools lint suppressions
 - 8a-130ebf71  2 files, byte for byte the same: `knowledge/research/vendor-landscape/research.md`, `projects/orion/vendor-landscape.md`  — Orion keeps its own copy of the brief
 
 $ .pka/bin/pka-tools lint
-Lint (full): 4 finding(s), 1 informational, 1 suppressed; 20 files scanned
+Lint (full): 4 finding(s), 1 informational, 1 suppressed; 24 files scanned
   …
 ```
 
@@ -1126,9 +1165,9 @@ launchd on macOS (save as ~/Library/LaunchAgents/org.pka-skills.lint.pka-<hash>.
 …
 ```
 
-It prints a cron line and a launchd file. It installs neither, and no skill will: adding the entry is yours to do, and you can ignore it. A scheduled run is a quick lint, so it does not include near-copies, duplicate people or the two wiki rules.
+It prints a cron line and a launchd file. It installs neither, and no skill will: adding the entry is yours to do, and you can ignore it. A scheduled run is a quick lint, so it does not include near-copies, duplicate people, the timeline line or rules 6 and 7.
 
-When the newest report is at most 7 days old and has open findings, the next session's greeting mentions it once (section 3). Findings you have hidden since are not counted.
+When the newest report is at most 7 days old and has open findings, the next session's greeting mentions it once (section 3). Findings you have hidden since are not counted. The instruction is in the orchestrator's role file, and in the `CLAUDE.md` of a workspace set up on v1.11.0; an older `CLAUDE.md` does not have it (section 16).
 
 ### When to run it
 
@@ -1156,7 +1195,7 @@ The skills decide what a note is about and where it belongs. `pka-tools` makes t
 
 ```
 $ .pka/bin/pka-tools status
-Workspace:        ~/pka
+Workspace:        /home/sam/pka
 pka-tools:        1.11.0 (vendored: 1.11.0)
 Vault:            knowledge
 Obsidian:         not present
@@ -1230,8 +1269,8 @@ This is the preview for a workspace last set up before v1.7.0:
 ```
 $ python3 "<plugin root>/bootstrap-assets/tools/pka-tools" install --workspace ~/pka --dry-run
 pka-tools install (dry run) — plugin version 1.11.0
-  installed: 23   updated: 1   current: 0   kept: 0   conflicts: 0
-Installed (23):
+  installed: 24   updated: 1   current: 0   kept: 0   conflicts: 0
+Installed (24):
   - bin/pka-tools
   - bin/pka_tools/__init__.py
   …
@@ -1247,15 +1286,25 @@ Updated (1):
 | Conflicts | You edited the file and the plugin changed it too. Yours is kept and stays in use; the new one is written beside it as `<name>.new` |
 | Kept | Edited by you, unchanged in the plugin. Nothing happens |
 | Current | Already up to date |
+| No longer shipped | A file the plugin has dropped: moved to the backup folder if you never edited it, left in place if you did |
 
 ### What the upgrade does, in order
 
 1. **Helper files**, as the preview showed. Nothing is deleted: a file the plugin no longer ships is moved to `.pka/upgrade-backups/` if you never edited it, and left in place if you did.
 2. **The index**, if you have one and its schema is older. You are shown a plan and asked, at every autonomy level. On a yes, the database is copied to `.pka/db-backups/`, migrated, checked and re-indexed; a failure rolls back. On a no, the rest of the upgrade still runs, but search and indexing wait until you migrate.
 3. **Role files.** `.pka/roles/` is backed up. New sections are added. Sections you already have are not rewritten. Sections an earlier release wrote and you never edited can be refreshed in one step, if you say yes. A section you customised is shown as a difference and replaced only if you say so for that section.
-4. **Follow-ups.** It shows the weekly lint schedule entry (section 14) and suggests what else applies: the Obsidian retrofit if you have a vault, pointer tables if you have none.
+
+   Coming from v1.10.0 or earlier, the new sections are "Owner profile and decision log" in all three role files and "Answering and delegating" in the orchestrator's. Say yes to the refresh as well: it is what gives the orchestrator its session-end step (refresh the dashboard data once, if you have a dashboard), and it removes the **obsolete** commit and push sections that role files seeded by v1.6.0 to v1.7.0 still carry (edited ones are left for you).
+
+   The summary also lists **Pinned models**: role files whose frontmatter still has a `model:` line, which every release up to v1.10.0 wrote. The upgrade never changes frontmatter, so "roles follow the session's model" is true of a new workspace and not yet of yours. Bootstrap offers to remove each line, one file at a time, on your yes; keep one you set on purpose.
+4. **Follow-ups.** It shows the weekly lint schedule entry (section 14) and suggests what else applies: the Obsidian retrofit if you have a vault, pointer tables if you have none, removing pinned `model:` lines, and, in a workspace with nested repositories, what changed for it (below).
 
 Throughout: your notes are not touched (the upgrade changes `.pka/` only), nothing is committed, and it needs `python3` 3.9 or newer.
+
+### Two things the upgrade does not do
+
+- **Your dashboard.** If you have a `dashboard.html` from before v1.11.0, say *"Update my dashboard"* afterwards. The old page never loaded its data when opened by double-click, and it stays as it is until you ask. It is saved as `dashboard.html.bak-<date>` before the new page and `dashboard-data.js` are written at the workspace root (section 12).
+- **Your `CLAUDE.md`.** An upgrade never edits it. One written before v1.11.0 has no health-check step in its session-start list and no dashboard step in its session-end list. The orchestrator's role file carries both once its section is refreshed, so the greeting line and the end-of-session refresh still happen; if you want `CLAUDE.md` to say the same, ask bootstrap to show you the two steps and add them.
 
 **More than one machine.** Each needs the plugin updated. The index is per machine, so each migrates and indexes its own.
 
@@ -1269,7 +1318,7 @@ Throughout: your notes are not touched (the upgrade changes `.pka/` only), nothi
 | v1.8.0 | Rely on PKA not committing or pushing. Clear the old commit and push instructions out of your role files. Move a finished project and keep its links working |
 | v1.9.0 | Put the notes you already had on people's timelines. Without Obsidian, have timelines reach notes anywhere in the workspace |
 | v1.10.0 | Find duplicate notes and duplicate people in a health check. Hide a finding that is fine as it is. Run a quick lint every week without a session. Have every form of link checked |
-| v1.11.0 | Open the dashboard by double-click, offline, in any browser. Have action items from thinkkit notes listed with their owner and due date. Keep a finished project searchable after it is archived. Have your owner profile and decision log used by the roles. |
+| v1.11.0 | Open the dashboard by double-click, offline, in any current browser, with open action items on it. Have action items from thinkkit notes listed with their owner and due date. Keep a finished project searchable after it is archived. Have your owner profile and decision log used by the roles. Set up in an empty folder with a starter layout. Have notes written from a transcript without thinkkit. In a new workspace, have roles follow the session's model |
 
 After the upgrade, the tutorial teaches the ones that apply to your workspace: *"What's new in this release?"*
 
@@ -1294,6 +1343,7 @@ Nothing was staged or committed; the changes are left for the user to commit. Do
 
 - *"Do I need to upgrade?"*
 - *"bootstrap upgrade"*
+- *"Update my dashboard"*
 - *"What's new in this release?"*
 
 ---
@@ -1306,7 +1356,9 @@ It first works out where you are:
 
 - **Not set up yet:** it points you to `pka-bootstrap`.
 - **Workspace behind the installed release:** it offers the upgrade walkthrough first (section 16), because some of what it would show does not work until then.
-- **Up to date:** the full tour, or any single module.
+- **Plugin behind the workspace:** it tells you to update the plugin, and does not suggest the upgrade.
+- **Index not migrated:** it says search and indexing are off until *"bootstrap upgrade"* has migrated it.
+- **Up to date:** the full tour (eleven short modules, about 30 minutes if you read them all), or any single module.
 
 It teaches one idea at a time, gives a prompt, and asks whether you want to try it. It hands off instead of acting: it never moves or deletes files, and it does not perform the upgrade. Ask a real question in the middle and it stops teaching and answers.
 
@@ -1349,7 +1401,7 @@ It teaches one idea at a time, gives a prompt, and asks whether you want to try 
 | "What do I know about `<person or topic>`?" | Lookup; a wiki summary first if the topic has one |
 | "Find everything about `<topic>` across all my work" | Search across knowledge folders and the top level of projects |
 | "What's the state of `<project>`?" | Reads the project's `CLAUDE.md` and top-level documents |
-| "What did I decide about `<topic>` last quarter?" | Search scoped by date |
+| "What did I decide about `<topic>` last quarter?" | Search, narrowed to notes dated in that period |
 | "Why did I archive `<project>`?" | Reads the decision log |
 | "Re-index my knowledge base" | Incremental index update |
 
@@ -1361,7 +1413,7 @@ It teaches one idea at a time, gives a prompt, and asks whether you want to try 
 | "I'm about to start a 1-1 with `<name>`" | Live capture (thinkkit), then filing |
 | "Reconcile my `<meeting>` notes against the transcript in team-inbox" | Corrects the notes from the transcript (thinkkit), then filing |
 | "File these meeting notes: `<path>`" | Routes, links attendees, extracts action items, updates timelines |
-| "What action items do I have this week?" | Open checkboxes in dated notes of the last 7 days |
+| "What action items do I have this week?" | Open checkboxes in dated meeting and person notes of the last 7 days, with owner and due date, plus open threads in the session log |
 
 ### People, pointers and wikis
 
@@ -1382,10 +1434,10 @@ It teaches one idea at a time, gives a prompt, and asks whether you want to try 
 | "Find duplicate notes" | The duplicate rules of a full lint |
 | "That finding is fine, hide it" | Records a suppression with your reason |
 | "Show me the weekly lint schedule" | Prints a cron line and a launchd file; installs nothing |
-| "Generate my dashboard" / "Update the dashboard" | Writes or edits `dashboard.html`, and writes its data |
+| "Generate my dashboard" / "Update the dashboard" | Writes or edits `dashboard.html`, and writes its data. For a page made before v1.11.0: offers a rebuild, after a backup |
 | "Refresh the dashboard" | Rewrites `dashboard-data.js`; reload the page |
 | "What projects are winding down?" | Projects with no file changes in 60 days or more |
-| "Transition `<project>` to knowledge" | Summary, approval, cleanup, move, re-index |
+| "Transition `<project>` to knowledge" / "Archive `<project>`" | Summary, approval, cleanup, move, Repo Map row, re-index |
 | "Restore `<project>` to active" | Reverses a transition |
 | "Add a `<role>` to my team" | Brief, role file, roster row, your confirmation |
 | "Do I need to upgrade?" / "bootstrap upgrade" | Preview, then the upgrade |
@@ -1404,22 +1456,26 @@ It teaches one idea at a time, gives a prompt, and asks whether you want to try 
 | `owner-inbox/` | Reports, briefs, drafts | the roles |
 | `owner-inbox/librarian-report-<date>.md` | What a routing run did | the librarian |
 | `owner-inbox/librarian-lint-<date>.md` | A health-check report | `pka-tools lint`, plus the librarian for rules 6 and 7 |
-| `owner-inbox/timeline-backfill-plan-<date>.md` | A backfill plan to review | `pka-tools timeline plan` |
-| `meeting-notes/` | Notes being captured, and earshot capture directories | thinkkit and earshot |
+| `owner-inbox/timeline-backfill-plan-<id>.md` | A backfill plan to review | `pka-tools timeline plan` |
+| `owner-inbox/<project>-summary-draft.md` | A project summary waiting for your approval | the orchestrator, during a transition |
+| `meeting-notes/` | Notes being captured, and earshot capture directories | thinkkit, earshot, and `pka-meetings` for notes written from a transcript |
 | `<people folder>/<person>/index.md` | A person's page and timeline | you; `pka-tools` owns the timeline block |
 | `knowledge/**/_MOC.md` | A folder's map of content and pointer table | `pka-tools`; yours to reorganise |
 | `knowledge/topics/<topic>/wiki.md` | A topic wiki | the researcher, on your approval |
 | `dashboard.html` | The dashboard page | `pka-interface` |
 | `dashboard-data.js` | The snapshot the dashboard shows | `pka-tools dashboard data` |
+| `dashboard.html.bak-<date>` | A dashboard from before v1.11.0, kept when it was rebuilt | `pka-interface` |
 | `.pka/bin/` | `pka-tools` | the installer |
+| `.pka/manifest.json`, `.pka/upgrade-roles.py` | Which release the helpers came from; the role-file upgrade helper | the installer |
+| `.pka/schema.md` | The index's tables (index mode) | bootstrap |
 | `.pka/roles/` | Role files and the roster | bootstrap and upgrades; yours to edit |
 | `.pka/session-log.md` | The work diary | every role |
-| `.pka/decision-log.md` | Decisions and their reasons | the roles |
-| `.pka/owner-profile.md` | Who you are and how you like things written | bootstrap; the roles keep it current |
+| `.pka/decision-log.md` | Decisions and their reasons | the orchestrator; the librarian for routing policies |
+| `.pka/owner-profile.md` | Who you are and how you like things written | bootstrap; the orchestrator keeps it current |
 | `.pka/knowledge.db` | The search index (index mode) | `pka-tools`; rebuilt from the files at any time |
 | `.pka/lint-suppressions.json` | Findings you have hidden, with reasons | `pka-tools lint suppress` |
 | `.pka/lint-cron-log.txt` | Output of scheduled lints | the schedule entry, if you install it |
 | `.pka/backfill/`, `.pka/backups/` | Backfill plans, and the pages as they were before an apply | `pka-tools timeline` |
 | `.pka/upgrade-backups/`, `.pka/db-backups/` | What an upgrade replaced | the upgrade |
 
-Everything outside `.pka/` and the two inboxes is your content. The index, the dashboard and every report can be deleted and made again from it.
+Everything outside `.pka/`, the two inboxes and the two dashboard files is your content. The index, the dashboard data and every report can be deleted and made again from it; a regenerated `dashboard.html` starts from the template again, without anything you added to the old one.
