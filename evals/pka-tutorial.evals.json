@@ -12,19 +12,19 @@
     "followups": [
       "Next."
     ],
-    "expect": "starts with orientation: what PKA is, the Repo Map, roles, the session log; its examples use this workspace's own folder names from the Repo Map (for example knowledge/leadership/ or knowledge/personnel/); ends the module with concrete prompts to try; checks in with the user before the next module instead of delivering every module in one reply; the second reply covers finding things; where it describes the scope of the tour it includes topic wikis, health checks, people and timelines, and the pointer layer (eleven modules); moves, creates or edits no file apart from its own session-log entry"
+    "expect": "starts with orientation: what PKA is, the Repo Map, roles, the session log; its examples use this workspace's own folder names from the Repo Map (for example knowledge/leadership/ or knowledge/personnel/); ends the module with concrete prompts to try; checks in with the user before the next module instead of delivering every module in one reply; the second reply covers finding things; the first reply says the tour has eleven modules, or lists all eleven; it does not say nine; moves, creates or edits no file apart from its own session-log entry"
   },
   {
     "id": "tutorial-meeting-capture",
     "scenario": "One how-do-I question: meetings",
     "prompt": "How do I capture meeting notes?",
-    "expect": "answers with the meeting-capture module only, not the whole tour; explains the three modes: live capture, reconcile against a transcript, route only; checks whether take-notes and resolve-against-transcript are available and says that without thinkkit only route-only works here; tells the user what to say to pka-meetings to do it, and neither captures nor files anything itself"
+    "expect": "answers with the meeting-capture module only, not the whole tour; explains the three modes: live capture, reconcile against a transcript, route only; checks whether take-notes and resolve-against-transcript are available and says that without thinkkit live capture and reconciliation are not available here, and that filing existing notes and writing notes from a transcript still work; tells the user what to say to pka-meetings to do it, and neither captures nor files anything itself"
   },
   {
     "id": "tutorial-finding-things",
     "scenario": "One how-do-I question: search",
     "prompt": "How do I find things in my knowledge base?",
-    "expect": "answers with the finding-things module only; explains the four kinds of query: simple lookup, cross-repo search, project snapshot, date-scoped; its example prompts use this workspace's folder or person names; ends with prompts to try"
+    "expect": "answers with the finding-things module only; explains the five kinds of query: simple lookup, search across everything, project snapshot, date-scoped, decision history; its example prompts use this workspace's folder or person names; ends with prompts to try"
   },
   {
     "id": "tutorial-what-can-pka-do",
@@ -46,7 +46,7 @@
     "id": "tutorial-inbox-pattern",
     "scenario": "One how-do-I question: the inboxes",
     "prompt": "How do I drop files into the system?",
-    "expect": "answers with the inbox module only; explains team-inbox/ as the input queue and owner-inbox/ as where outputs are delivered; explains that transcripts are held for pka-meetings instead of being routed; explains batch processing with grouped routing proposals; moves and creates no file apart from its own session-log entry"
+    "expect": "answers with the inbox module only; explains team-inbox/ as the input queue and owner-inbox/ as where outputs are delivered; explains that transcripts are held for pka-meetings instead of being routed; explains batch processing: obvious files are routed, ambiguous ones asked about, none skipped silently; moves and creates no file apart from its own session-log entry"
   },
   {
     "id": "tutorial-behind-offers-upgrade",
@@ -57,7 +57,7 @@
       "roles": "v1.7.0"
     },
     "prompt": "Give me a tour of PKA.",
-    "expect": "runs the plugin's copy of `pka-tools status --workspace <root> --json`; runs no `.pka/bin/pka-tools` command (there is none); says, before starting any module, that the workspace is behind the installed release (set up before v1.7.0, installed {{plugin_version}}); offers to walk through the upgrade first; changes no file"
+    "expect": "runs the plugin's copy of `pka-tools status --workspace <root> --json`; runs no `.pka/bin/pka-tools` command (there is none); says, before starting any module, that the workspace is behind the installed release (set up before v1.7.0, installed {{plugin_version}}); offers to walk through the upgrade first; changes no file apart from its own session-log entry"
   },
   {
     "id": "tutorial-upgrade-walkthrough",
@@ -70,7 +70,7 @@
     "followups": [
       "Yes, walk me through the upgrade."
     ],
-    "expect": "runs the plugin's `pka-tools install --workspace <root> --dry-run` and explains its result in plain language (what would be installed, updated or kept); describes the three things `bootstrap upgrade` does, in order: the toolkit and helper scripts, the index migration (it asks first and the database is backed up), the role files (backed up, sections added, the user's own not rewritten); says nothing is committed; says the upgrade needs Python 3.9 or newer; ends by telling the user to say `bootstrap upgrade`; never runs the installer without --dry-run, `db migrate --apply`, or upgrade-roles.py without --dry-run; no file in the workspace has changed when the run ends"
+    "expect": "runs the plugin's `pka-tools install --workspace <root> --dry-run` and explains its result in plain language (what would be installed, updated or kept); describes the three things `bootstrap upgrade` does, in order: the toolkit and helper scripts, the index migration (it asks first and the database is backed up), the role files (backed up, sections added, the user's own not rewritten); says nothing is committed; says the upgrade needs Python 3.9 or newer; ends by telling the user to say `bootstrap upgrade`; never runs the installer without --dry-run, `db migrate --apply`, or upgrade-roles.py without --dry-run; no file in the workspace has changed when the run ends, apart from the tutorial's own session-log entry"
   },
   {
     "id": "tutorial-after-upgrade-whats-new",
@@ -91,7 +91,9 @@
     "scenario": "A current workspace that was upgraded at some point and has not seen what's new",
     "setup": {
       "steps": [
-        {"write": ".pka/upgrade-backups/20261101-090000/roles/roster.md", "text": ["# Role Roster", "", "(the roster as it was before the upgrade)"]}
+        {"write": ".pka/upgrade-backups/20261101-090000/roles/roster.md", "text": ["# Role Roster", "", "(the roster as it was before the upgrade)"]},
+        {"tool": ["log", "add", "--role", "librarian", "--summary", "Routed 2 files: 1 to leadership/, 1 to personnel/priya/"]},
+        {"tool": ["log", "add", "--role", "pka-meetings", "--summary", "Filed SLT sync"]}
       ]
     },
     "prompt": "What can PKA do?",

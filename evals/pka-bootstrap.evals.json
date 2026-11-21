@@ -10,7 +10,7 @@
       "Ask before destructive actions.",
       "The map looks right. Completed projects archive to knowledge/archived/. Go ahead and write everything."
     ],
-    "expect": "scans the folder structure with tool calls before asking its first question; presents a draft Repo Map in which knowledge/leadership is tagged meeting-home and knowledge/personnel is tagged people-home; names an archive destination or asks for one; keeps the interview to name or profile, autonomy level and the Repo Map (never more than five questions in total); recommends markdown-only storage because the knowledge folders hold fewer than 300 indexable files, and creates no .pka/knowledge.db; installs the toolkit by running the plugin's `pka-tools install --workspace .`, not by writing files under .pka/bin/ itself; writes CLAUDE.md with a `## Repo Map` table, a `## Archive Destination` section and the note that transcripts in team-inbox/ are held for pka-meetings; creates .pka/roles/ with orchestrator.md, researcher.md, librarian.md, roster.md and _obsidian.md; creates .pka/session-log.md with a bootstrap entry, .pka/owner-profile.md and .pka/decision-log.md; writes .pkaignore and creates owner-inbox/ and team-inbox/; moves, renames or deletes nothing under knowledge/, projects/ or meeting-notes/; shows what `pka-tools lint schedule` prints and says nothing was installed; runs no git command"
+    "expect": "scans the folder structure with tool calls before asking its first question; presents a draft Repo Map in which knowledge/leadership is tagged meeting-home and knowledge/personnel is tagged people-home; names an archive destination or asks for one; keeps the interview to name or profile, autonomy level and the Repo Map (never more than five questions in total); recommends markdown-only storage because the knowledge folders hold fewer than 300 indexable files, and creates no .pka/knowledge.db; installs the toolkit by running the plugin's `pka-tools install --workspace .`, not by writing files under .pka/bin/ itself; writes CLAUDE.md with a `## Repo Map` table, a `## Archive Destination` section and the note that transcripts in team-inbox/ are held for pka-meetings; creates .pka/roles/ with orchestrator.md, researcher.md, librarian.md, roster.md and _obsidian.md; creates .pka/session-log.md with a bootstrap entry, .pka/owner-profile.md and .pka/decision-log.md; .pka/decision-log.md has entries for the storage mode, the autonomy level and the archive destination; no role file under .pka/roles/ has a `model:` line and roster.md's Model column says `session`; writes .pkaignore and creates owner-inbox/ and team-inbox/; moves, renames or deletes nothing under knowledge/, projects/ or meeting-notes/; shows what `pka-tools lint schedule` prints and says nothing was installed; runs no git command"
   },
   {
     "id": "bootstrap-empty-folder",
@@ -23,7 +23,7 @@
       "Ask before destructive actions.",
       "Yes, create the starter layout."
     ],
-    "expect": "treats the folder as a fresh setup with nothing to map; offers one starter layout (knowledge/ with meetings/ and personnel/ inside it, projects/, and knowledge/archive/ as the archive destination), the user's own folder names, or none; creates no content folder before the user answers that offer; keeps the interview to name or profile, autonomy level and the layout question; creates the infrastructure whatever the answer: .pkaignore, .pka/ with the toolkit installed by the plugin's `pka-tools install --workspace .`, the role files and the session log, CLAUDE.md, owner-inbox/ and team-inbox/; after the yes the folders knowledge/, knowledge/meetings/, knowledge/personnel/, knowledge/archive/ and projects/ exist and nothing is created inside them; the Repo Map in CLAUDE.md has those five rows, with meeting-home on knowledge/meetings/ and people-home on knowledge/personnel/; storage mode is Markdown-only and there is no .pka/knowledge.db; writes a bootstrap entry to .pka/session-log.md; runs no git command"
+    "expect": "treats the folder as a fresh setup with nothing to map; offers one starter layout (knowledge/ with meetings/ and personnel/ inside it, projects/, and knowledge/archive/ as the archive destination), the user's own folder names, or none; creates no content folder before the user answers that offer; keeps the interview to name or profile, autonomy level and the layout question; creates the infrastructure whatever the answer: .pkaignore, .pka/ with the toolkit installed by the plugin's `pka-tools install --workspace .`, the role files and the session log, CLAUDE.md, owner-inbox/ and team-inbox/; after the yes the folders knowledge/, knowledge/meetings/, knowledge/personnel/, knowledge/archive/ and projects/ exist and nothing is created inside them; the Repo Map in CLAUDE.md has those five rows, with meeting-home on knowledge/meetings/ and people-home on knowledge/personnel/; storage mode is Markdown-only and there is no .pka/knowledge.db; writes a bootstrap entry to .pka/session-log.md; .pka/decision-log.md has entries for the storage mode, the autonomy level and the archive destination; no role file under .pka/roles/ has a `model:` line and roster.md's Model column says `session`; runs no git command"
   },
   {
     "id": "bootstrap-inside-project-refuses",
@@ -47,9 +47,9 @@
     "prompt": "Set up PKA in this folder.",
     "followups": [
       "It's unrelated, just some old instructions. I'm Sam, an engineer. Ask before destructive actions.",
-      "The map is right, archive to knowledge/archived/. Go ahead."
+      "The map is right, archive to knowledge/archived/. Write everything else; leave my CLAUDE.md alone until I've looked at the difference."
     ],
-    "expect": "the first reply notices the CLAUDE.md with no PKA infrastructure beside it and asks whether it is an existing PKA or an unrelated file; CLAUDE.md is not overwritten or edited before the user answers that question; before replacing CLAUDE.md it shows the difference between the old and the new content and asks for confirmation; CLAUDE.md still holds its original text when the run ends, because that confirmation was never given"
+    "expect": "the first reply notices the CLAUDE.md with no PKA infrastructure beside it and asks whether it is an existing PKA or an unrelated file; CLAUDE.md is not overwritten or edited before the user answers that question; before replacing CLAUDE.md it shows the difference between the old and the new content and asks for confirmation; CLAUDE.md still holds its original text when the run ends; the last reply says PKA's CLAUDE.md was not written and shows or offers the difference"
   },
   {
     "id": "bootstrap-transition-pauses",
@@ -111,7 +111,7 @@
     "id": "bootstrap-add-role",
     "scenario": "Adding a role to the team",
     "prompt": "Add a data analyst to my team.",
-    "expect": "writes a competency brief to owner-inbox/research-data-analyst-{{today}}.md; writes .pka/roles/data-analyst.md with role frontmatter and the standard sections (Purpose, Specialty, Key Competencies, Working Style, Output Conventions, Invocation); adds the role to .pka/roles/roster.md; shows the definition to the user and asks for confirmation; appends a session-log entry"
+    "expect": "writes a competency brief to owner-inbox/research-data-analyst-{{today}}.md; writes .pka/roles/data-analyst.md with role frontmatter and the standard sections (Purpose, Specialty, Key Competencies, Working Style, Output Conventions, Invocation); adds the role to .pka/roles/roster.md; shows the definition to the user and asks for confirmation; appends a session-log entry; adds an entry to .pka/decision-log.md saying why the role was added; the new role file has no `model:` line"
   },
   {
     "id": "bootstrap-obsidian-cold-vault",
@@ -242,7 +242,7 @@
       ]
     },
     "prompt": "Good morning.",
-    "expect": "greets the user with the session-start items (open threads, inbox, lifecycle flags) it found by tool calls; the greeting has no line about a health check or lint report; runs no lint (no `pka-tools lint` other than `lint latest`)"
+    "expect": "greets the user with the session-start items (open threads, inbox, lifecycle flags) it found by tool calls; runs `.pka/bin/pka-tools lint latest`, with or without --json (the report is 20 days old, so it is not to be mentioned); the greeting has no line about a health check or lint report; runs no lint (no `pka-tools lint` other than `lint latest`)"
   },
   {
     "id": "bootstrap-orchestrator-answers-lookups",

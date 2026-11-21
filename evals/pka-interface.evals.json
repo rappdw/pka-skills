@@ -3,8 +3,13 @@
     "id": "interface-build-dashboard",
     "tags": ["smoke"],
     "scenario": "First dashboard in a markdown-only workspace: the data file, then the page",
+    "setup": {
+      "steps": [
+        {"replace": "CLAUDE.md", "old": "| `knowledge/lab-notebook/` | Daily notes | by date | Reference | active | High | |", "new": "| `knowledge/lab-notebook/` | Daily notes | by date | Reference | active | High | daily-home |"}
+      ]
+    },
     "prompt": "Build me a dashboard.",
-    "expect": "reads the Repo Map and checks the storage mode before generating anything; runs `.pka/bin/pka-tools dashboard data` before it writes the page, and reports the command's summary; dashboard-data.js exists at the workspace root and was written by that command, not by a Write or Edit call; writes dashboard.html from the skill's template, with the loader block between the `pka:loader:start` and `pka:loader:end` markers; the page has one marked section for each Active or Reference folder of the Repo Map (AI, leadership, personnel, lab-notebook, reference, projects) and none for the Archive-priority knowledge/archived/; knowledge/leadership/ uses the timeline view, knowledge/personnel/ the people view and knowledge/lab-notebook/ the calendar view; the page has the fixed Search, Open actions and Activity sections; dashboard.html loads the data with a script tag and contains no fetch call, no sql-wasm or other library from another host, and no showDirectoryPicker; tells the user to open the page by double-click and how to refresh it, and states no browser requirement; runs no `pka-tools index` (there is no index) and creates no file besides the two"
+    "expect": "reads the Repo Map and checks the storage mode before generating anything; runs `.pka/bin/pka-tools dashboard data` before it writes the page, and reports the command's summary; dashboard-data.js exists at the workspace root and was written by that command, not by a Write or Edit call; writes dashboard.html from the skill's template, with the loader block between the `pka:loader:start` and `pka:loader:end` markers; the page has one marked section for each Active or Reference folder of the Repo Map (AI, leadership, personnel, lab-notebook, reference, projects) and none for the Archive-priority knowledge/archived/; knowledge/leadership/ (tagged meeting-home) uses the timeline view, knowledge/personnel/ (people-home) the people view and knowledge/lab-notebook/ (daily-home) the calendar view; no folder without the daily-home tag gets the calendar view; the page has the fixed Search, Open actions and Activity sections; dashboard.html loads the data with a script tag and contains no fetch call, no sql-wasm or other library from another host, and no showDirectoryPicker; tells the user to open the page by double-click and how to refresh it, and states no browser requirement; runs no `pka-tools index` (there is no index) and creates no file besides the two"
   },
   {
     "id": "interface-build-dashboard-index-mode",
@@ -42,7 +47,7 @@
     "followups": [
       "Add a section for knowledge/clients/ to the dashboard. I just added that folder; put it in the Repo Map too."
     ],
-    "expect": "after the second message it edits dashboard.html in place instead of regenerating it: the loader block and the views block are not changed by any Edit; adds a clients section between `pka:section:start` and `pka:section:end` markers and a navigation link for it; the sections written in the first reply are still there, unchanged; finishes with `.pka/bin/pka-tools dashboard data`; adds no fetch call and no library to the page"
+    "expect": "after the second message it edits dashboard.html in place instead of regenerating it: the loader block and the views block are not changed by any Edit; adds a clients section between `pka:section:start` and `pka:section:end` markers and a navigation link for it; the sections written in the first reply are still there, unchanged; finishes with `.pka/bin/pka-tools dashboard data`; adds no fetch call and no library to the page; CLAUDE.md's Repo Map has a row for knowledge/clients/ before the final `dashboard data`; knowledge/clients/northwind/2026-10-02-kickoff.md is in dashboard-data.js afterwards"
   },
   {
     "id": "interface-kanban",
@@ -51,7 +56,7 @@
     "followups": [
       "Add a Kanban for my projects."
     ],
-    "expect": "takes each project's status from the data the page already loads (the projects in dashboard-data.js), not from a database table and not from a query in the page; projects/orion is shown by its status (active), with active, archiving and archived as the columns or groups; changes only marked sections of dashboard.html, leaving the loader block and the other sections as they were; adds no fetch call and no library to the page, and never edits dashboard-data.js; finishes with `.pka/bin/pka-tools dashboard data`"
+    "expect": "takes each project's status from the data the page already loads (the projects in dashboard-data.js), not from a database table and not from a query in the page; projects/orion is shown under active, and the columns or groups are made from the status values in the data, not from a hard-coded list of projects; tells the user that every project reads active today, because nothing records another status where the data looks for it; adds the Kanban as a marked section; if it needs a view of its own, that view is in a separate `<script>` outside the `pka:views` markers; the loader block, the views block and the existing sections are unchanged; adds no fetch call and no library to the page; makes no Write or Edit call on dashboard-data.js; finishes with `.pka/bin/pka-tools dashboard data`"
   },
   {
     "id": "interface-dark-mode-default",
@@ -60,7 +65,7 @@
     "followups": [
       "Make the dashboard dark mode by default."
     ],
-    "expect": "after the second message it changes the theme default in dashboard.html with a targeted edit; the manual theme toggle is still there; the loader block, the views block and the sections are not changed by that edit; never edits dashboard-data.js"
+    "expect": "after the second message it changes the theme default in dashboard.html with a targeted edit; the manual theme toggle is still there; the loader block, the views block and the sections are not changed by that edit; makes no Write or Edit call on dashboard-data.js; finishes with `.pka/bin/pka-tools dashboard data`"
   },
   {
     "id": "interface-old-dashboard-migration",
@@ -76,7 +81,7 @@
     "followups": [
       "Yes, rebuild it."
     ],
-    "expect": "the first reply says the existing dashboard.html was built by an earlier release and offers to rebuild it; before the user's yes dashboard.html is not edited and no backup is written; after the yes the old page is saved as dashboard.html.bak-{{today}} (or with that date in another form) with its original content; the new dashboard.html comes from the template and has the loader block; the hand-made reading-list section is carried over into the new page; the new page has a clients section; runs `.pka/bin/pka-tools dashboard data`; tells the user what changed: it opens by double-click in any browser, makes no network request, and its search covers titles, tags, headings and summaries; does not repair the old page in place"
+    "expect": "the first reply says the existing dashboard.html was built by an earlier release and offers to rebuild it; before the user's yes dashboard.html is not edited and no backup is written; after the yes the old page is saved as dashboard.html.bak-{{today}} (or with that date in another form) with its original content; the new dashboard.html comes from the template and has the loader block; the hand-made reading-list section is carried over into the new page; the new page has a clients section; runs `.pka/bin/pka-tools dashboard data`; tells the user what changed: it opens by double-click in any current browser, makes no network request, and its search covers titles, tags, headings and summaries; does not repair the old page in place"
   },
   {
     "id": "interface-data-path-is-a-symlink",
@@ -104,6 +109,6 @@
     "followups": [
       "Search on the dashboard isn't finding \"pilot team\", and I know that's in my lighthouse rollout plan."
     ],
-    "expect": "explains that the dashboard's search covers titles, paths, tags, headings and summaries and not the text inside notes; offers or runs a full-text search with `.pka/bin/pka-tools search`, and finds knowledge/AI/lighthouse-rollout-plan.md that way; does not blame the browser and does not mention the File System Access API as a requirement; adds no fetch call, no database query and no library to dashboard.html"
+    "expect": "explains that the dashboard's search covers titles, paths, tags, headings and summaries and not the text inside notes; runs `.pka/bin/pka-tools search` for the phrase and reports knowledge/AI/lighthouse-rollout-plan.md; does not blame the browser and does not mention the File System Access API as a requirement; adds no fetch call, no database query and no library to dashboard.html"
   }
 ]

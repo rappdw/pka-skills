@@ -39,7 +39,7 @@
     "followups": [
       "Approved."
     ],
-    "expect": "no change is made to wiki.md before the approval; after the approval the new claims are in wiki.md, each citing the source; the source is added under `## Sources`, source-count becomes 2 and last-updated becomes {{today}}; a changelog line is appended; the source is moved into knowledge/topics/mcp/sources/; runs `.pka/bin/pka-tools post-route` on wiki.md; looks for other wikis the source bears on and reports the result; logs to the session log with `pka-tools log add --role pka-wiki` and adds an entry to .pka/decision-log.md"
+    "expect": "no change is made to wiki.md before the approval; after the approval the new claims are in wiki.md, each citing the source; the source is added under `## Sources`, source-count becomes 2 and last-updated becomes {{today}}; a changelog line is appended; the source is moved into knowledge/topics/mcp/sources/; runs `.pka/bin/pka-tools post-route` on wiki.md; looks for other wikis the source bears on and reports the result; logs to the session log with `pka-tools log add --role pka-wiki`; adds no entry to .pka/decision-log.md, because this ingest resolved no contradiction"
   },
   {
     "id": "wiki-query-wiki-first",
@@ -93,9 +93,10 @@
     },
     "prompt": "Ingest team-inbox/mcp-transport-update.md into my mcp wiki. I think it contradicts what the wiki says about transport. How do I reconcile?",
     "followups": [
-      "Update the wiki to the new claim."
+      "Update the wiki to the new claim.",
+      "Approved."
     ],
-    "expect": "states the contradiction explicitly, with both claims (stdio is the only transport in use; a streamable HTTP transport exists and is used in production) and the path of the source of each; offers the three options: keep the wiki's claim, update the wiki, keep both with a qualification; does not choose for the user: no edit is made to wiki.md before the user's second message; after the user chooses, records the resolution in .pka/decision-log.md"
+    "expect": "states the contradiction explicitly, with both claims (stdio is the only transport in use; a streamable HTTP transport exists and is used in production) and the path of the source of each; offers the three options: keep the wiki's claim, update the wiki, keep both with a qualification; does not choose for the user: no edit is made to wiki.md before the user's second message; after the choice it shows the diff and waits: no edit is made to wiki.md before the approval; after the approval wiki.md carries the new transport claim citing the source, and the resolution is recorded in .pka/decision-log.md"
   },
   {
     "id": "wiki-retire",

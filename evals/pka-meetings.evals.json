@@ -21,7 +21,10 @@
       ]
     },
     "prompt": "I just dropped a Zoom transcript into team-inbox. Reconcile it against my SLT meeting notes.",
-    "expect": "finds the transcript in team-inbox/ and today's SLT notes in meeting-notes/; says resolve-against-transcript is not available, so the notes are not reconciled here, instead of presenting them as reconciled; proposes knowledge/leadership/ (the meeting-home folder) as the destination and asks before moving the notes; asks what to do with the transcript (keep, archive or delete); neither moves nor deletes the transcript"
+    "followups": [
+      "Yes, file them there."
+    ],
+    "expect": "finds the transcript in team-inbox/ and today's SLT notes in meeting-notes/; says resolve-against-transcript is not available, so the notes are not reconciled here, instead of presenting them as reconciled; the first reply proposes knowledge/leadership/ (the meeting-home folder) as the destination and asks before moving the notes; by the end of the run it has asked what to do with the transcript (keep, archive or delete); neither moves nor deletes the transcript"
   },
   {
     "id": "meetings-file-notes-pipeline",
@@ -33,7 +36,7 @@
       ]
     },
     "prompt": "File the meeting notes in meeting-notes/2026-11-19-platform-review.md.",
-    "expect": "resolves the attendees with `.pka/bin/pka-tools people resolve`; files the note as knowledge/leadership/2026-11-19-platform-review.md; links Priya and Robin Smith under `## Attendees` with relative links to their person folders; puts the three action items in an `## Action Items` section as `- [ ]` lines, with the owner and the due date where the notes give them; asks whether to add the action items to the session log's open threads; runs `.pka/bin/pka-tools post-route` on the filed note with a timeline summary (--summary or --summary-for); the person pages of priya and robin-smith each gain one timeline line; logs the filing with `pka-tools log add --role pka-meetings`; runs no git command"
+    "expect": "resolves the attendees with `.pka/bin/pka-tools people resolve`; files the note as knowledge/leadership/2026-11-19-platform-review.md; links Priya and Robin Smith under `## Attendees` with relative links to their person folders; puts the three action items in an `## Action Items` section as `- [ ]` lines, with the owner and the due date where the notes give them; asks whether to add the action items to the session log's open threads; runs `.pka/bin/pka-tools post-route` on the filed note with a timeline summary (--summary or --summary-for); the person pages of priya and robin-smith each gain one timeline line; logs the filing with `pka-tools log add --role pka-meetings`; the original `→`, `TODO:` and `Action:` lines are still in the note; `## Attendees` and then `## Action Items` are its last two sections; runs no git command"
   },
   {
     "id": "meetings-attendees-appended-at-end",
@@ -45,7 +48,7 @@
       ]
     },
     "prompt": "File the meeting notes in meeting-notes/2026-11-19-platform-review.md.",
-    "expect": "files the note as knowledge/leadership/2026-11-19-platform-review.md; a `## Attendees` section with relative links to the person folders of priya and robin-smith is appended at the end of the note, after `## Open Questions`; the `## Notes`, `## Action Items` and `## Open Questions` sections are in the order they were written, with nothing inserted between them; the header line `**Attendees**: Priya (PM), Robin, Sam` is left exactly as it was; the two `- [ ]` lines are byte for byte as they were written (not converted to another form); runs `.pka/bin/pka-tools post-route` on the filed note, and the person pages of priya and robin-smith each gain one timeline line"
+    "expect": "files the note as knowledge/leadership/2026-11-19-platform-review.md; a `## Attendees` section with relative links to the person folders of priya and robin-smith is appended at the end of the note, after `## Open Questions`; the `## Notes`, `## Action Items` and `## Open Questions` sections are in the order they were written, with nothing inserted between them; the header line `**Attendees**: Priya (PM), Robin, Sam` is left exactly as it was; the two `- [ ]` lines are byte for byte as they were written (not converted to another form); no other `- [ ]` line is added: `## Action Items` still has exactly those two items; runs `.pka/bin/pka-tools post-route` on the filed note, and the person pages of priya and robin-smith each gain one timeline line"
   },
   {
     "id": "meetings-notes-from-transcript",
@@ -81,7 +84,7 @@
       ]
     },
     "prompt": "What action items came out of my meetings this week?",
-    "expect": "runs `.pka/bin/pka-tools actions --since {{monday}}` (the Monday of this week); also reads the session log's open threads with `pka-tools log open`; lists the two open items from this week's notes (the Q4 budget proposal and the architecture comparison) with their source files; gives the owner and the due date of the budget item (Sam, {{monday+4}}); lists neither the ticked item (Book the room) nor the item from the note dated {{monday-10}}; does not look for `- [ ]` with `pka-tools search` or a query on the index"
+    "expect": "runs `.pka/bin/pka-tools actions` for the default window, the last 7 days (no `--since`, or `--since {{today-7}}`), and does not narrow it to this week's Monday; also reads the session log's open threads with `pka-tools log open`; lists the two open items from this week's notes (the Q4 budget proposal and the architecture comparison) with their source files; gives the owner and the due date of the budget item (Sam, {{monday+4}}); lists neither the ticked item (Book the room) nor the item from the note dated {{monday-10}}; does not look for `- [ ]` with `pka-tools search` or a query on the index"
   },
   {
     "id": "meetings-action-items-thinkkit-form",
@@ -92,7 +95,7 @@
       ]
     },
     "prompt": "What action items do I have from this week's meetings, and who owns them?",
-    "expect": "runs `.pka/bin/pka-tools actions --since {{monday}}`; lists the three open items and not the ticked one; gives Robin as the owner of the hiring plan with the due date {{monday+11}} (from the bold name and the `(due: …)` form); gives Priya as the owner of the adapter comparison with the due date {{monday+4}} (the bare date after the dash); gives Sam as the owner of the offsite venue with the due date {{monday+8}}; takes owners and dates from the command's output and does not look for `- [ ]` with `pka-tools search` or a query on the index"
+    "expect": "runs `.pka/bin/pka-tools actions` for the default window, the last 7 days (no `--since`, or `--since {{today-7}}`); lists the three open items and not the ticked one; gives Robin as the owner of the hiring plan with the due date {{monday+11}} (from the bold name and the `(due: …)` form); gives Priya as the owner of the adapter comparison with the due date {{monday+4}} (the bare date after the dash); gives Sam as the owner of the offsite venue with the due date {{monday+8}}; takes owners and dates from the command's output and does not look for `- [ ]` with `pka-tools search` or a query on the index"
   },
   {
     "id": "meetings-project-meeting-asks",
@@ -100,7 +103,7 @@
     "tags": ["smoke"],
     "setup": {
       "steps": [
-        {"write": "meeting-notes/{{today}}-orion-sync.md", "text": ["# Orion sync", "", "Attendees: Priya", "", "- Agreed the scope of the next milestone."]}
+        {"write": "meeting-notes/{{today}}-orion-sync.md", "text": ["# Orion sync", "", "Attendees: Priya, Robin", "", "- Agreed the scope of the next milestone."]}
       ]
     },
     "prompt": "I was in an Orion project meeting. The notes are in meeting-notes/{{today}}-orion-sync.md. Route them there.",
@@ -113,7 +116,7 @@
       "autonomy": "hands-off",
       "index": true,
       "steps": [
-        {"write": "meeting-notes/2026-11-10-slt-sync-notes.md", "text": ["**Recording**: meeting-notes/2026-11-10_140000_slt-sync", "", "# SLT sync", "", "Attendees: Priya", "", "- Revisit the lighthouse rollout in December."]}
+        {"write": "meeting-notes/2026-11-10-slt-sync-notes.md", "text": ["**Recording**: meeting-notes/2026-11-10_140000_slt-sync", "", "# SLT sync", "", "Attendees: Priya, Robin", "", "- Revisit the lighthouse rollout in December."]}
       ]
     },
     "prompt": "earshot recorded my SLT sync on the 10th. Reconcile my notes and file them.",
@@ -123,7 +126,7 @@
     "id": "meetings-capture-offers-reconcile",
     "scenario": "Asked to file notes while an unreconciled capture sits beside them",
     "prompt": "File my meeting notes from meeting-notes/. There's a recording folder in there too.",
-    "expect": "detects the earshot capture directory by its meeting.json; offers to reconcile against the capture's transcript.md before routing, or says reconciliation is unavailable without resolve-against-transcript; does not route the notes before the user has answered that; neither moves, renames nor deletes the capture directory or anything in it"
+    "expect": "detects the earshot capture directory by its meeting.json; offers to reconcile against the capture's transcript.md before routing, or says reconciliation is unavailable without resolve-against-transcript; moves no notes file in this reply: it proposes a destination and asks; neither moves, renames nor deletes the capture directory or anything in it"
   },
   {
     "id": "meetings-nickname-not-guessed",
@@ -158,17 +161,20 @@
   },
   {
     "id": "meetings-large-meeting",
-    "scenario": "A meeting with more than eight known attendees",
+    "scenario": "A meeting with more than eight known attendees (eleven have person folders)",
     "setup": {
       "autonomy": "hands-off",
       "steps": [
         {"write": "knowledge/personnel/robin-chen/index.md", "text": ["---", "type: person", "name: Robin Chen", "---", "", "# Robin Chen"]},
-        {"write": "knowledge/personnel/taylor-brooks/index.md", "text": ["---", "type: person", "name: Taylor Brooks", "---", "", "# Taylor Brooks"]},
-        {"write": "knowledge/personnel/sasha-ortega/index.md", "text": ["---", "type: person", "name: Sasha Ortega", "---", "", "# Sasha Ortega"]},
-        {"write": "knowledge/personnel/jamie-lin/index.md", "text": ["---", "type: person", "name: Jamie Lin", "---", "", "# Jamie Lin"]},
-        {"write": "knowledge/personnel/sarah-chen/index.md", "text": ["---", "type: person", "name: Sarah Chen", "---", "", "# Sarah Chen"]},
-        {"write": "knowledge/personnel/marcus-johnson/index.md", "text": ["---", "type: person", "name: Marcus Johnson", "---", "", "# Marcus Johnson"]},
-        {"write": "meeting-notes/{{today}}-all-hands.md", "text": ["# All-hands", "", "Attendees: Priya Nair, Robin Smith, Robin Chen, Zoë Åkesson, Taylor Brooks, Sasha Ortega, Jamie Lin, Sarah Chen, Marcus Johnson, and about twenty others.", "", "- Northwind renewed for a year.", "- The lighthouse rollout starts in December."]}
+        {"write": "knowledge/personnel/head-of-finance/index.md", "text": ["---", "type: person", "name: Head of Finance", "---", "", "# Head of Finance"]},
+        {"write": "knowledge/personnel/head-of-sales/index.md", "text": ["---", "type: person", "name: Head of Sales", "---", "", "# Head of Sales"]},
+        {"write": "knowledge/personnel/head-of-design/index.md", "text": ["---", "type: person", "name: Head of Design", "---", "", "# Head of Design"]},
+        {"write": "knowledge/personnel/head-of-support/index.md", "text": ["---", "type: person", "name: Head of Support", "---", "", "# Head of Support"]},
+        {"write": "knowledge/personnel/head-of-legal/index.md", "text": ["---", "type: person", "name: Head of Legal", "---", "", "# Head of Legal"]},
+        {"write": "knowledge/personnel/head-of-people/index.md", "text": ["---", "type: person", "name: Head of People", "---", "", "# Head of People"]},
+        {"write": "knowledge/personnel/head-of-data/index.md", "text": ["---", "type: person", "name: Head of Data", "---", "", "# Head of Data"]},
+        {"write": "knowledge/personnel/head-of-security/index.md", "text": ["---", "type: person", "name: Head of Security", "---", "", "# Head of Security"]},
+        {"write": "meeting-notes/{{today}}-all-hands.md", "text": ["# All-hands", "", "Attendees: Priya Nair, Robin Smith, Robin Chen, Head of Finance, Head of Sales, Head of Design, Head of Support, Head of Legal, Head of People, Head of Data, Head of Security, and about twenty others.", "", "- Northwind renewed for a year.", "- The lighthouse rollout starts in December."]}
       ]
     },
     "prompt": "File the notes from today's all-hands: meeting-notes/{{today}}-all-hands.md. There were about 30 people there.",
@@ -180,11 +186,11 @@
     "setup": {
       "autonomy": "hands-off",
       "steps": [
-        {"write": "meeting-notes/{{today}}-intro-jordan.md", "text": ["# Intro chat with Jordan", "", "Attendees: Jordan", "", "- Jordan joins the platform team in December."]}
+        {"write": "meeting-notes/{{today}}-intro-northwind.md", "text": ["# Intro chat with Northwind's account manager", "", "Attendees: Northwind's account manager", "", "- Northwind's account manager takes over our account in December."]}
       ]
     },
-    "prompt": "File my meeting notes with Jordan, who is new: meeting-notes/{{today}}-intro-jordan.md.",
-    "expect": "runs `people resolve`, which finds no person folder for Jordan; lists Jordan as an attendee without a link; creates no person folder for Jordan; files the note and runs `.pka/bin/pka-tools post-route` on it; no timeline line is written for Jordan"
+    "prompt": "File my meeting notes with Northwind's new account manager, who has no folder here: meeting-notes/{{today}}-intro-northwind.md.",
+    "expect": "runs `people resolve`, which finds no person folder for the attendee; lists the attendee without a link; creates no person folder for them; files the note and runs `.pka/bin/pka-tools post-route` on it; no timeline line is written for the attendee"
   },
   {
     "id": "meetings-one-on-one-no-obsidian",

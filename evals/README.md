@@ -43,7 +43,7 @@ Results go to `evals/results/<timestamp>/` (git-ignored): `summary.md` (the tabl
 
 The CLI reports a cost and token counts for every call, and the runner adds them up; `summary.md` leads with the totals.
 
-No run has been measured yet: the runner was built in an environment where the CLI could not log in. Until one has, the only firm numbers are the caps. A full run is 94 scenarios, 126 subject calls (some scenarios have follow-up messages) and 94 judge calls, so the caps allow at most $236, and the run-level cap of $25 stops it long before that. Run the smoke set first (`--tag smoke`, 12 single-message scenarios, at most $24 by the per-call caps), read the cost per scenario in its summary, and multiply.
+No run has been measured yet: the runner was built in an environment where the CLI could not log in. Until one has, the only firm numbers are the caps. A full run is 94 scenarios, 128 subject calls (some scenarios have follow-up messages) and 94 judge calls, so the caps allow at most $239, and the run-level cap of $25 stops it long before that. Run the smoke set first (`--tag smoke`, 13 single-message scenarios, at most $26 by the per-call caps), read the cost per scenario in its summary, and multiply.
 
 ## A scenario
 
@@ -65,7 +65,7 @@ No run has been measured yet: the runner was built in an environment where the C
 - `expect` is a list of expectations separated by `;` (a semicolon inside backticks or brackets does not split). Each is graded separately. Write each one so that a transcript or a diff can settle it: name the command, the file, or the words to look for. Say what must not happen as its own expectation.
 - `tags`: `smoke` marks the small set to run first.
 - `needs`: the scenario describes behaviour that is not in this checkout yet (another branch or pull request has it). A real run leaves it out unless `--include-needs` is given; `--dry-run` and the tests still build its workspace. Remove the field when the change has merged.
-- `{{today}}`, `{{today-3}}`, `{{today+1}}`, `{{monday}}` (this week's) and `{{plugin_version}}` are filled in everywhere.
+- `{{today}}`, `{{today-3}}`, `{{today+1}}`, `{{monday}}` (this week's; offsets such as `{{monday+4}}` work as for `today`) and `{{plugin_version}}` are filled in everywhere.
 
 ### `setup`
 
@@ -107,7 +107,7 @@ A setup that cannot be built is an error, not a skipped step. `tests/evals/test_
 ### Adding one
 
 1. Read the skill text the scenario is about, and run the `pka-tools` commands it ends in against a scratch workspace to see what they print.
-2. Add the scenario to the skill's file. Use the fixture's cast only (see `tests/README.md`).
+2. Add the scenario to the skill's file. Use the fixture's cast only (see `tests/README.md`): in the text of a scenario that means Priya, Robin and Sam, the projects Orion and Lyra, and Northwind. When a scenario needs more people than that (a large meeting), give the extra person folders role names (`head-of-finance`), not invented names.
 3. `python3 evals/run.py --dry-run --scenario <id> --keep-workspaces` and look at the workspace.
 4. `./tests/test_evals.sh`.
 5. Run it for real: `python3 evals/run.py --scenario <id>`. Read the transcript in the result file before trusting the verdict.

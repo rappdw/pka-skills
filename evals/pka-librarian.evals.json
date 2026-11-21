@@ -26,7 +26,7 @@
       ]
     },
     "prompt": "Process the inbox. It's a mix of scanned documents and notes, German and English.",
-    "expect": "runs the OCR capability check (pdfplumber, pypdf, tesseract) before any extraction; identifies quartalsbericht-2026.md as German and quarterly-report-2026.txt as English; does not modify rechnung-scan.pdf, and reports that its text could not be extracted instead of skipping it silently; puts any extracted text in a sidecar .txt beside the original, never into the original; shows routing proposals before moving anything; the reply or the report gives the language of each file"
+    "expect": "runs the OCR capability check (pdfplumber, pypdf, tesseract) before any extraction; identifies quartalsbericht-2026.md as German and quarterly-report-2026.txt as English; does not modify rechnung-scan.pdf, and reports that its text could not be extracted instead of skipping it silently; writes nothing into rechnung-scan.pdf and creates no sidecar .txt holding text it did not extract; shows routing proposals before moving anything; the reply or the report gives the language of each file"
   },
   {
     "id": "librarian-project-slug-asks",
@@ -150,7 +150,7 @@
       ]
     },
     "prompt": "Route team-inbox/2026-11-12-budget-sync.md to knowledge/leadership/, no need to confirm.",
-    "expect": "the existing `topic: FY27 budget, second pass` and `owner-note: keep this field` lines are preserved verbatim, and tags still holds finance and q4; `type: meeting` and `date: 2026-11-12` are added because they were missing; the domain tag leadership is added to tags; the routing report or the reply says which fields were added and which were kept"
+    "expect": "the existing `topic: FY27 budget, second pass` and `owner-note: keep this field` lines are preserved verbatim, and tags still holds finance and q4; `type: meeting`, `date: 2026-11-12` and an empty `attendees: []` are added because they were missing; the domain tag leadership is added to tags; the routing report or the reply says which fields were added and which were kept"
   },
   {
     "id": "librarian-route-commits-nothing",
@@ -177,7 +177,7 @@
       ]
     },
     "prompt": "Route team-inbox/ai-tooling-brief.md into knowledge/AI/. No need to confirm.",
-    "expect": "routes the file and runs `.pka/bin/pka-tools post-route` as usual; runs no git command although .pka/roles/librarian.md still has a Commit/push protocol section; mentions that the role file carries an obsolete commit section and that `bootstrap upgrade` with the refresh removes it"
+    "expect": "routes the file and runs `.pka/bin/pka-tools post-route` as usual; runs no git command although .pka/roles/librarian.md still has a Commit/push protocol section; tells the user that .pka/roles/librarian.md still carries an obsolete commit section and that `bootstrap upgrade` with the refresh removes it"
   },
   {
     "id": "librarian-backfill-plan-first",
@@ -221,7 +221,7 @@
     "setup": {
       "fixture": "lint"
     },
-    "prompt": "Find duplicate notes.",
+    "prompt": "Find duplicate notes. I think there are two copies of the charter; show me that group so I can pick one.",
     "expect": "runs `.pka/bin/pka-tools lint` instead of comparing files itself; shows the group made of knowledge/reference/charter.md and `team-inbox/charter copy.md` with sizes, dates and inbound-link counts; suggests keeping the filed, linked copy (knowledge/reference/charter.md); asks which to keep; deletes, moves and merges nothing"
   },
   {
@@ -244,7 +244,7 @@
       "fixture": "lint"
     },
     "prompt": "Quick lint.",
-    "expect": "runs `.pka/bin/pka-tools lint --quick --json`; reports rules 1-4, 8a and 8b only; appends nothing for rules 6 and 7 to the report; says that a full lint adds near-duplicates, duplicate entities, timelines and the two wiki rules"
+    "expect": "runs `.pka/bin/pka-tools lint --quick --json`; reports rules 1-4, 8a and 8b only; appends nothing for rules 6 and 7 to the report; does not claim to have run rules 5, 6, 7, 8c or 8d"
   },
   {
     "id": "librarian-weekly-schedule-shown",
