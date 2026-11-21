@@ -56,10 +56,23 @@ Then describe what `bootstrap upgrade` does, in order:
    the rest of the upgrade still runs, but indexing and search stay unavailable
    until the migration is done. Skip this point for a markdown-only workspace.
 3. **Role files.** `.pka/roles/` is backed up first. Sections that are new in
-   this release are added. Sections they already have are not rewritten. It then
-   lists sections an earlier release seeded: the ones they never edited can be
+   this release are added: coming from v1.10.0 or earlier, "Owner profile and
+   decision log" in all three role files and "Answering and delegating" in the
+   orchestrator's. Sections they already have are not rewritten. It then lists
+   sections an earlier release seeded: the ones they never edited can be
    refreshed in one step, and the ones they customised are left alone unless
-   they name them.
+   they name them. The refresh is also what brings the orchestrator its new
+   session-end step (refresh the dashboard data once, when there is a
+   dashboard). Two more lists may follow: **obsolete** sections (commit and
+   push instructions from before v1.8.0; unedited ones go with the refresh) and
+   **pinned models** (role files that still have a `model:` line; the upgrade
+   never changes them).
+4. **Not part of the upgrade: the dashboard and `CLAUDE.md`.** The upgrade
+   changes `.pka/` only. A `dashboard.html` from before v1.11.0 is left as it
+   is until they say "Update my dashboard"; and their `CLAUDE.md` is never
+   edited, so its Session Start Protocol does not gain the health-check step
+   (the orchestrator's role file carries it; adding the step to `CLAUDE.md` is
+   a manual follow-up `pka-bootstrap` offers to show).
 
 And the three things that hold throughout:
 
@@ -105,6 +118,21 @@ Then go through the summary they were shown:
 - **Refreshable sections.** If they said no to the refresh, those role sections
   still carry instructions from the earlier release. They can ask for the
   refresh at any time.
+- **Obsolete sections.** Commit and push instructions from before v1.8.0.
+  Unedited ones go with the refresh; an edited one is left for them, and until
+  it is gone it still tells a role to commit.
+- **Pinned models.** Role files that still name a model in their frontmatter.
+  Nothing changed them. Removing the line is offered, per file; a line they set
+  on purpose stays.
+- **Dashboard.** If there is a `dashboard.html` from before v1.11.0, it is
+  untouched and still the old page, which never loaded its data when opened by
+  double-click. "Update my dashboard" rebuilds it, after saving the old one as
+  `dashboard.html.bak-<date>`. That writes `dashboard.html` and
+  `dashboard-data.js` at the workspace root, outside `.pka/`.
+- **`CLAUDE.md`.** Not edited by the upgrade. To have the greeting's
+  health-check line and the session-end dashboard refresh written there too,
+  they add the two steps by hand (`pka-bootstrap` shows the lines); the
+  refreshed orchestrator role section already carries both.
 - **Git.** If the workspace is a repository, tell them `.pka/` has uncommitted
   changes that are theirs to review and commit.
 - **Other machines.** If they keep this workspace on more than one machine, each
@@ -297,10 +325,13 @@ A dashboard made by an earlier release showed empty sections when opened from
 the file manager, because a browser will not let a page read a database file
 from disk. The dashboard now reads a small data file written beside it
 (`dashboard-data.js`), so it opens in any current browser, offline, with no
-network request, and its links keep working if the folder moves. Search in the
+network request, and its links keep working if the folder moves. It has a new
+Open actions section (unticked checkboxes in meeting and person notes). Search in the
 page covers titles, paths, tags, headings and summaries; full-text questions
-are still asked in the session. An existing dashboard is rebuilt only when the
-user asks, after a backup.
+are still asked in the session. An existing dashboard is not touched by the
+upgrade: it is rebuilt only when the user asks and agrees to the rebuild, and
+the old page is kept as `dashboard.html.bak-<date>`. The data is refreshed when
+they ask, and once at the end of a session.
 
 > "Update my dashboard"
 
@@ -315,7 +346,7 @@ shown as written, never guessed. Filing a note does not rewrite its items.
 
 **3. An archived project stays searchable.** *(Applies in index mode:
 `storage_mode` is `index`.)*
-Transitioning a project used to drop it from search. The workflow now gives the
+Transitioning a project could drop it from search. The workflow now gives the
 moved project its own row in the Repo Map before re-indexing, and the whole
 project is then found, not only its top level.
 
@@ -326,9 +357,28 @@ upgrade added the "Owner profile and decision log" section.)*
 The orchestrator reads `.pka/owner-profile.md` once at the start of a session
 for how you like to be answered, and decisions are appended to
 `.pka/decision-log.md` when they are made, so "why did I archive that?" has an
-answer. Roles no longer pin a model; they use the session's.
+answer. The orchestrator also answers a lookup itself now, where it used to
+hand everything on.
 
 > "Why did I archive `<project>`?"
+
+**5. Roles follow the session's model.** *(Applies when the upgrade summary
+listed "Pinned models".)*
+New workspaces no longer pin a model. Yours still has the `model:` line an
+earlier release wrote in each role file; the upgrade summary lists them under
+"Pinned models" and never changes them. Say the word and I will hand over to
+have them removed, so each role follows the session's model. Keep one you set
+on purpose.
+
+> "Remove the pinned model from my role files"
+
+**6. Notes from a transcript, without thinkkit.** *(Applies to all
+workspaces.)*
+With a transcript and no notes, PKA offers to write the notes from it. It is
+offered, never automatic, and the notes say they were written from the
+transcript.
+
+> "I have a transcript in team-inbox but no notes. Write notes from it."
 
 ### After the last item
 

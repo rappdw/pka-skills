@@ -101,7 +101,7 @@ the paths I used. Works for people, topics, projects, decisions.
 **2. Search across everything — "Find everything about X"**
 
 Full-text search across your knowledge folders and the top level of each
-project. Returns ranked results by folder.
+project. Returns one ranked list, topic rows first, each with its path.
 
 **3. Project snapshot — "What's the state of project X?"**
 
@@ -220,7 +220,7 @@ which vendors make the shortlist? not settled
 `take-notes` expands these into structured notes in real-time. Start a line
 with `name:` to attribute it; a speaker is never guessed. Commitments go under
 Action Items, unanswered questions under Open Questions. When the meeting
-ends, say "done." `pka-meetings` takes over and runs the pipeline.
+ends, say "end notes" or "wrap up." `pka-meetings` takes over and runs the pipeline.
 
 ### Mode B: Reconcile against a transcript (thinkkit required)
 
@@ -273,7 +273,8 @@ Post-meeting overhead: ~30 seconds of confirmation.
 ### Action items later
 
 "What action items do I have this week?" lists unticked `- [ ]` boxes in the
-dated notes of the last 7 days, each with its source file. An owner is read
+dated meeting and person notes of the last 7 days ("this week" means the last
+7 days, not since Monday), each with its source file, owner and due date. An owner is read
 from a bold name with a colon at the start of the item (`**Robin**:`, the form
 thinkkit writes) or from `@name`; a due date from `(due: …)` or
 `by YYYY-MM-DD`. A due phrase that is not a date ("Friday") is shown as
@@ -329,7 +330,7 @@ xdg-open dashboard.html    # Linux
 | Meeting-home (tagged in Repo Map) | Notes by date, newest first, grouped by month |
 | Topics (a subfolder per topic: research, wikis) | A card per subfolder with its files |
 | Journal (dated notes, `daily-home`) | A square per day for recent months, then the entries |
-| Projects | A card per project: status, days since last change |
+| Projects | A card per project under `projects/`: days since last change, top-level files |
 | Anything else | A sortable, filterable table |
 
 Three sections are always there: Search, Open actions (unticked checkboxes in
@@ -358,7 +359,11 @@ in a session (Module 2).
 > "Refresh the dashboard"
 
 rewrites the data; the user reloads the page. I also refresh it once at the end
-of a session in which notes were filed, not after every note.
+of a session when the dashboard's two files are there, and say so in one line;
+never after every filed note. (In a workspace set up before v1.11.0 that
+starts once `bootstrap upgrade` has refreshed the orchestrator's role section.)
+Also worth asking for after a bulk import, a timeline backfill or a project
+transition.
 
 To change the page itself, say what you want added or changed:
 
@@ -369,9 +374,11 @@ user added outside them alone.
 
 ### A dashboard from an earlier release
 
-It keeps working as it did until the user asks for an update. Then the skill
-keeps a copy (`dashboard.html.bak-<date>`), rebuilds the page with their
-sections, and writes the data. It needs the upgraded `pka-tools` first.
+It keeps working as it did (which, opened by double-click, means empty
+sections) until the user says "Update my dashboard". Then the skill says the
+page is from an earlier release and offers to rebuild it; on a yes it keeps a
+copy (`dashboard.html.bak-<date>`), rebuilds the page with their sections, and
+writes the data. It needs the upgraded `pka-tools` first.
 
 ### Try this
 
@@ -387,7 +394,7 @@ sections, and writes the data. It needs the upgraded `pka-tools` first.
 
 ### Key ideas
 
-Projects have a natural lifecycle: **active → archiving → archived**. PKA
+Projects have a natural lifecycle: **active → archived**, with a way back. PKA
 surfaces this rhythm instead of letting projects sit in limbo.
 
 A folder with its own `CLAUDE.md` is a project workspace. Starting Claude Code
@@ -419,11 +426,16 @@ You say "transition `<project>` to knowledge." What happens:
    happens to that history is your decision. Nothing is committed for you
 5. **Map update, first.** The moved project gets its own row in the Repo Map:
    priority Reference, status `archived`
-6. **Re-index.** Then the librarian runs the index. In that order: the index
-   reads the folders the map lists, so indexing first would drop the project
-   from search
+6. **Re-index** (index mode). Then the index is run. In that order: the index
+   reads the folders the map lists as Active or Reference, so indexing first
+   can drop the project from search
+7. **Record.** A session-log entry, and a decision-log entry saying why it was
+   archived
 
-"Archive `<project>`" without a transition just marks it `archiving` for later.
+"Archive `<project>`" asks for this same transition. There is no in-between
+"archiving" state: a project is active until the transition moves it, and the
+dashboard's project cards all read Active (a transitioned project is no longer
+among them; its files are under the folder it moved to).
 
 ### Why it matters
 
@@ -437,9 +449,10 @@ If a "done" project turns out not to be done:
 
 > "Restore `<project>` to active"
 
-Moves it back, its links follow, the Repo Map is updated, and it returns to the
-one-level project index. The index is then pruned (`index --prune`); until
-that runs, stale rows for the archive path stay in it.
+Moves it back, its links follow, its row is taken out of the Repo Map (or set
+back to the project folder, Active), and it returns to the one-level project
+index. The index is then pruned (`index --prune`); until that runs, stale rows
+for the archive path stay in it.
 
 ### Try this
 
@@ -469,6 +482,11 @@ Skills are what the plugin installs. Roles are markdown files in `.pka/roles/`
 in your own folder: you can read and edit them, and `roster.md` lists them. An
 upgrade adds new sections to them and never rewrites a section you edited.
 
+A role file names no model: a role runs on whatever model the session uses, and
+the roster's Model column says `session`. (A workspace set up before v1.11.0
+still has a `model:` line in each role file; the upgrade lists those and leaves
+them, and the user can remove a line to have that role follow the session.)
+
 ### How to delegate
 
 You can @mention explicitly:
@@ -496,6 +514,7 @@ What happens:
 2. New role file written to `.pka/roles/`
 3. `roster.md` updated
 4. You confirm before finalizing
+5. The reason is recorded in the decision log
 
 ### Communication style
 
@@ -614,7 +633,7 @@ report and changes nothing; you decide what to do about each finding.
 | 4. Empty folders | Folders in your Repo Map with nothing in them |
 | 5. Timelines | Notes that involve someone and are not on their timeline (one line, with the fix) |
 | 6. Contradiction candidates | Wikis with several newer notes they have not taken in |
-| 7. Uncited wiki claims | Wiki paragraphs without citations |
+| 7. Uncited wiki claims | A wiki with no sources, or paragraphs in its first two sections with no citation |
 | 8. Duplicates | Identical files, the same text saved twice, near-copies, one note inside another, and two folders for one person |
 
 For duplicates the report shows each group with sizes, dates and how many notes

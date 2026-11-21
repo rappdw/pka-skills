@@ -59,7 +59,7 @@ and topics to their actual Repo Map.
 ### Mid-meeting (inside take-notes)
 - Terse lines: "priya: taking the adapter spike", "vendor decision deferred to december"
 - Start a line with `name:` to attribute it
-- "done" / "end notes" to finish
+- "end notes" / "wrap up" to finish
 
 ### Reconcile with transcript
 - "Reconcile my `<meeting>` notes against the transcript in team-inbox"
@@ -102,9 +102,9 @@ and topics to their actual Repo Map.
 - "What projects are winding down?"
 - "What projects haven't had activity recently?"
 - "Transition `<project>` to knowledge"
-- "Archive `<project>`"
+- "Archive `<project>`" (the same transition)
 - "Restore `<project>` to active"
-- "Show me my project summary draft" (after transition Step 1)
+- "Show me my project summary draft" (after the summary step)
 
 ## Role System
 
@@ -182,7 +182,9 @@ and topics to their actual Repo Map.
 - "Refresh my role files and remove the obsolete sections"
 
 After an upgrade, the what's-new step uses the prompts under People and
-Timelines, The Pointer Layer and Obsidian, and Health Checks above.
+Timelines, The Pointer Layer and Obsidian, and Health Checks above, and, for
+v1.11.0, Dashboard ("Update my dashboard"), Meeting Capture (action items),
+Project Lifecycle and Finding Things (decision history).
 
 ---
 
