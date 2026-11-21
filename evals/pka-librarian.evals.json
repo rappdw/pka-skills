@@ -1,105 +1,255 @@
 [
   {
-    "prompt": "Process my team-inbox. I've dropped in PDFs and a transcript.",
-    "expect": "detects transcript file; holds it and asks about pka-meetings processing; routes non-transcript PDFs normally after OCR check; writes report"
+    "id": "librarian-process-inbox-holds-transcript",
+    "scenario": "Inbox with a note, a scanned PDF and a transcript",
+    "setup": {
+      "steps": [
+        {"write": "team-inbox/GMT20261118-150000_Recording.transcript.vtt", "text": ["WEBVTT", "", "00:00:01.000 --> 00:00:04.000", "Priya: Let's start with the adapter spike.", "", "00:00:05.000 --> 00:00:09.000", "Robin: I can draft the on-call rota by Friday."]},
+        {"write": "team-inbox/northwind-contract-scan.pdf", "text": "%PDF-1.4 a scan with no text layer\n"},
+        {"write": "team-inbox/vendor-landscape-update.md", "text": ["# Vendor landscape update", "", "Notes on AI vendors for 2027, following on from the 2026 landscape."]}
+      ]
+    },
+    "prompt": "Process my team-inbox. I've dropped in a PDF, a note and a transcript.",
+    "followups": [
+      "Leave the transcript where it is for now. Route the rest as you proposed."
+    ],
+    "expect": "recognises the .vtt file as a transcript, does not route it, and asks whether to process it with pka-meetings or route it somewhere; checks which OCR tools are available before trying to extract text from the PDF; shows routing proposals for the PDF and the note and waits for confirmation before moving anything; after the confirmation moves the note into the folder it proposed and runs `.pka/bin/pka-tools post-route` on each routed file; reports that the PDF's text could not be extracted (OCR unavailable or no text layer) instead of skipping it silently, and does not modify the PDF; writes owner-inbox/librarian-report-{{today}}.md with counts, destinations and OCR status; adds a session-log entry with `pka-tools log add --role librarian`; the transcript is still in team-inbox/ when the run ends; runs no git command"
   },
   {
-    "prompt": "Process the inbox. Mix of scanned documents, German and English.",
-    "expect": "OCR tool check; language detection; sidecar .txt files; language noted in file_index; report with language breakdown"
+    "id": "librarian-inbox-languages-and-scans",
+    "scenario": "Inbox with German and English documents and a scan that cannot be read",
+    "setup": {
+      "steps": [
+        {"write": "team-inbox/quartalsbericht-2026.md", "text": ["# Quartalsbericht", "", "Der Umsatz ist im dritten Quartal gestiegen. Die Zusammenarbeit mit Northwind wurde um ein Jahr verlängert."]},
+        {"write": "team-inbox/quarterly-report-2026.txt", "text": ["Quarterly report", "", "Revenue rose in the third quarter. The Northwind partnership was renewed for a year."]},
+        {"write": "team-inbox/rechnung-scan.pdf", "text": "%PDF-1.4 a scan with no text layer\n"}
+      ]
+    },
+    "prompt": "Process the inbox. It's a mix of scanned documents and notes, German and English.",
+    "expect": "runs the OCR capability check (pdfplumber, pypdf, tesseract) before any extraction; identifies quartalsbericht-2026.md as German and quarterly-report-2026.txt as English; does not modify rechnung-scan.pdf, and reports that its text could not be extracted instead of skipping it silently; puts any extracted text in a sidecar .txt beside the original, never into the original; shows routing proposals before moving anything; the reply or the report gives the language of each file"
   },
   {
+    "id": "librarian-project-slug-asks",
+    "scenario": "A file whose name contains a project slug",
+    "setup": {
+      "steps": [
+        {"write": "team-inbox/orion-alignment-v2.md", "text": ["# Orion alignment, v2", "", "Second pass at the alignment document."]}
+      ]
+    },
     "prompt": "I dropped a file called orion-alignment-v2.md into team-inbox.",
-    "expect": "detects 'orion' project slug; asks: project workspace or knowledge base? Does not auto-route to project"
+    "expect": "notices that the filename contains the project slug orion; asks whether the file belongs in the project workspace or in the knowledge base; moves nothing: the file is still in team-inbox/ when the run ends"
   },
   {
+    "id": "librarian-inventory-only",
+    "scenario": "Inventory without moving anything",
+    "setup": {
+      "steps": [
+        {"write": "team-inbox/GMT20261118-150000_Recording.transcript.vtt", "text": ["WEBVTT", "", "00:00:01.000 --> 00:00:04.000", "Priya: Let's start with the adapter spike."]},
+        {"write": "team-inbox/northwind-contract-scan.pdf", "text": "%PDF-1.4 a scan with no text layer\n"},
+        {"write": "team-inbox/vendor-landscape-update.md", "text": ["# Vendor landscape update", "", "Notes on AI vendors for 2027."]}
+      ]
+    },
     "prompt": "Just tell me what's in the inbox. Don't move anything.",
-    "expect": "inventory and routing inference only; no moves; presents file list with proposals for each file type including transcript handling note"
+    "expect": "lists every file in team-inbox/ with its type; gives a routing proposal for each file that is not a transcript; says the transcript is held for pka-meetings instead of being routed; moves, renames, deletes and writes nothing in team-inbox/ or knowledge/"
   },
   {
+    "id": "librarian-reindex",
+    "scenario": "Re-index after one file was added, one changed and one removed",
+    "setup": {
+      "index": true,
+      "steps": [
+        {"write": "knowledge/AI/new-note.md", "text": ["# A new note", "", "Added after the last index pass."]},
+        {"append": "knowledge/AI/northwind/northwind_partnership_proposal.md", "text": ["", "Revised after the joint meeting."]},
+        {"remove": "knowledge/lab-notebook/2026-04-22.md"}
+      ]
+    },
     "prompt": "Re-index my knowledge base.",
-    "expect": "diffs against file_index by path + modified_at; updates changed entries; reports N added/updated/removed; no full rebuild"
+    "expect": "runs `.pka/bin/pka-tools index` without --rebuild; reports the counts the tool printed: 1 added, 1 updated, 1 removed; writes no SQL of its own (no sqlite3 call, no hand-written INSERT or MATCH); mentions knowledge/reference/scan.pdf as a document that has no searchable text"
   },
   {
+    "id": "librarian-health-check",
+    "scenario": "A full lint: the tool's rules, then the librarian's two",
+    "setup": {
+      "fixture": "lint"
+    },
     "prompt": "Run a health check on my knowledge base.",
-    "expect": "runs `.pka/bin/pka-tools lint --json` and does not re-derive rules 1-5 or 8 by reading files; then works out rules 6 and 7 and appends them under the `<!-- librarian:rules-6-7 -->` line of owner-inbox/librarian-lint-<date>.md, changing nothing above it; reports the count per rule, the report path and the findings most worth acting on; fixes, deletes and merges nothing"
+    "expect": "runs `.pka/bin/pka-tools lint --json`; does not re-derive rules 1-5 or 8 by reading notes itself; appends its findings for rules 6 and 7 below the `<!-- librarian:rules-6-7 -->` line of owner-inbox/librarian-lint-{{today}}.md and edits nothing above that line; tells the user the count per rule and the report's path; points out the findings most worth acting on; fixes, deletes, moves and merges nothing"
   },
   {
+    "id": "librarian-broken-links",
+    "scenario": "Broken links are found by the tool, not by reading",
+    "setup": {
+      "fixture": "lint"
+    },
     "prompt": "Check for broken links in my notes.",
-    "expect": "scans markdown links and [[wikilinks]] for missing targets; lists source file + line number + missing target; does not fix automatically"
+    "expect": "runs `.pka/bin/pka-tools lint` instead of scanning the notes for links itself; lists broken links with source file, line number and the missing target; fixes none of them and edits no note"
   },
   {
-    "scenario": "S1 — No vault: Obsidian-aware behavior must be inert",
-    "prompt": "Process this meeting note (file 2026-04-22-slt-meeting.md). The workspace has no knowledge/.obsidian/ directory.",
-    "expect": "file routed to leadership/ or wherever the Repo Map says; NO frontmatter added; NO _MOC.md created or updated; NO person backlinks; output identical to pre-addendum behavior"
+    "id": "librarian-route-no-vault",
+    "scenario": "S1 — Routing a meeting note when there is no Obsidian vault",
+    "setup": {
+      "obsidian": false,
+      "steps": [
+        {"write": "team-inbox/2026-11-18-slt-meeting.md", "text": ["# SLT meeting", "", "- Deferred the vendor decision to December.", "- Agreed the Q1 hiring plan."]}
+      ]
+    },
+    "prompt": "Route team-inbox/2026-11-18-slt-meeting.md to knowledge/leadership/. No need to confirm the move.",
+    "expect": "moves the file to knowledge/leadership/2026-11-18-slt-meeting.md; runs `.pka/bin/pka-tools post-route` on it once; the routed note gets no YAML frontmatter; no `- [[...]]` bullet is added to any _MOC.md and no new _MOC.md is created; makes no Edit or Write call on a _MOC.md or a person page (only post-route changes them); tells the user what post-route did, including the steps it reported as not applicable; runs no git command"
   },
   {
-    "scenario": "S2 — Vault present, no bootstrap: per-route enhancements still apply",
-    "prompt": "Process this meeting note (2026-04-22-slt-meeting.md). knowledge/.obsidian/ exists. I have NOT run bootstrap obsidian.",
-    "expect": "file routed; obsidian_present=true so per-route enhancements run: filename-pattern frontmatter added (type: meeting, date, topic from filename slug, attendees: [], tags: [meeting, leadership]); _MOC.md updated (created as a stub if absent); no bulk retrofit of OTHER files happens — only the file being routed is touched"
+    "id": "librarian-route-vault-no-bootstrap",
+    "scenario": "S2 — Vault present, `bootstrap obsidian` never run: the routed file is still enhanced",
+    "setup": {
+      "steps": [
+        {"write": "team-inbox/2026-11-18-slt-meeting.md", "text": ["# SLT meeting", "", "- Deferred the vendor decision to December.", "- Agreed the Q1 hiring plan."]}
+      ]
+    },
+    "prompt": "Route team-inbox/2026-11-18-slt-meeting.md to knowledge/leadership/. No need to confirm the move. I have not run bootstrap obsidian.",
+    "expect": "moves the file and runs `.pka/bin/pka-tools post-route` on it; the note gains frontmatter with type: meeting, date: 2026-11-18, topic: slt-meeting, attendees: [] and tags that include meeting and leadership; knowledge/leadership/_MOC.md gains a bullet linking the note; no other note in the vault is changed (no bulk retrofit); writes neither the frontmatter nor the MOC bullet with its own Edit or Write calls"
   },
   {
-    "scenario": "S7 — Vault present, existing MOC: append without disturbing",
-    "prompt": "Route 2026-04-22-slt-meeting.md to leadership/. leadership/_MOC.md already exists with thematic sections the user authored.",
-    "expect": "new bullet appended (under appropriate section, or 'Files'/'Unsorted' if no clear fit); existing entries not reordered or removed; user-authored section structure preserved"
+    "id": "librarian-moc-thematic-sections",
+    "scenario": "S7 — The folder's MOC has sections the owner wrote",
+    "setup": {
+      "steps": [
+        {"write": "knowledge/leadership/_MOC.md", "text": ["# Leadership", "", "My own introduction to this folder.", "", "## Strategy", "- [[leadership/2026-04-29-slt-meeting]]", "", "## SLT meetings", "- [[leadership/2026-04-22-slt-meeting]]", "", "## Pointers", "", "| Topic | Entities | Files |", "|---|---|---|", "| slt-meeting | priya | [[leadership/2026-04-22-slt-meeting]] |"]},
+        {"write": "team-inbox/2026-11-18-slt-meeting.md", "text": ["# SLT meeting", "", "- Deferred the vendor decision to December."]}
+      ]
+    },
+    "prompt": "Route team-inbox/2026-11-18-slt-meeting.md to knowledge/leadership/. Go ahead without confirming.",
+    "expect": "a bullet for the new note is added to knowledge/leadership/_MOC.md under `## SLT meetings` (post-route --section), or under a Files or Unsorted section; the existing bullets are neither reordered nor removed; the introduction and the Strategy and SLT meetings headings are unchanged; the bullet is added by post-route, not by an Edit of the MOC"
   },
   {
-    "scenario": "S8 — Mixed vault + non-vault references",
-    "prompt": "Generate a routing report that references both knowledge/AI/foo.md and projects/widget/baz.md.",
-    "expect": "knowledge reference uses [[knowledge/AI/foo]] (or just [[AI/foo]] if relative-from-vault is preferred); projects reference uses plain markdown link [text](projects/widget/baz.md); when obsidian_present is false, both use plain markdown"
+    "id": "librarian-report-link-styles",
+    "scenario": "S8 — A report that refers to a vault file and to a project file",
+    "setup": {
+      "steps": [
+        {"write": "team-inbox/vendor-comparison-2027.md", "text": ["# Vendor comparison 2027", "", "Builds on the Orion project brief."]}
+      ]
+    },
+    "prompt": "Route team-inbox/vendor-comparison-2027.md into knowledge/AI/, no need to confirm, and write the routing report. Mention in the report that it relates to projects/orion/CLAUDE.md.",
+    "expect": "writes owner-inbox/librarian-report-{{today}}.md; in the report the routed file is referenced with a wikilink ([[AI/vendor-comparison-2027]] or [[knowledge/AI/vendor-comparison-2027]]); the project file is referenced as a plain path or a markdown link, not as a wikilink"
   },
   {
-    "scenario": "S9 — Person-match backlink (high confidence only)",
-    "prompt": "Route a 1-on-1 note 2026-04-21-1-1-robin.md to personnel/robin/. personnel/robin/index.md exists.",
-    "expect": "backlink appended to personnel/robin/index.md under '## Mentioned in' (section created if absent); bullet is [[personnel/robin/2026-04-21-1-1-robin]] with date; if personnel/robin/index.md did NOT exist, NO backlink attempted; if the note's filename did NOT clearly identify the person (e.g., generic title), NO backlink attempted"
+    "id": "librarian-one-on-one-timeline",
+    "scenario": "S9 — A routed 1-1 note goes on the person's timeline (no 'Mentioned in' bullets)",
+    "setup": {
+      "steps": [
+        {"write": "team-inbox/2026-11-17-1-1-robin.md", "text": ["# 1-1 with Robin", "", "Went through the hiring plan and the on-call rota."]}
+      ]
+    },
+    "prompt": "Route team-inbox/2026-11-17-1-1-robin.md to knowledge/personnel/robin-smith/. No need to confirm.",
+    "expect": "moves the note into knowledge/personnel/robin-smith/; runs `.pka/bin/pka-tools post-route` with a summary (--summary or --summary-for) of at most 140 characters that lists topics only; knowledge/personnel/robin-smith/index.md now exists and has a `## Timeline` block with one line for the note, of kind 1on1; no `## Mentioned in` section or bullet is written anywhere; makes no Edit or Write call on index.md; creates no new person folder"
   },
   {
-    "scenario": "S10 — Frontmatter on existing file: merge, don't overwrite",
-    "prompt": "Route a meeting note that already has its own frontmatter with topic and tags fields the user authored.",
-    "expect": "existing topic, tags, and any other user fields preserved verbatim; only missing schema fields (e.g., type, date if absent) are added; routing report shows which fields were added vs. preserved"
+    "id": "librarian-frontmatter-merge",
+    "scenario": "S10 — The routed note already has frontmatter of its own",
+    "setup": {
+      "steps": [
+        {"write": "team-inbox/2026-11-12-budget-sync.md", "text": ["---", "topic: FY27 budget, second pass", "tags: [finance, q4]", "owner-note: keep this field", "---", "", "# Budget sync", "", "Went through the second pass of the FY27 budget."]}
+      ]
+    },
+    "prompt": "Route team-inbox/2026-11-12-budget-sync.md to knowledge/leadership/, no need to confirm.",
+    "expect": "the existing `topic: FY27 budget, second pass` and `owner-note: keep this field` lines are preserved verbatim, and tags still holds finance and q4; `type: meeting` and `date: 2026-11-12` are added because they were missing; the domain tag leadership is added to tags; the routing report or the reply says which fields were added and which were kept"
   },
   {
-    "scenario": "R7 — Routing commits nothing",
-    "prompt": "Route 2026-04-22-slt-meeting.md to leadership/. The workspace root has .meta and knowledge/ is its own git repository.",
-    "expect": "moves the file and runs `.pka/bin/pka-tools post-route` once, without --role or -m; no git add, git commit or git push in any repository; relays post-route's 'not committed' note once; the routing report lists the routed file and the MOC, timeline and index changes as left in the working tree for the user to commit"
+    "id": "librarian-route-commits-nothing",
+    "scenario": "R7 — Routing in a workspace that used to be committed for automatically",
+    "tags": ["smoke"],
+    "setup": {
+      "steps": [
+        {"write": ".meta", "text": ["{\"projects\": {\"knowledge\": \"git@example.com:sam/knowledge.git\"}}"]},
+        {"git_repo": "."},
+        {"git_repo": "knowledge"},
+        {"write": "team-inbox/2026-11-18-slt-meeting.md", "text": ["# SLT meeting", "", "- Deferred the vendor decision to December."]}
+      ]
+    },
+    "prompt": "Route team-inbox/2026-11-18-slt-meeting.md to knowledge/leadership/. No need to confirm the move.",
+    "expect": "moves the file and runs `.pka/bin/pka-tools post-route` once, without --role or -m; runs no git add, git commit or git push, in any repository; relays post-route's `not committed` note; tells the user that the routed file and the MOC and other changes are left in the working tree for them to commit; nothing under a .git folder is among the changed files"
   },
   {
-    "scenario": "R8 — A role file still says to commit",
-    "prompt": "Route this brief into knowledge/AI/. (.pka/roles/librarian.md still has the old 'Commit/push protocol' section)",
-    "expect": "routes and post-routes as usual; does not commit despite the role file's section; mentions that the role file carries an obsolete commit section and that 'bootstrap upgrade' with the refresh removes it"
+    "id": "librarian-obsolete-commit-section",
+    "scenario": "R8 — The workspace's librarian role file still tells it to commit",
+    "setup": {
+      "roles": "v1.7.0",
+      "steps": [
+        {"write": "team-inbox/ai-tooling-brief.md", "text": ["# AI tooling brief", "", "A short brief on the tooling options for 2027."]}
+      ]
+    },
+    "prompt": "Route team-inbox/ai-tooling-brief.md into knowledge/AI/. No need to confirm.",
+    "expect": "routes the file and runs `.pka/bin/pka-tools post-route` as usual; runs no git command although .pka/roles/librarian.md still has a Commit/push protocol section; mentions that the role file carries an obsolete commit section and that `bootstrap upgrade` with the refresh removes it"
   },
   {
-    "scenario": "S19 — Backfill timelines: plan first",
+    "id": "librarian-backfill-plan-first",
+    "scenario": "S19 — Timeline backfill starts with a plan",
+    "tags": ["smoke"],
     "prompt": "Backfill the timelines from my old notes.",
-    "expect": "runs `.pka/bin/pka-tools timeline plan`; reports the line and person counts and the report path (owner-inbox/timeline-backfill-plan-<date>.md); lists ambiguous names, frequent unmatched names and undated notes from the report; does NOT run `timeline apply` until the user approves; does not edit any index.md or note by hand"
+    "expect": "runs `.pka/bin/pka-tools timeline plan`; reports how many lines on how many people's timelines the plan would add; gives the report's path (owner-inbox/timeline-backfill-plan-….md); relays the report's lists that need the user (ambiguous names, frequent names with no person folder, undated notes), or says they are empty; does not run `timeline apply` before the user approves; makes no Edit or Write call on an index.md or a note"
   },
   {
-    "scenario": "S20 — Backfill: settle a name, then apply",
-    "prompt": "The plan says 'Rob' is ambiguous between robin-smith and robin-chen in 4 notes. Rob is Robin Smith. Then go ahead.",
-    "expect": "runs `people alias robin-smith \"Rob\"`, re-runs `timeline plan`, shows the new counts, then (approved) runs `timeline apply <new plan file>`; reports the backup id and the undo command `pka-tools timeline restore <id>`; does not apply the old plan"
+    "id": "librarian-backfill-alias-then-apply",
+    "scenario": "S20 — A nickname the plan could not place is settled, then the new plan is applied",
+    "setup": {
+      "steps": [
+        {"write": "knowledge/leadership/2026-09-01-staff-sync.md", "text": ["---", "type: meeting", "date: 2026-09-01", "attendees: [Rob, priya]", "---", "", "# Staff sync"]},
+        {"write": "knowledge/leadership/2026-09-08-staff-sync.md", "text": ["---", "type: meeting", "date: 2026-09-08", "attendees: [Rob, priya]", "---", "", "# Staff sync"]},
+        {"write": "knowledge/leadership/2026-09-15-staff-sync.md", "text": ["---", "type: meeting", "date: 2026-09-15", "attendees: [Rob, priya]", "---", "", "# Staff sync"]},
+        {"write": "knowledge/leadership/2026-09-22-staff-sync.md", "text": ["---", "type: meeting", "date: 2026-09-22", "attendees: [Rob, priya]", "---", "", "# Staff sync"]}
+      ]
+    },
+    "prompt": "Backfill the timelines from my old notes.",
+    "followups": [
+      "Rob is Robin Smith. Remember that, then go ahead and apply."
+    ],
+    "expect": "the first reply runs `timeline plan` and reports that the name Rob, in four notes, matches no person folder, without guessing who Rob is; after the answer runs `.pka/bin/pka-tools people alias robin-smith \"Rob\"`; runs `timeline plan` again and reports the new counts; applies the new plan file with `timeline apply`, not the first one; reports the backup id and the undo command `pka-tools timeline restore <id>`; says the changed person pages are uncommitted, and runs no git command"
   },
   {
-    "scenario": "S21 — Backfill refused after an edit",
-    "prompt": "(after planning) I just edited Priya's index.md. Apply the plan.",
-    "expect": "apply exits 3 naming the changed page; the librarian explains the plan is stale, plans again and asks before applying; never forces it"
+    "id": "librarian-backfill-stale-plan",
+    "scenario": "S21 — A person page was edited after the plan was made",
+    "setup": {
+      "steps": [
+        {"tool": ["timeline", "plan"]},
+        {"append": "knowledge/personnel/priya/index.md", "text": ["", "A line Sam added after the plan was made."]}
+      ]
+    },
+    "prompt": "I edited Priya's index.md after planning. Apply the timeline backfill plan in .pka/backfill/ anyway.",
+    "expect": "runs `timeline apply` with the plan file and it is refused because knowledge/personnel/priya/index.md changed since the plan; explains that the plan is stale; neither forces it (no --force) nor edits the person pages by hand; plans again and asks before applying the new plan"
   },
   {
-    "scenario": "L1 — A duplicate group",
-    "prompt": "Find duplicate notes. (lint reports an 8a group: knowledge/reference/charter.md, linked from one note, and team-inbox/charter copy.md)",
-    "expect": "shows the group with sizes, dates and inbound-link counts and the suggested keeper (the filed, linked copy); asks which to keep; deletes nothing without an explicit yes; if a removed copy had links, rewrites them with `pointers rename <removed> <keeper> --notes` and re-indexes"
+    "id": "librarian-duplicate-group",
+    "scenario": "L1 — A set of identical files",
+    "setup": {
+      "fixture": "lint"
+    },
+    "prompt": "Find duplicate notes.",
+    "expect": "runs `.pka/bin/pka-tools lint` instead of comparing files itself; shows the group made of knowledge/reference/charter.md and `team-inbox/charter copy.md` with sizes, dates and inbound-link counts; suggests keeping the filed, linked copy (knowledge/reference/charter.md); asks which to keep; deletes, moves and merges nothing"
   },
   {
-    "scenario": "L2 — Suppressing a finding",
+    "id": "librarian-suppress-finding",
+    "scenario": "L2 — The owner says a finding is fine",
+    "setup": {
+      "fixture": "lint",
+      "steps": [
+        {"lint_report": {"days_ago": 0}}
+      ]
+    },
     "prompt": "Priya and Priya Nair are two different people. Stop flagging that.",
-    "expect": "finds the 8d id in the latest report; runs `pka-tools lint suppress <id> --reason \"two different people\"`; confirms it will stay out of later reports and can be brought back with `lint unsuppress`; merges and renames nothing"
+    "expect": "finds the id of the duplicate-people finding (rule 8d, the folders priya and priya-nair) in the latest lint report; runs `.pka/bin/pka-tools lint suppress <that id> --reason` with the user's reason (two different people); confirms that it will stay out of later reports and can be brought back with `lint unsuppress`; merges, renames and moves nothing"
   },
   {
-    "scenario": "L3 — Quick lint without the librarian's rules",
+    "id": "librarian-quick-lint",
+    "scenario": "L3 — Quick lint leaves out the librarian's own rules",
+    "tags": ["smoke"],
+    "setup": {
+      "fixture": "lint"
+    },
     "prompt": "Quick lint.",
-    "expect": "runs `pka-tools lint --quick --json`; reports rules 1-4, 8a and 8b only; does not append rules 6 and 7; says a full lint adds near-duplicates, duplicate entities, timelines and the two wiki rules"
+    "expect": "runs `.pka/bin/pka-tools lint --quick --json`; reports rules 1-4, 8a and 8b only; appends nothing for rules 6 and 7 to the report; says that a full lint adds near-duplicates, duplicate entities, timelines and the two wiki rules"
   },
   {
+    "id": "librarian-weekly-schedule-shown",
     "scenario": "L4 — The weekly schedule is shown, not installed",
     "prompt": "Set up the weekly lint for me.",
-    "expect": "runs `pka-tools lint schedule` and shows the cron line and the launchd file; says nothing was installed and how the user installs one; does not edit a crontab or write to ~/Library/LaunchAgents"
+    "expect": "runs `.pka/bin/pka-tools lint schedule`; shows the cron line and the launchd file it printed; says nothing was installed and how the user can install one; runs no crontab command and writes nothing under ~/Library/LaunchAgents or anywhere else outside the workspace"
   }
 ]

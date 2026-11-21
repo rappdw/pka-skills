@@ -1,26 +1,115 @@
 [
   {
+    "id": "wiki-create",
+    "scenario": "The first topic wiki in a workspace with no wiki-home folder",
     "prompt": "Create a topic wiki on Model Context Protocol.",
-    "expect": "derives slug (asks if ambiguous: mcp vs model-context-protocol); creates knowledge/topics/<slug>/ with wiki.md scaffold; adds wiki-home tag to Repo Map if needed; logs to session-log and decision-log; prompts for first ingest"
+    "followups": [
+      "Use the slug mcp. knowledge/topics/ is fine."
+    ],
+    "expect": "before creating anything the first reply proposes knowledge/topics/ as the wiki-home folder, asks which slug to use (mcp or model-context-protocol), or both; creates knowledge/topics/mcp/wiki.md from the scaffold (frontmatter with topic, last-updated, source-count and status, and What it is, Key concepts, Sources and Changelog sections); adds knowledge/topics/ to the Repo Map in CLAUDE.md with the wiki-home tag; runs `.pka/bin/pka-tools post-route knowledge/topics/mcp/wiki.md`; logs the creation with `pka-tools log add --role pka-wiki` and adds an entry to .pka/decision-log.md; ends by offering to ingest a first source"
   },
   {
-    "prompt": "Ingest the paper at team-inbox/mcp-spec.pdf into my mcp wiki.",
-    "expect": "reads source and current wiki; @researcher categorizes content (new/confirm/contradict/refine); presents section-level diff; mandatory pause for approval regardless of autonomy level; applies diff; updates Sources, source-count, last-updated, changelog; routes source to sources/ folder; scans cross-wiki mentions"
+    "id": "wiki-ingest-pauses-for-approval",
+    "scenario": "Ingest shows a diff and stops, even hands-off",
+    "tags": ["smoke"],
+    "setup": {
+      "autonomy": "hands-off",
+      "steps": [
+        {"append": "CLAUDE.md", "text": ["| `knowledge/topics/` | Topic wikis | by topic | Active | active | High | wiki-home |"]},
+        {"fixture_file": "mcp-intro-notes.md", "to": "knowledge/AI/mcp-intro-notes.md"},
+        {"fixture_file": "mcp-wiki.md", "to": "knowledge/topics/mcp/wiki.md"},
+        {"write": "team-inbox/mcp-spec-notes.md", "text": ["# MCP spec notes", "", "- Resources can be subscribed to for change notifications.", "- Prompts are a third server primitive, besides tools and resources."]}
+      ]
+    },
+    "prompt": "Ingest team-inbox/mcp-spec-notes.md into my mcp wiki.",
+    "expect": "reads both the source and the current wiki; sorts what the source contributes into new, confirming, contradicting or refining claims; shows the proposed changes section by section; stops for approval although the autonomy level is hands-off; knowledge/topics/mcp/wiki.md is unchanged and the source is still in team-inbox/ when the run ends"
   },
   {
+    "id": "wiki-ingest-applies-after-approval",
+    "scenario": "Ingest, approved",
+    "setup": {
+      "steps": [
+        {"append": "CLAUDE.md", "text": ["| `knowledge/topics/` | Topic wikis | by topic | Active | active | High | wiki-home |"]},
+        {"fixture_file": "mcp-intro-notes.md", "to": "knowledge/AI/mcp-intro-notes.md"},
+        {"fixture_file": "mcp-wiki.md", "to": "knowledge/topics/mcp/wiki.md"},
+        {"write": "team-inbox/mcp-spec-notes.md", "text": ["# MCP spec notes", "", "- Resources can be subscribed to for change notifications.", "- Prompts are a third server primitive, besides tools and resources."]}
+      ]
+    },
+    "prompt": "Ingest team-inbox/mcp-spec-notes.md into my mcp wiki.",
+    "followups": [
+      "Approved."
+    ],
+    "expect": "no change is made to wiki.md before the approval; after the approval the new claims are in wiki.md, each citing the source; the source is added under `## Sources`, source-count becomes 2 and last-updated becomes {{today}}; a changelog line is appended; the source is moved into knowledge/topics/mcp/sources/; runs `.pka/bin/pka-tools post-route` on wiki.md; looks for other wikis the source bears on and reports the result; logs to the session log with `pka-tools log add --role pka-wiki` and adds an entry to .pka/decision-log.md"
+  },
+  {
+    "id": "wiki-query-wiki-first",
+    "scenario": "A question about a topic that has a wiki",
+    "setup": {
+      "index": true,
+      "steps": [
+        {"append": "CLAUDE.md", "text": ["| `knowledge/topics/` | Topic wikis | by topic | Active | active | High | wiki-home |"]},
+        {"fixture_file": "mcp-intro-notes.md", "to": "knowledge/AI/mcp-intro-notes.md"},
+        {"fixture_file": "mcp-wiki.md", "to": "knowledge/topics/mcp/wiki.md"},
+        {"write": "knowledge/leadership/2026-10-20-tooling-sync.md", "text": ["# Tooling sync", "", "Priya proposed moving two internal tools to MCP servers next quarter."]},
+        {"tool": ["index"]}
+      ]
+    },
     "prompt": "What do I know about MCP?",
-    "expect": "detects knowledge/topics/mcp/wiki.md exists; returns wiki summary (What it is, Key concepts, Current thinking, Open questions) FIRST; runs FTS for mentions not yet in Sources; offers follow-up actions; if no wiki exists, falls back to standard FTS behavior"
+    "expect": "finds knowledge/topics/mcp/wiki.md and answers from it first: what it is, the key concepts, the current thinking and the open questions; then lists notes that mention the topic and are not yet in the wiki's Sources, among them knowledge/leadership/2026-10-20-tooling-sync.md; finds those mentions with `.pka/bin/pka-tools search`, not with a hand-written SQL query; offers follow-ups such as reading the full wiki or ingesting the new mentions; changes no file"
   },
   {
+    "id": "wiki-query-no-wiki",
+    "scenario": "A question about a topic that has no wiki",
+    "setup": {
+      "index": true
+    },
+    "prompt": "What do I know about the lighthouse rollout?",
+    "expect": "answers from a search of the notes with `.pka/bin/pka-tools search`, naming the files it found; says there is no topic wiki for it, or offers to create one, without creating it; creates no file"
+  },
+  {
+    "id": "wiki-list",
+    "scenario": "Listing wikis, one of them retired",
+    "tags": ["smoke"],
+    "setup": {
+      "steps": [
+        {"append": "CLAUDE.md", "text": ["| `knowledge/topics/` | Topic wikis | by topic | Active | active | High | wiki-home |"]},
+        {"write": "knowledge/topics/mcp/wiki.md", "text": ["---", "topic: mcp", "last-updated: 2026-10-01", "source-count: 4", "status: active", "---", "", "# Model Context Protocol", "", "## What it is", "An open protocol for connecting assistants to tools and data.", "", "## Sources", "", "## Changelog", "- 2026-10-01: Wiki created"]},
+        {"write": "knowledge/topics/llm-tooling/wiki.md", "text": ["---", "topic: llm-tooling", "last-updated: 2026-03-04", "source-count: 3", "status: retired", "---", "", "# LLM tooling", "", "## What it is", "Notes on tooling, superseded by the MCP wiki.", "", "## Sources", "", "## Changelog", "- 2026-03-04: Retired: no longer actively maintained"]}
+      ]
+    },
     "prompt": "Show me my topic wikis.",
-    "expect": "reads all wiki-home folders; presents table with topic, last-updated, source-count, status; excludes retired wikis or marks them clearly"
+    "expect": "reads the wikis under the wiki-home folder knowledge/topics/ with tool calls; presents a table with topic, last updated, source count and status; shows mcp as active with 4 sources, last updated 2026-10-01; shows llm-tooling clearly marked as retired, or leaves it out and says a retired wiki was left out; changes no file"
   },
   {
-    "prompt": "This new source contradicts what my wiki says about MCP transport. How do I reconcile?",
-    "expect": "surfaces contradiction explicitly with both claims and source paths; offers 3 options (keep wiki, update wiki, keep both qualified); does not auto-decide; logs resolution to decision-log once user chooses"
+    "id": "wiki-contradiction",
+    "scenario": "A source that contradicts the wiki",
+    "setup": {
+      "steps": [
+        {"append": "CLAUDE.md", "text": ["| `knowledge/topics/` | Topic wikis | by topic | Active | active | High | wiki-home |"]},
+        {"fixture_file": "mcp-intro-notes.md", "to": "knowledge/AI/mcp-intro-notes.md"},
+        {"fixture_file": "mcp-wiki.md", "to": "knowledge/topics/mcp/wiki.md"},
+        {"write": "team-inbox/mcp-transport-update.md", "text": ["# MCP transport update", "", "The specification now defines a streamable HTTP transport alongside stdio, and our remote servers use it in production."]}
+      ]
+    },
+    "prompt": "Ingest team-inbox/mcp-transport-update.md into my mcp wiki. I think it contradicts what the wiki says about transport. How do I reconcile?",
+    "followups": [
+      "Update the wiki to the new claim."
+    ],
+    "expect": "states the contradiction explicitly, with both claims (stdio is the only transport in use; a streamable HTTP transport exists and is used in production) and the path of the source of each; offers the three options: keep the wiki's claim, update the wiki, keep both with a qualification; does not choose for the user: no edit is made to wiki.md before the user's second message; after the user chooses, records the resolution in .pka/decision-log.md"
   },
   {
+    "id": "wiki-retire",
+    "scenario": "Retiring a wiki",
+    "setup": {
+      "steps": [
+        {"append": "CLAUDE.md", "text": ["| `knowledge/topics/` | Topic wikis | by topic | Active | active | High | wiki-home |"]},
+        {"write": "knowledge/topics/llm-tooling/wiki.md", "text": ["---", "topic: llm-tooling", "last-updated: 2026-03-04", "source-count: 3", "status: active", "---", "", "# LLM tooling", "", "## What it is", "Notes on tooling for language models.", "", "## Sources", "", "## Changelog", "- 2026-01-10: Wiki created"]}
+      ]
+    },
     "prompt": "Retire my llm-tooling wiki.",
-    "expect": "sets frontmatter status: retired; appends changelog entry; wiki excluded from future query responses; file preserved; logs to decision-log with reasoning"
+    "followups": [
+      "Yes, retire it. I've moved on to an MCP wiki."
+    ],
+    "expect": "first confirms the intent, explaining that a retired wiki is left out of queries but kept as a file; after the yes sets `status: retired` in the wiki's frontmatter; appends a changelog line saying it was retired; the wiki file and its folder still exist; records the decision and its reason in .pka/decision-log.md"
   }
 ]

@@ -4,10 +4,10 @@ Two layers:
 
 | Layer                                      | Where                                          | Covers                                                       |
 |--------------------------------------------|------------------------------------------------|---------------------------------------------------------------|
-| **Behavioral evals** (Claude-driven)       | `evals/*.evals.json`                           | Spec scenarios as `prompt`/`expect` pairs the role definitions and skill descriptions are evaluated against. |
+| **Behavioral evals** (Claude-driven)       | `evals/*.evals.json`, run by `evals/run.py`    | Scenarios as a starting state, a prompt and the behaviour expected. The runner builds the workspace, runs Claude Code in it with this checkout as the plugin, and has a second model call grade the transcript. See `evals/README.md`. |
 | **Mechanical tests**                       | `tests/` (this directory)                      | Everything deterministic: `upgrade-roles.py`, and `pka-tools` (schema, index, search, pointer rows, timelines, the Obsidian retrofit, the installer). |
 
-The two layers are complementary. A skill change can pass the mechanical tests (the mechanics still work) and fail the evals (the role's decision-making is wrong), or vice versa. Run both before merging.
+The two layers are complementary. A skill change can pass the mechanical tests (the mechanics still work) and fail the evals (the role's decision-making is wrong), or vice versa. The mechanical tests are free and run on every push. An eval run calls a model and costs money, so it is started by hand: `python3 evals/run.py --dry-run` to see what it would do, `--tag smoke` for the small set. The runner itself is tested here, without a model (the `eval-runner` suite below).
 
 **The mechanical tests run the code that ships.** Every suite installs the plugin's assets into a temporary workspace with `pka-tools install` and then runs the workspace's own copies (`.pka/bin/pka-tools`, `.pka/upgrade-roles.py`). Before v1.7 two suites drove reference implementations that lived only in this directory; those are gone.
 
@@ -27,6 +27,7 @@ Each suite exits 0 when all its tests pass. The runner aggregates and prints a f
 | Upgrade (v1.5 → v1.6+)    | `test_upgrade.sh`                   | U1–U11                                   |
 | Pointer layer             | `test_pointer_layer.sh`             | PR1–PR6 + cross-MOC via `pka-tools pointers`, `index`, `search` |
 | pka-tools (v1.7)          | `test_tools.sh` → `tools/test_*.py` | The toolkit, command by command (below)   |
+| Eval runner               | `test_evals.sh` → `evals/test_*.py` | `evals/run.py`, with a stand-in for the Claude Code CLI (below) |
 
 The suites for the hybrid monorepo (`test_git_bootstrap.sh`, `test_commit_protocol.sh`, `test_script_safety.sh`) were removed with the feature; scenarios S12–S22 and A1–A11 no longer exist.
 
@@ -55,9 +56,24 @@ Python `unittest` modules, standard library only. Run them alone with `./tests/t
 
 `tools/support.py` holds the shared test case. `fixtures/v1.7.0-roles/` holds the role files and `_git-protocol.md` exactly as v1.7.0 seeded them. `fixtures/build_vault.py` generates the fixture workspace. It is generated rather than stored so that the awkward bytes survive git: CRLF line endings, a byte-order mark, a missing final newline, a non-UTF-8 file, and names with spaces, commas and non-ASCII letters.
 
+### The eval-runner tests
+
+`tests/evals/test_runner.py` tests the runner, not the skills. It calls no model and opens no connection: `tests/evals/fake_claude.py` stands in for the Claude Code CLI, prints what the real one prints, and really changes files in the scratch workspace so that capture has something to find.
+
+| Covers | How |
+|---|---|
+| The eval files | Every file loads, ids are unique, the smoke set runs against this checkout, no expectation asks for a commit or a push, and **every scenario's workspace is built** against the real fixture and tool |
+| The setup vocabulary | Each fixture, option and step builds what it says (the default workspace is one the plugin's own `status` and role preview call current); a step that cannot work says why; nothing is written outside the workspace |
+| Transcript and diff capture | Stream events become assistant text, tool calls and results; added, removed and changed files with hashes and a text diff; the skill text is withheld from the judge |
+| The judge's answer | Recorded envelopes in `tests/evals/samples/`: a structured answer, one wrapped in prose, a "yes" whose quote is not in the evidence (thrown out), a missing answer, a failed call |
+| Aggregation | Totals per verdict and per skill, cost and tokens, the summary table |
+| Whole runs with the stand-in | `--dry-run` (starts nothing, leaves nothing), a graded run, follow-up messages, `--resume`, `--rejudge`, `--jobs`, the turn cap, the timeout, the run-level cost cap, an authentication failure (one line, run stops), the required sandbox, `needs` |
+
+`tests/evals/samples/result-auth-failed.json` and `stream-auth-failed.jsonl` are real CLI output (a run that could not log in, trimmed and with paths made generic). The judge samples use that real envelope around answers written by hand: no judge call had been possible when they were made. Replace them with recorded answers after the first real run.
+
 ## Why some scenarios are JSON-only
 
-Scenarios that depend on Claude's natural-language understanding or decision-making (e.g., S1–2 detection-driven behavior, S7–11 per-route enhancements, S8 wikilink choice, S11 brief frontmatter generation) live in the JSON evals at `evals/`. The mechanical tests verify the deterministic commands those decisions end in.
+Scenarios that depend on Claude's natural-language understanding or decision-making (e.g., S1–2 detection-driven behavior, S7–11 per-route enhancements, S8 wikilink choice, S11 brief frontmatter generation) live in the JSON evals at `evals/`. The mechanical tests verify the deterministic commands those decisions end in. Each eval has a stable `id`; the old scenario numbers are kept in its `scenario` title where it had one.
 
 ## Adding a test
 

@@ -1,74 +1,167 @@
 [
   {
+    "id": "tutorial-just-installed",
+    "scenario": "A new user in a current workspace",
+    "needs": "PR #24",
     "prompt": "I just installed PKA. How do I use this?",
-    "expect": "detects bootstrapped state; offers full tour or module-specific jump; does not start executing — teaches by describing prompts user can try"
+    "expect": "checks the workspace with tool calls before teaching: looks for .pka/ and CLAUDE.md and runs the plugin's `pka-tools status --workspace … --json` and `upgrade-roles.py --workspace … --dry-run`; treats the workspace as bootstrapped and current, suggesting no upgrade; offers the full tour, described as nine short modules taking about 25 minutes, or a jump to a specific topic; teaches by describing prompts the user can try, and moves, creates or edits no file apart from its own session-log entry"
   },
   {
+    "id": "tutorial-tour-first-modules",
+    "scenario": "The tour, one module at a time",
     "prompt": "Give me a tour of PKA.",
-    "expect": "runs through 7 modules with user's actual Repo Map folder names substituted; each module ends with concrete 'try this' prompts; checks in between modules"
+    "followups": [
+      "Next."
+    ],
+    "expect": "starts with orientation: what PKA is, the Repo Map, roles, the session log; its examples use this workspace's own folder names from the Repo Map (for example knowledge/leadership/ or knowledge/personnel/); ends the module with concrete prompts to try; checks in with the user before the next module instead of delivering every module in one reply; the second reply covers finding things; where it describes the scope of the tour it includes topic wikis and health checks (nine modules, not seven); moves, creates or edits no file apart from its own session-log entry"
   },
   {
+    "id": "tutorial-meeting-capture",
+    "scenario": "One how-do-I question: meetings",
     "prompt": "How do I capture meeting notes?",
-    "expect": "jumps to Module 4 (meeting capture); explains three modes; checks if thinkkit is installed and adapts guidance; hands off to pka-meetings for actual capture"
+    "expect": "answers with the meeting-capture module only, not the whole tour; explains the three modes: live capture, reconcile against a transcript, route only; checks whether take-notes and resolve-against-transcript are available and says that without thinkkit only route-only works here; tells the user what to say to pka-meetings to do it, and neither captures nor files anything itself"
   },
   {
+    "id": "tutorial-finding-things",
+    "scenario": "One how-do-I question: search",
     "prompt": "How do I find things in my knowledge base?",
-    "expect": "Module 2 only; explains 4 query types; uses user's actual folder names in examples; ends with try-this prompts"
+    "expect": "answers with the finding-things module only; explains the four kinds of query: simple lookup, cross-repo search, project snapshot, date-scoped; its example prompts use this workspace's folder or person names; ends with prompts to try"
   },
   {
+    "id": "tutorial-what-can-pka-do",
+    "scenario": "The menu, in a workspace first set up on the installed release",
+    "tags": ["smoke"],
     "prompt": "What can PKA do?",
-    "expect": "menu of capabilities with short descriptions; asks which to dive into; does not launch full tour unprompted"
+    "expect": "gives a menu of capabilities with a short description of each; asks which one to go into; does not launch the full tour unprompted; offers no `what's new` item (the workspace was first set up on this release: there is no .pka/upgrade-backups/); suggests no upgrade"
   },
   {
+    "id": "tutorial-not-bootstrapped",
+    "scenario": "A folder where PKA was never set up",
+    "setup": {
+      "fixture": "existing"
+    },
     "prompt": "Walk me through PKA — I'm new.",
-    "expect": "pre-flight check of state first; if not bootstrapped, hands off to pka-bootstrap; if bootstrapped, offers full tour"
+    "expect": "checks for .pka/ and CLAUDE.md before teaching; says PKA is not set up in this folder yet; offers to hand off to pka-bootstrap, with the tour to follow; does not start the bootstrap itself: no file is created"
   },
   {
+    "id": "tutorial-inbox-pattern",
+    "scenario": "One how-do-I question: the inboxes",
     "prompt": "How do I drop files into the system?",
-    "expect": "Module 3 (inbox pattern); explains team-inbox/owner-inbox distinction, transcript special-casing, batch processing"
+    "expect": "answers with the inbox module only; explains team-inbox/ as the input queue and owner-inbox/ as where outputs are delivered; explains that transcripts are held for pka-meetings instead of being routed; explains batch processing with grouped routing proposals; moves and creates no file apart from its own session-log entry"
   },
   {
-    "prompt": "Give me a tour of PKA. (workspace bootstrapped before v1.7.0: no .pka/manifest.json, no .pka/bin/pka-tools; installed plugin is the current release)",
-    "expect": "pre-flight runs the plugin's copy of `pka-tools status --workspace <root> --json` and sees vendored_version null against tool_version; says the workspace is behind before starting any module; offers the upgrade walkthrough first; does not run `.pka/bin/pka-tools`"
+    "id": "tutorial-behind-offers-upgrade",
+    "scenario": "A workspace bootstrapped before v1.7.0: no manifest, no toolkit",
+    "tags": ["smoke"],
+    "setup": {
+      "toolkit": "absent",
+      "roles": "v1.7.0"
+    },
+    "prompt": "Give me a tour of PKA.",
+    "expect": "runs the plugin's copy of `pka-tools status --workspace <root> --json`; runs no `.pka/bin/pka-tools` command (there is none); says, before starting any module, that the workspace is behind the installed release (set up before v1.7.0, installed {{plugin_version}}); offers to walk through the upgrade first; changes no file"
   },
   {
-    "prompt": "Yes, walk me through the upgrade. (same workspace)",
-    "expect": "runs `install --workspace <root> --dry-run` from the plugin's copy and explains installed / updated (previous copies saved) / kept-with-.new in plain language; describes toolkit, index migration (asks first, database backed up) and role files (backed up, sections added, existing ones not rewritten); says nothing is committed and Python 3.9+ is needed; ends by telling the user to say 'bootstrap upgrade'; does not run install without --dry-run, db migrate --apply or upgrade-roles.py itself"
+    "id": "tutorial-upgrade-walkthrough",
+    "scenario": "The upgrade walkthrough previews and hands off",
+    "setup": {
+      "toolkit": "absent",
+      "roles": "v1.7.0"
+    },
+    "prompt": "Give me a tour of PKA.",
+    "followups": [
+      "Yes, walk me through the upgrade."
+    ],
+    "expect": "runs the plugin's `pka-tools install --workspace <root> --dry-run` and explains its result in plain language (what would be installed, updated or kept); describes the three things `bootstrap upgrade` does, in order: the toolkit and helper scripts, the index migration (it asks first and the database is backed up), the role files (backed up, sections added, the user's own not rewritten); says nothing is committed; says the upgrade needs Python 3.9 or newer; ends by telling the user to say `bootstrap upgrade`; never runs the installer without --dry-run, `db migrate --apply`, or upgrade-roles.py without --dry-run; no file in the workspace has changed when the run ends"
   },
   {
-    "prompt": "The upgrade finished. What now? (pka-bootstrap has just run bootstrap upgrade in this session)",
-    "expect": "re-runs both pre-flight checks and confirms the workspace is current; explains the summary (backup folders, any .new files, refreshable sections, uncommitted changes in a git workspace); then teaches what is new in the installed release from references/upgrade-and-whats-new.md as capabilities with one try-this prompt each, using the user's folder names; omits items that do not apply (for example timelines when there is no people folder); logs an entry beginning `What's new in v<version>`"
+    "id": "tutorial-after-upgrade-whats-new",
+    "scenario": "After the upgrade has run in this session",
+    "setup": {
+      "toolkit": "absent",
+      "roles": "v1.7.0"
+    },
+    "prompt": "bootstrap upgrade",
+    "followups": [
+      "Yes, refresh them.",
+      "The upgrade finished. What now?"
+    ],
+    "expect": "after the last message it runs both checks again (the plugin's `pka-tools status … --json` and `upgrade-roles.py … --dry-run`) and confirms that the workspace is current; explains the upgrade's summary: where the backups are (.pka/upgrade-backups/) and that the changes are the user's to review; teaches what is new since the release the workspace was on as things the user can now do, with one prompt to try for each; those prompts use this workspace's folder or person names; logs a session-log entry whose summary begins `What's new in v{{plugin_version}}`"
   },
   {
-    "prompt": "What can PKA do? (workspace current; .pka/upgrade-backups/ exists; session log has no pka-tutorial 'What's new in v<current>' entry)",
-    "expect": "does not suggest an upgrade; lists 'what's new in v<current>' first in the menu of topics; does not launch it unprompted"
+    "id": "tutorial-returning-whats-new-first",
+    "scenario": "A current workspace that was upgraded at some point and has not seen what's new",
+    "setup": {
+      "steps": [
+        {"write": ".pka/upgrade-backups/20261101-090000/roles/roster.md", "text": ["# Role Roster", "", "(the roster as it was before the upgrade)"]}
+      ]
+    },
+    "prompt": "What can PKA do?",
+    "expect": "suggests no upgrade (the workspace is current); lists `what's new in v{{plugin_version}}` first in its menu of topics; does not start the what's-new walkthrough unprompted"
   },
   {
-    "prompt": "How do I capture meeting notes? (workspace behind the installed release)",
-    "expect": "one sentence that the workspace is behind and that the upgrade walkthrough is available afterwards; then answers with Module 4; flags the parts of the answer that depend on the upgrade; does not force the upgrade walkthrough first"
+    "id": "tutorial-behind-specific-question",
+    "scenario": "One how-do-I question in a workspace that is behind",
+    "setup": {
+      "toolkit": "absent",
+      "roles": "v1.7.0"
+    },
+    "prompt": "How do I capture meeting notes?",
+    "expect": "says in one sentence that the workspace is behind the installed release and that the upgrade walkthrough is available afterwards; then answers with the meeting-capture module; flags the parts of the answer that depend on the upgrade; does not put the upgrade walkthrough before the answer"
   },
   {
-    "prompt": "Not now, just give me the tour. (said in reply to the upgrade offer)",
-    "expect": "continues with the tour; names modules that depend on the upgrade as they come up; does not raise the upgrade again in the session; the closing log entry records `bootstrap upgrade not run` as an open thread"
+    "id": "tutorial-upgrade-declined",
+    "scenario": "The user declines the upgrade offer and takes the tour",
+    "setup": {
+      "toolkit": "absent",
+      "roles": "v1.7.0"
+    },
+    "prompt": "Give me a tour.",
+    "followups": [
+      "Not now, just give me the tour.",
+      "That's enough for today, thanks."
+    ],
+    "expect": "after `not now` it continues with the tour; names what depends on the upgrade as it comes up; does not raise the upgrade again after it was declined; the closing session-log entry has `bootstrap upgrade not run` in its open-threads field; runs no installer without --dry-run, no migration and no role upgrade"
   },
   {
-    "prompt": "Give me a tour. (workspace manifest records a newer release than the installed plugin)",
-    "expect": "says the plugin is older than the workspace and should be updated; does not suggest bootstrap upgrade; carries on as for a returning user"
+    "id": "tutorial-plugin-older-than-workspace",
+    "scenario": "The workspace's manifest records a newer release than the installed plugin",
+    "setup": {
+      "steps": [
+        {"replace": ".pka/manifest.json", "old": "\"plugin_version\": \"{{plugin_version}}\"", "new": "\"plugin_version\": \"99.0.0\""}
+      ]
+    },
+    "prompt": "Give me a tour.",
+    "expect": "says the installed plugin ({{plugin_version}}) is older than the release the workspace was upgraded on (99.0.0) and should be updated; does not suggest `bootstrap upgrade`; then carries on as for a returning user, offering topics or the tour"
   },
   {
-    "prompt": "Give me a tour. (manifest version equals the installed release because the librarian installed the toolkit, but bootstrap upgrade never ran: the plugin's `upgrade-roles.py --dry-run` would seed _obsidian.md and add sections)",
-    "expect": "treats the workspace as behind although the versions are equal; says the toolkit is current and the role files are not; offers the upgrade walkthrough before the tour"
+    "id": "tutorial-roles-behind-versions-equal",
+    "scenario": "The toolkit is current because the librarian installed it, but `bootstrap upgrade` never ran",
+    "setup": {
+      "roles": "v1.7.0"
+    },
+    "prompt": "Give me a tour.",
+    "expect": "runs the plugin's `upgrade-roles.py --workspace <root> --dry-run`; treats the workspace as behind although the toolkit versions are equal; says the toolkit is current and the role files are not; offers the upgrade walkthrough before the tour"
   },
   {
-    "prompt": "Give me a tour. (versions equal, role preview has nothing to add, status shows schema_current false with an older schema_version)",
-    "expect": "one statement that the index was not migrated and that 'bootstrap upgrade' offers the migration again; no dry-run preview and no walkthrough; then the returning-user menu"
+    "id": "tutorial-index-not-migrated",
+    "scenario": "Toolkit and roles current, index on an older schema",
+    "setup": {
+      "index": "legacy"
+    },
+    "prompt": "Give me a tour.",
+    "expect": "says the index was not migrated, so search and indexing are off; says that `bootstrap upgrade` offers the migration again; runs no `install --dry-run` preview and gives no upgrade walkthrough; then offers the returning-user menu or the tour; runs no `db migrate`"
   },
   {
-    "prompt": "Go ahead, just do it. (said after the upgrade preview)",
-    "expect": "treats this as the request for bootstrap upgrade; says it is switching to pka-bootstrap and follows that skill's Upgrade procedure, including asking before the index migration and the refresh"
-  },
-  {
-    "prompt": "What can PKA do? (workspace first bootstrapped on the installed release: no .pka/upgrade-backups/, no what's-new entry in the log)",
-    "expect": "does not offer 'what's new'; ordinary menu of capabilities"
+    "id": "tutorial-go-ahead-hands-off",
+    "scenario": "'Go ahead' after the preview is the request for the upgrade",
+    "setup": {
+      "toolkit": "absent",
+      "roles": "v1.7.0"
+    },
+    "prompt": "Do I need to upgrade?",
+    "followups": [
+      "Go ahead, just do it."
+    ],
+    "expect": "the first reply is the upgrade walkthrough: it says the workspace is behind and previews with the plugin's `install --workspace <root> --dry-run`; treats `go ahead` as the request for bootstrap upgrade and says it is switching to pka-bootstrap; then follows the upgrade procedure: runs the plugin's installer for real, then `.pka/upgrade-roles.py --workspace`; asks before running --refresh"
   }
 ]

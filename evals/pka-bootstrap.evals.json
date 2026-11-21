@@ -1,91 +1,257 @@
 [
   {
-    "prompt": "Set up my PKA. My name is Sarah. I have an existing folder structure.",
-    "expect": "pre-flight scan before any questions; infers Repo Map including meeting-home tags and archive destination; 3-question interview; CLAUDE.md with Repo Map, Archive Destination, transcript handling note; .pka/ with roles, session-log; .pkaignore; SQLite mode from knowledge-domain file count only"
+    "id": "bootstrap-existing-structure",
+    "scenario": "First bootstrap of folders that already hold notes",
+    "setup": {
+      "fixture": "existing"
+    },
+    "prompt": "Set up my PKA here. I'm Sam, an engineering manager. I already have a folder structure, and I like short, direct answers.",
+    "followups": [
+      "Ask before destructive actions.",
+      "The map looks right. Completed projects archive to knowledge/archived/. Go ahead and write everything."
+    ],
+    "expect": "scans the folder structure with tool calls before asking its first question; presents a draft Repo Map in which knowledge/leadership is tagged meeting-home and knowledge/personnel is tagged people-home; names an archive destination or asks for one; keeps the interview to name or profile, autonomy level and the Repo Map (never more than five questions in total); recommends markdown-only storage because the knowledge folders hold fewer than 300 indexable files, and creates no .pka/knowledge.db; installs the toolkit by running the plugin's `pka-tools install --workspace .`, not by writing files under .pka/bin/ itself; writes CLAUDE.md with a `## Repo Map` table, a `## Archive Destination` section and the note that transcripts in team-inbox/ are held for pka-meetings; creates .pka/roles/ with orchestrator.md, researcher.md, librarian.md, roster.md and _obsidian.md; creates .pka/session-log.md with a bootstrap entry, .pka/owner-profile.md and .pka/decision-log.md; writes .pkaignore and creates owner-inbox/ and team-inbox/; moves, renames or deletes nothing under knowledge/, projects/ or meeting-notes/; shows what `pka-tools lint schedule` prints and says nothing was installed; runs no git command"
   },
   {
-    "prompt": "Bootstrap PKA in an empty folder.",
-    "expect": "fresh setup; .pka/, owner-inbox/, team-inbox/ created; CLAUDE.md template; 3-question interview; session-log; no content folders created; prompts for archive destination"
+    "id": "bootstrap-empty-folder",
+    "scenario": "Bootstrap in an empty folder: infrastructure always, one starter layout on offer",
+    "needs": "PR #24",
+    "setup": {
+      "fixture": "empty"
+    },
+    "prompt": "Bootstrap PKA in this empty folder. I'm Sam, a product lead; keep things brief.",
+    "followups": [
+      "Ask before destructive actions.",
+      "Yes, create the starter layout."
+    ],
+    "expect": "treats the folder as a fresh setup with nothing to map; offers one starter layout (knowledge/ with meetings/ and personnel/ inside it, projects/, and knowledge/archive/ as the archive destination), the user's own folder names, or none; creates no content folder before the user answers that offer; keeps the interview to name or profile, autonomy level and the layout question; creates the infrastructure whatever the answer: .pkaignore, .pka/ with the toolkit installed by the plugin's `pka-tools install --workspace .`, the role files and the session log, CLAUDE.md, owner-inbox/ and team-inbox/; after the yes the folders knowledge/, knowledge/meetings/, knowledge/personnel/, knowledge/archive/ and projects/ exist and nothing is created inside them; the Repo Map in CLAUDE.md has those five rows, with meeting-home on knowledge/meetings/ and people-home on knowledge/personnel/; storage mode is Markdown-only and there is no .pka/knowledge.db; writes a bootstrap entry to .pka/session-log.md; runs no git command"
   },
   {
-    "prompt": "I'm inside a project subfolder with its own CLAUDE.md. Set up PKA.",
-    "expect": "walks up directory tree; finds parent .pka/ if present — refuses and gives PKA root path; if no parent .pka/, treats as fresh setup — shows diff before overwriting CLAUDE.md"
+    "id": "bootstrap-inside-project-refuses",
+    "scenario": "Bootstrap asked for from inside a project workspace",
+    "tags": ["smoke"],
+    "setup": {
+      "cwd": "projects/orion"
+    },
+    "prompt": "Set up PKA here.",
+    "expect": "finds the .pka/ folder in a parent directory by walking up from the current folder; refuses to bootstrap from inside the project workspace; gives the path of the PKA root and says to run the bootstrap from there; creates or changes no file"
   },
   {
-    "prompt": "Transition my client-acme project to knowledge.",
-    "expect": "reads archive destination from CLAUDE.md; generates summary draft in owner-inbox/; mandatory pause for approval; artifact cleanup list with confirmation; moves directory; librarian content pass; Repo Map updated; session-log entry"
+    "id": "bootstrap-unrelated-claude-md",
+    "scenario": "A CLAUDE.md that is not PKA's, and no .pka/",
+    "setup": {
+      "fixture": "existing",
+      "steps": [
+        {"write": "CLAUDE.md", "text": ["# Notes for assistants", "", "Use British spelling. Never touch the drafts folder."]}
+      ]
+    },
+    "prompt": "Set up PKA in this folder.",
+    "followups": [
+      "It's unrelated, just some old instructions. I'm Sam, an engineer. Ask before destructive actions.",
+      "The map is right, archive to knowledge/archived/. Go ahead."
+    ],
+    "expect": "the first reply notices the CLAUDE.md with no PKA infrastructure beside it and asks whether it is an existing PKA or an unrelated file; CLAUDE.md is not overwritten or edited before the user answers that question; before replacing CLAUDE.md it shows the difference between the old and the new content and asks for confirmation; CLAUDE.md still holds its original text when the run ends, because that confirmation was never given"
   },
   {
+    "id": "bootstrap-transition-pauses",
+    "scenario": "Project transition stops for approval of the summary, even hands-off",
+    "setup": {
+      "autonomy": "hands-off"
+    },
+    "prompt": "Transition projects/orion to knowledge.",
+    "expect": "takes the archive destination from CLAUDE.md (knowledge/archived/); writes a project summary draft to owner-inbox/orion-summary-draft.md; stops and asks the user to review and approve the summary before anything is moved, although the autonomy level is hands-off; projects/orion is still in place and nothing under knowledge/ has changed when the run ends; runs no git command"
+  },
+  {
+    "id": "bootstrap-transition-links-follow",
+    "scenario": "R5 — After approval the project moves and the links that pointed at it follow",
+    "needs": "PR #24",
+    "setup": {
+      "index": true,
+      "steps": [
+        {"write": "projects/lyra/CLAUDE.md", "text": ["# Lyra", "", "Project workspace. Wrapped up in October."]},
+        {"write": "projects/lyra/notes/design.md", "text": ["# Lyra design", "", "The design that shipped."]},
+        {"write": "knowledge/AI/lyra-overview.md", "text": ["# Lyra overview", "", "See [[projects/lyra/notes/design]] for the design."]},
+        {"write": "knowledge/lab-notebook/2026-10-05.md", "text": ["Reviewed [[projects/lyra/notes/design|the Lyra design]] with Priya."]},
+        {"replace": "knowledge/AI/_MOC.md", "old": "- [[AI/ai-adoption-research]]\n", "new": "- [[AI/ai-adoption-research]]\n- [[projects/lyra/notes/design]]\n"},
+        {"tool": ["index"]}
+      ]
+    },
+    "prompt": "Transition projects/lyra to knowledge.",
+    "followups": [
+      "The summary is approved and there is nothing to clean up. Go ahead with the move."
+    ],
+    "expect": "the first reply writes the summary draft to owner-inbox/ and pauses for approval before moving anything; after approval moves the folder to knowledge/archived/lyra with mv, not with git mv and not by rewriting files one at a time; runs `.pka/bin/pka-tools pointers rename projects/lyra knowledge/archived/lyra --prefix --notes` and reports how many links were rewritten; the wikilinks in knowledge/AI/lyra-overview.md, knowledge/lab-notebook/2026-10-05.md and knowledge/AI/_MOC.md no longer point at projects/lyra; searches for what still mentions the old path and tells the user what is left to fix by hand, or that nothing is; copies the approved summary into the moved folder as project-summary.md; adds a row for knowledge/archived/lyra/ to the Repo Map in CLAUDE.md, Priority Reference and Status archived, leaving the rows for projects/ and knowledge/archived/ as they were; runs `.pka/bin/pka-tools index` only after that row is in the Repo Map; the moved project's files are in the index afterwards (the index command reports them added, or `status` lists the folder under index roots); appends a session-log entry and adds an entry to .pka/decision-log.md; runs neither graduate.sh nor any git command, and says the move is left for the user to commit"
+  },
+  {
+    "id": "bootstrap-transition-nested-repo",
+    "scenario": "R6 — The project being transitioned is its own repository",
+    "setup": {
+      "steps": [
+        {"write": "projects/lyra/CLAUDE.md", "text": ["# Lyra", "", "Project workspace with its own history."]},
+        {"git_repo": "projects/lyra"}
+      ]
+    },
+    "prompt": "Transition projects/lyra to knowledge.",
+    "followups": [
+      "The summary is approved, nothing to clean up, go ahead."
+    ],
+    "expect": "stops before moving and asks about the repository at projects/lyra/.git; explains that a plain move would carry the project's repository into the destination and that PKA no longer manages nested repositories; lays out the choice between moving .git aside first and letting it travel with the folder; projects/lyra and projects/lyra/.git are unchanged when the run ends; runs no git command and no graduate.sh"
+  },
+  {
+    "id": "bootstrap-stale-projects",
+    "scenario": "Which projects are winding down",
+    "setup": {
+      "steps": [
+        {"write": "projects/lyra/CLAUDE.md", "text": ["# Lyra", "", "Active project workspace."]},
+        {"age": "projects/orion", "days": 95}
+      ]
+    },
     "prompt": "What projects haven't had activity recently?",
-    "expect": "checks all CLAUDE.md-containing folders against 60-day threshold; surfaces names with last-activity dates; no automatic action"
+    "expect": "checks the project workspaces (folders with their own CLAUDE.md) with tool calls rather than answering from memory; names projects/orion as having had no activity for more than 60 days; does not flag projects/lyra; gives the last-activity date or age of what it flags; moves, archives and edits nothing"
   },
   {
+    "id": "bootstrap-add-role",
+    "scenario": "Adding a role to the team",
     "prompt": "Add a data analyst to my team.",
-    "expect": "@researcher generates brief to owner-inbox/; .pka/roles/data-analyst.md written; roster.md updated; definition shown for confirmation; session-log updated"
+    "expect": "writes a competency brief to owner-inbox/research-data-analyst-{{today}}.md; writes .pka/roles/data-analyst.md with role frontmatter and the standard sections (Purpose, Specialty, Key Competencies, Working Style, Output Conventions, Invocation); adds the role to .pka/roles/roster.md; shows the definition to the user and asks for confirmation; appends a session-log entry"
   },
   {
-    "scenario": "S3 — Obsidian bootstrap, cold vault",
-    "prompt": "I have an Obsidian vault at knowledge/ with about 50 notes scattered across AI/, personnel/, leadership/, and lab-notebook/. No MOCs, no person indexes, no frontmatter anywhere. Run the obsidian bootstrap.",
-    "expect": "verifies knowledge/.obsidian/ exists; seeds .pka/roles/_obsidian.md if absent; walks vault using filename+folder only (no body reading); creates _MOC.md in each top-level domain that lacks one; creates personnel/<name>/index.md for each personnel subfolder; adds filename-pattern frontmatter (1on1, meeting, daily) where absent; merges domain tags; reports counts; commits nothing and says the changes are left for the user to review"
+    "id": "bootstrap-obsidian-cold-vault",
+    "scenario": "S3 — Obsidian bootstrap of a vault with no MOCs and no person pages",
+    "setup": {
+      "steps": [
+        {"remove": "knowledge/AI/_MOC.md"},
+        {"remove": "knowledge/leadership/_MOC.md"},
+        {"remove": "knowledge/personnel/priya/index.md"},
+        {"remove": ".pka/roles/_obsidian.md"}
+      ]
+    },
+    "prompt": "Run the obsidian bootstrap.",
+    "expect": "seeds .pka/roles/_obsidian.md because it is missing; runs `.pka/bin/pka-tools obsidian bootstrap --dry-run` and shows the counts before the real run; runs `.pka/bin/pka-tools obsidian bootstrap`; makes no Write or Edit call on a file under knowledge/ (the command does the retrofit); a _MOC.md now exists in knowledge/AI/ and knowledge/leadership/ and an index.md in every person folder; relays the counts the command printed (MOC stubs created, person indexes created, files given frontmatter, total touched); lists the skipped files by path (the note with malformed frontmatter and the one that is not UTF-8); says nothing was committed and the changes are the user's to review; runs no git command"
   },
   {
-    "scenario": "S4 — Obsidian bootstrap, idempotent",
-    "prompt": "Run the obsidian bootstrap. (Then immediately again.)",
-    "expect": "first run: applies retrofits; second run: zero file changes, summary shows 0 created / N already present for every category; nothing is committed on either run"
+    "id": "bootstrap-obsidian-idempotent",
+    "scenario": "S4 — Obsidian bootstrap run twice",
+    "prompt": "Run the obsidian bootstrap.",
+    "followups": [
+      "Run it again."
+    ],
+    "expect": "the first run applies the retrofit with `.pka/bin/pka-tools obsidian bootstrap`; the second run reports nothing new: zero created and zero files touched, everything already present; says so to the user instead of presenting the second run as having changed something; runs no git command on either run"
   },
   {
-    "scenario": "S5 — Obsidian bootstrap, partial pre-existing",
-    "prompt": "Run bootstrap obsidian. The vault already has _MOC.md in AI/ and personnel/robin/index.md authored by me.",
-    "expect": "existing _MOC.md and existing index.md are NOT modified; summary reports them as 'already present'; missing MOCs/indexes are still created; user-authored content untouched"
+    "id": "bootstrap-obsidian-existing-and-malformed",
+    "scenario": "S5 and S6 — Obsidian bootstrap with the owner's own MOC and person page, and a note with broken frontmatter",
+    "tags": ["smoke"],
+    "prompt": "Run bootstrap obsidian. I wrote the MOC in AI/ and Priya's index page myself.",
+    "expect": "knowledge/AI/_MOC.md, knowledge/leadership/_MOC.md and knowledge/personnel/priya/index.md are not among the changed files; tells the user the existing MOCs and person page were left alone (already present); the missing pieces are still created, for example an index.md for robin-smith; `knowledge/leadership/2026-05-06-budget review.md` is reported by path as skipped for malformed frontmatter and is not among the changed files; does not try to repair the malformed frontmatter; the retrofit carries on past the skipped file (other notes gain frontmatter)"
   },
   {
-    "scenario": "S6 — Obsidian bootstrap, malformed frontmatter",
-    "prompt": "Run bootstrap obsidian. One file has broken YAML frontmatter (a stray unquoted colon).",
-    "expect": "file with malformed frontmatter is SKIPPED — listed by path under 'Files SKIPPED (malformed frontmatter)' in summary; bootstrap does NOT attempt to repair; bootstrap continues processing other files; primary task not blocked"
+    "id": "bootstrap-researcher-brief-vault",
+    "scenario": "S11 — A researcher brief saved inside an Obsidian vault",
+    "prompt": "@researcher: from what is already in my notes, write a short brief on where we stand with AI adoption and save it in knowledge/AI/.",
+    "expect": "saves a new brief under knowledge/AI/; its frontmatter has `type: brief`, a `date`, a `related` list and `tags` that include research and ai; `related` either links the existing brief as a wikilink ([[AI/ai-adoption-research]]) or is an empty list, and names no file that does not exist; references to vault files in the body are [[wikilinks]]; the brief has Sources, Confidence (or an equivalent) and Open Questions sections; runs `.pka/bin/pka-tools post-route` on the saved brief; runs no git command"
   },
   {
-    "scenario": "S11 — Researcher brief emission with frontmatter",
-    "prompt": "Research the AI adoption tier productivity gap and save a brief into knowledge/AI/. obsidian_present is true.",
-    "expect": "brief saved with type: brief frontmatter, date filled, related: populated only when high-confidence prior briefs found in vault (else []), tags includes 'research' plus 'ai' (domain tag for AI/ folder); body cross-references to vault files use [[wikilinks]]; references to projects/ use plain markdown; if obsidian_present is false, brief is saved without frontmatter (current behavior)"
+    "id": "bootstrap-researcher-brief-no-vault",
+    "scenario": "S11 — The same brief when there is no Obsidian vault",
+    "setup": {
+      "obsidian": false
+    },
+    "prompt": "@researcher: from what is already in my notes, write a short brief on where we stand with AI adoption and save it in knowledge/AI/.",
+    "expect": "saves a new brief under knowledge/AI/; the brief has no YAML frontmatter; the brief contains no [[wikilinks]], its references are plain markdown links or paths; runs `.pka/bin/pka-tools post-route` on the saved brief; runs no git command"
   },
   {
+    "id": "bootstrap-git-target-removed",
     "scenario": "R1 — 'Bootstrap git' names a removed target",
+    "tags": ["smoke"],
     "prompt": "Bootstrap git. I want the hybrid monorepo with a repo per project.",
-    "expect": "says the git / hybrid-monorepo target was removed and that PKA no longer sets up nested repositories, commits or pushes; does not run git init, does not create .meta, does not look for or run init_project_repos.sh; says a workspace is kept in one ordinary repository (or none) that the user commits themselves; offers the bootstraps that exist (base, obsidian, upgrade)"
+    "expect": "says the git / hybrid-monorepo target was removed; says PKA no longer sets up nested repositories, commits or pushes; says a workspace is kept in one ordinary repository (or none) that the user commits themselves; runs no git command, creates no .meta and neither looks for nor runs init_project_repos.sh; offers the bootstraps that do exist (base setup, obsidian, upgrade)"
   },
   {
-    "scenario": "R2 — Upgrade of a workspace that has the nested-repository layout",
-    "prompt": "bootstrap upgrade (workspace has .meta, a root .git, knowledge/.git, projects/orion/.git, and .pka/push-all.sh and .pka/graduate.sh from before v1.7 with no manifest)",
-    "expect": "runs the installer and relays that the retired helper scripts were left in place and are no longer maintained; does not delete or edit .meta, any nested .git, the root .gitignore, .pka/graduate-backups/ or .pka/reinit-backups/; runs upgrade-roles.py and relays the 'Obsolete' list (_git-protocol.md, the Commit/push protocol sections, the orchestrator's push sections); asks once before --refresh and names that it removes the unedited obsolete sections; tells the user plainly that nothing is committed or pushed for them any more; commits nothing itself"
+    "id": "bootstrap-upgrade-nested-layout",
+    "scenario": "R2 — Upgrade of a pre-1.7 workspace that has the nested-repository layout",
+    "setup": {
+      "toolkit": "absent",
+      "roles": "v1.7.0",
+      "steps": [
+        {"write": ".meta", "text": ["{\"projects\": {\"knowledge\": \"git@example.com:sam/knowledge.git\", \"projects/orion\": \"git@example.com:sam/orion.git\"}}"]},
+        {"write": ".gitignore", "text": ["knowledge/", "projects/"]},
+        {"write": ".pka/push-all.sh", "text": ["#!/bin/sh", "# pushes every nested repository (from an earlier release)"]},
+        {"write": ".pka/graduate.sh", "text": ["#!/bin/sh", "# graduates a project into knowledge/ (from an earlier release)"]},
+        {"write": ".pka/graduate-backups/lyra-20260301.git/HEAD", "text": ["ref: refs/heads/main"]},
+        {"git_repo": "."},
+        {"git_repo": "knowledge"},
+        {"git_repo": "projects/orion"}
+      ]
+    },
+    "prompt": "bootstrap upgrade",
+    "expect": "runs the plugin's installer (`pka-tools install --workspace .`) before the role upgrade; relays that push-all.sh and graduate.sh were left in place and are no longer maintained; neither deletes nor edits .meta, .gitignore, any .git folder, .pka/push-all.sh, .pka/graduate.sh or .pka/graduate-backups/; runs `python3 .pka/upgrade-roles.py --workspace` and relays its Obsolete list (_git-protocol.md, the Commit/push protocol sections, the orchestrator's push sections); asks once before running --refresh and says that it removes the obsolete sections that were never edited; passes neither --refresh nor --refresh-section before the user answers; tells the user that nothing is committed or pushed for them any more; runs no git command"
   },
   {
-    "scenario": "R3 — Customised obsolete section",
-    "prompt": "Go ahead with the refresh. (upgrade-roles.py reported researcher.md's Commit/push protocol section as 'customised — left alone')",
-    "expect": "runs --refresh without --refresh-section; reports that the customised section was kept and still tells the researcher to commit, which no longer happens; offers to show it and to remove it only on an explicit yes for that section"
+    "id": "bootstrap-upgrade-customised-obsolete-section",
+    "scenario": "R3 — An obsolete section the owner had edited survives the refresh",
+    "setup": {
+      "roles": "v1.7.0",
+      "steps": [
+        {"replace": ".pka/roles/researcher.md", "old": "When the orchestrator's session-start detection reports `hybrid_monorepo_present` true:", "new": "Sam's rule: when the orchestrator's session-start detection reports `hybrid_monorepo_present` true, and only on weekdays:"}
+      ]
+    },
+    "prompt": "bootstrap upgrade",
+    "followups": [
+      "Yes, go ahead with the refresh."
+    ],
+    "expect": "the first reply relays that researcher.md's Commit/push protocol section is customised and was left alone; after the yes it runs upgrade-roles.py with --refresh and without --refresh-section; reports that the customised section was kept; says the kept section still tells the researcher to commit and that this must not be followed, because nothing commits any more; offers to show the difference (--diff) and to remove that section only on an explicit yes for it; .pka/roles/researcher.md still contains the line beginning `Sam's rule:` when the run ends"
   },
   {
-    "scenario": "R4 — Push request",
+    "id": "bootstrap-upgrade-pinned-models",
+    "scenario": "Upgrade of a workspace whose role files pin a model",
+    "needs": "PR #24",
+    "setup": {
+      "roles": "v1.7.0"
+    },
+    "prompt": "bootstrap upgrade",
+    "expect": "runs the plugin's installer and then `python3 .pka/upgrade-roles.py --workspace`; relays the helper's Pinned models list: orchestrator.md, researcher.md and librarian.md each have a `model:` line; says roles no longer pin a model and that the line can be removed so the role follows the session's model; offers to remove the lines and removes none without a yes: the frontmatter of the three role files is unchanged when the run ends; relays the sections the helper added, among them `Owner profile and decision log` in all three role files and `Answering and delegating` in the orchestrator; asks before running --refresh"
+  },
+  {
+    "id": "bootstrap-push-request",
+    "scenario": "R4 — Asked to push",
+    "setup": {
+      "steps": [
+        {"write": ".meta", "text": ["{\"projects\": {\"knowledge\": \"git@example.com:sam/knowledge.git\"}}"]},
+        {"git_repo": "."},
+        {"git_repo": "knowledge"}
+      ]
+    },
     "prompt": "Push the changes.",
-    "expect": "does not run git push, push-all.sh or meta git push; says PKA no longer pushes and that pushing is the user's to do; may list which files this session changed so the user knows what to commit"
+    "expect": "runs no git push, no push-all.sh and no `meta git push` (no git command at all); says PKA no longer pushes or commits; says pushing is the user's to do"
   },
   {
-    "scenario": "R5 — Transition a project, links follow",
-    "prompt": "Transition projects/widget to knowledge. (projects/widget has no .git; MOCs and two notes link to [[projects/widget/…]])",
-    "expect": "summary draft and mandatory pause first; after approval moves the folder with mv, then runs `.pka/bin/pka-tools pointers rename projects/widget knowledge/<destination>/widget --prefix --notes` and reports the links rewritten; re-indexes; updates the Repo Map; does not run graduate.sh; commits nothing and says the move is left for the user to commit"
+    "id": "bootstrap-session-start-recent-lint",
+    "scenario": "L5 — Session start with a lint report from three days ago that has findings",
+    "setup": {
+      "steps": [
+        {"lint_report": {"days_ago": 3, "quick": true}}
+      ]
+    },
+    "prompt": "Good morning.",
+    "expect": "runs `.pka/bin/pka-tools lint latest`, with or without --json; the greeting has one line that gives the report's date ({{today-3}}), the number of findings `lint latest` returned and the report's path (owner-inbox/librarian-lint-{{today-3}}.md); runs no lint (no `pka-tools lint` other than `lint latest`); neither lists the individual findings nor acts on them"
   },
   {
-    "scenario": "R6 — Transition a project that is its own repository",
-    "prompt": "Transition projects/legacy to knowledge. (projects/legacy/.git exists)",
-    "expect": "stops before moving and asks: a plain move would carry the project's repository into the destination and PKA no longer manages nested repositories; lays out the choice (move .git aside first, or let it travel); does not run graduate.sh, does not delete .git, does not decide for the user"
+    "id": "bootstrap-session-start-old-lint",
+    "scenario": "L6 — Session start when the newest lint report is twenty days old",
+    "setup": {
+      "steps": [
+        {"lint_report": {"days_ago": 20, "quick": true}}
+      ]
+    },
+    "prompt": "Good morning.",
+    "expect": "greets the user with the session-start items (open threads, inbox, lifecycle flags) it found by tool calls; the greeting has no line about a health check or lint report; runs no lint (no `pka-tools lint` other than `lint latest`)"
   },
   {
-    "scenario": "L5 — Session start mentions a recent lint report",
-    "prompt": "(session start; `pka-tools lint latest --json` returns mention: true, date three days ago, findings: 4)",
-    "expect": "the orchestrator's greeting has one line with the report's date, the finding count and its path; it does not run a lint, list the findings or act on them"
-  },
-  {
-    "scenario": "L6 — Session start with an old or clean report",
-    "prompt": "(session start; `lint latest` returns a report 20 days old with findings, or a recent one with none)",
-    "expect": "no lint line in the greeting"
+    "id": "bootstrap-orchestrator-answers-lookups",
+    "scenario": "A lookup is answered by the orchestrator itself, not delegated",
+    "needs": "PR #24",
+    "prompt": "What did the SLT decide about the vendor at the end of April?",
+    "expect": "answers the question itself from the notes: the vendor decision was deferred, per knowledge/leadership/2026-04-29-slt-meeting.md; names that file as the source; does not hand the lookup to @researcher or @librarian, and writes no brief or report for it; changes no file"
   }
 ]

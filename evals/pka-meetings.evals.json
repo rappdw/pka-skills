@@ -1,58 +1,206 @@
 [
   {
+    "id": "meetings-capture-unavailable-then-file",
+    "scenario": "Asked to take notes when take-notes is not installed, then given the notes to file",
+    "setup": {
+      "autonomy": "hands-off"
+    },
     "prompt": "I'm about to start a 1-1 with Priya. Take notes.",
-    "expect": "asks meeting title and attendees; invokes take-notes; on completion proposes routing to knowledge/personnel/priya/ per Repo Map; extracts action items; links attendee; updates SQLite and session-log"
+    "followups": [
+      "Here are my notes, file them. We talked about the adapter spike (she owns the write-up, due 2026-11-27), her conference talk, and on-call load. Action: Sam to review the talk outline."
+    ],
+    "expect": "checks whether take-notes is available and says live capture is not available in this session; writes no notes file and invents no meeting content before the user supplies notes; after the notes arrive files them as knowledge/personnel/priya/{{today}}-1-1-priya.md; the filed note has the action items in an `## Action Items` section as `- [ ]` lines; asks whether to add the action items to the session log's open threads; runs `.pka/bin/pka-tools post-route` on the filed note with a summary that lists topics only; knowledge/personnel/priya/index.md gains a timeline line for the note; adds a session-log entry with `pka-tools log add --role pka-meetings`; runs no git command"
   },
   {
-    "prompt": "I just dropped a Zoom transcript into team-inbox. Reconcile against my SLT meeting notes.",
-    "expect": "detects transcript; finds today's SLT notes; invokes resolve-against-transcript; routes to leadership meeting-home folder; asks about transcript disposition; indexes and logs"
+    "id": "meetings-transcript-reconcile-unavailable",
+    "scenario": "A Zoom transcript and matching notes, without resolve-against-transcript",
+    "setup": {
+      "steps": [
+        {"write": "team-inbox/GMT{{today}}-150000_Recording.transcript.vtt", "text": ["WEBVTT", "", "00:00:01.000 --> 00:00:05.000", "Priya: The vendor decision should wait for the December numbers.", "", "00:00:06.000 --> 00:00:10.000", "Robin: Agreed. I'll bring the hiring plan next week."]},
+        {"write": "meeting-notes/{{today}}-slt-notes.md", "text": ["# SLT weekly", "", "Attendees: Priya, Robin", "", "- Deferred the vendor decision.", "- Robin brings the hiring plan next week."]}
+      ]
+    },
+    "prompt": "I just dropped a Zoom transcript into team-inbox. Reconcile it against my SLT meeting notes.",
+    "expect": "finds the transcript in team-inbox/ and today's SLT notes in meeting-notes/; says resolve-against-transcript is not available, so the notes are not reconciled here, instead of presenting them as reconciled; proposes knowledge/leadership/ (the meeting-home folder) as the destination and asks before moving the notes; asks what to do with the transcript (keep, archive or delete); neither moves nor deletes the transcript"
   },
   {
-    "prompt": "File these meeting notes.",
-    "expect": "infers meeting type from notes title/attendees; proposes routing destination using Repo Map; links attendees; extracts action items; saves with date-slug filename; indexes and logs"
+    "id": "meetings-file-notes-pipeline",
+    "scenario": "Route-only: the whole post-processing pipeline",
+    "setup": {
+      "autonomy": "hands-off",
+      "steps": [
+        {"write": "meeting-notes/2026-11-19-platform-review.md", "text": ["# Platform review", "", "Date: 2026-11-19", "Attendees: Priya, Robin", "", "- Agreed to keep the adapter layer for another quarter.", "- Robin raised the on-call load.", "", "→ Priya to write up the adapter spike by 2026-11-27", "TODO: Robin drafts the on-call rota", "Action: Sam to book the follow-up"]}
+      ]
+    },
+    "prompt": "File the meeting notes in meeting-notes/2026-11-19-platform-review.md.",
+    "expect": "resolves the attendees with `.pka/bin/pka-tools people resolve`; files the note as knowledge/leadership/2026-11-19-platform-review.md; links Priya and Robin Smith under `## Attendees` with relative links to their person folders; puts the three action items in an `## Action Items` section as `- [ ]` lines, with the owner and the due date where the notes give them; asks whether to add the action items to the session log's open threads; runs `.pka/bin/pka-tools post-route` on the filed note with a timeline summary (--summary or --summary-for); the person pages of priya and robin-smith each gain one timeline line; logs the filing with `pka-tools log add --role pka-meetings`; runs no git command"
   },
   {
-    "prompt": "I have a transcript but no notes. Generate notes from it.",
-    "expect": "reads transcript from team-inbox/ or specified path; generates structured notes directly; runs full post-processing pipeline"
+    "id": "meetings-attendees-appended-at-end",
+    "scenario": "Filing notes that thinkkit wrote: an append, nothing rewritten",
+    "needs": "PR #24",
+    "setup": {
+      "autonomy": "hands-off",
+      "steps": [
+        {"write": "meeting-notes/2026-11-19-platform-review.md", "text": ["# Platform review", "", "**Date**: 2026-11-19", "**Attendees**: Priya (PM), Robin, Sam", "**Purpose**: Decide what happens to the adapter layer", "", "## Notes", "- Agreed to keep the adapter layer for another quarter.", "- Robin raised the on-call load.", "", "## Action Items", "- [ ] **Priya**: Write up the adapter spike (due: 2026-11-27)", "- [ ] **Robin**: Draft the on-call rota", "", "## Open Questions", "- Who owns the adapter layer after Q1?"]}
+      ]
+    },
+    "prompt": "File the meeting notes in meeting-notes/2026-11-19-platform-review.md.",
+    "expect": "files the note as knowledge/leadership/2026-11-19-platform-review.md; a `## Attendees` section with relative links to the person folders of priya and robin-smith is appended at the end of the note, after `## Open Questions`; the `## Notes`, `## Action Items` and `## Open Questions` sections are in the order they were written, with nothing inserted between them; the header line `**Attendees**: Priya (PM), Robin, Sam` is left exactly as it was; the two `- [ ]` lines are byte for byte as they were written (not converted to another form); runs `.pka/bin/pka-tools post-route` on the filed note, and the person pages of priya and robin-smith each gain one timeline line"
   },
   {
+    "id": "meetings-notes-from-transcript",
+    "scenario": "A transcript and no notes: PKA writes the notes itself, without thinkkit",
+    "needs": "PR #24",
+    "setup": {
+      "steps": [
+        {"write": "team-inbox/GMT{{today}}-150000_Recording.transcript.vtt", "text": ["WEBVTT", "", "00:00:01.000 --> 00:00:05.000", "Sam: Welcome to the SLT weekly. First item, the vendor decision.", "", "00:00:06.000 --> 00:00:12.000", "Priya: I'd wait for the December numbers before deciding.", "", "00:00:13.000 --> 00:00:18.000", "Robin: Fine by me. I'll bring the hiring plan next week.", "", "00:00:19.000 --> 00:00:24.000", "Sam: Then we defer. Priya, can you send me the comparison by Friday?"]}
+      ]
+    },
+    "prompt": "I have a transcript in team-inbox but no notes. Write notes from it.",
+    "expect": "reads the transcript in team-inbox/ and writes the notes itself: it does not say that thinkkit is needed for this; the notes have a title, `**Date**`, `**Attendees**` and `**Purpose**` header lines, then `## Notes`, `## Action Items` and `## Open Questions`; the notes carry a header line beginning `**Source**: written from transcript` that names the transcript file; the content comes from the transcript (the deferred vendor decision, the hiring plan, the comparison due Friday), speakers are named only as the transcript labels them, and nothing is added that the transcript does not say; saves the notes under meeting-notes/ as YYYY-MM-DD-<slug>.md with the transcript's date; shows the user the draft and files nothing under knowledge/ before they say they are happy with it; does not present the notes as reconciled, and neither moves nor deletes the transcript"
+  },
+  {
+    "id": "meetings-transcript-no-notes-offer",
+    "scenario": "A transcript turns up with no notes: writing notes from it is offered, never automatic",
+    "needs": "PR #24",
+    "setup": {
+      "steps": [
+        {"write": "team-inbox/GMT{{today}}-150000_Recording.transcript.vtt", "text": ["WEBVTT", "", "00:00:01.000 --> 00:00:05.000", "Sam: Welcome to the SLT weekly. First item, the vendor decision.", "", "00:00:06.000 --> 00:00:12.000", "Priya: I'd wait for the December numbers before deciding.", "", "00:00:13.000 --> 00:00:18.000", "Robin: Fine by me. I'll bring the hiring plan next week.", "", "00:00:19.000 --> 00:00:24.000", "Sam: Then we defer. Priya, can you send me the comparison by Friday?"]}
+      ]
+    },
+    "prompt": "I dropped a Zoom transcript into team-inbox.",
+    "expect": "finds the transcript and that there are no notes for it; offers to write notes from the transcript and waits for the answer; writes no notes file before the user says yes; says what is possible without thinkkit: filing notes the user already has as they are (checking them against the transcript needs thinkkit), or writing notes from the transcript; neither moves nor deletes the transcript"
+  },
+  {
+    "id": "meetings-action-items-this-week",
+    "scenario": "Action items come from a scan of the notes, not from full-text search",
+    "tags": ["smoke"],
+    "setup": {
+      "steps": [
+        {"write": "knowledge/leadership/{{monday}}-slt-sync.md", "text": ["# SLT sync", "", "## Action Items", "- [ ] Review the Q4 budget proposal @Sam by {{monday+4}}", "- [x] Book the room"]},
+        {"write": "knowledge/personnel/priya/{{monday}}-1-1-priya.md", "text": ["# 1-1 with Priya", "", "- [ ] Send Priya the architecture comparison @Sam"]},
+        {"write": "knowledge/leadership/{{monday-10}}-slt-sync.md", "text": ["# SLT sync", "", "- [ ] Circulate the offsite agenda @Sam"]}
+      ]
+    },
     "prompt": "What action items came out of my meetings this week?",
-    "expect": "searches session-log.md for this week's pka-meetings open thread entries; queries search_fts for '- [ ]' in recently-filed meeting notes; surfaces consolidated list with source links"
+    "expect": "runs `.pka/bin/pka-tools actions --since {{monday}}` (the Monday of this week); also reads the session log's open threads with `pka-tools log open`; lists the two open items from this week's notes (the Q4 budget proposal and the architecture comparison) with their source files; gives the owner and the due date of the budget item (Sam, {{monday+4}}); lists neither the ticked item (Book the room) nor the item from the note dated {{monday-10}}; does not look for `- [ ]` with `pka-tools search` or a query on the index"
   },
   {
-    "prompt": "take-notes isn't installed. File my meeting notes anyway.",
-    "expect": "detects missing take-notes; reports capture unavailable; proceeds with route-only mode; completes full post-processing pipeline"
+    "id": "meetings-action-items-thinkkit-form",
+    "scenario": "Action items written the way thinkkit's take-notes writes them",
+    "needs": "PR #24",
+    "setup": {
+      "steps": [
+        {"write": "knowledge/leadership/{{monday}}-planning.md", "text": ["# Planning", "", "## Action Items", "- [ ] **Robin**: Draft the Q1 hiring plan (due: {{monday+11}})", "- [ ] **Priya**: Send the adapter comparison - {{monday+4}}", "- [ ] Book the offsite venue @Sam by {{monday+8}}", "- [x] **Sam**: Circulate the agenda (due: {{monday}})"]}
+      ]
+    },
+    "prompt": "What action items do I have from this week's meetings, and who owns them?",
+    "expect": "runs `.pka/bin/pka-tools actions --since {{monday}}`; lists the three open items and not the ticked one; gives Robin as the owner of the hiring plan with the due date {{monday+11}} (from the bold name and the `(due: …)` form); gives Priya as the owner of the adapter comparison with the due date {{monday+4}} (the bare date after the dash); gives Sam as the owner of the offsite venue with the due date {{monday+8}}; takes owners and dates from the command's output and does not look for `- [ ]` with `pka-tools search` or a query on the index"
   },
   {
-    "prompt": "I was in a Orion project meeting. Route the notes there.",
-    "expect": "detects 'Orion' matches active project in Repo Map; asks: project workspace or knowledge base? Does not auto-route to project workspace"
+    "id": "meetings-project-meeting-asks",
+    "scenario": "Notes from a meeting about an active project",
+    "tags": ["smoke"],
+    "setup": {
+      "steps": [
+        {"write": "meeting-notes/{{today}}-orion-sync.md", "text": ["# Orion sync", "", "Attendees: Priya", "", "- Agreed the scope of the next milestone."]}
+      ]
+    },
+    "prompt": "I was in an Orion project meeting. The notes are in meeting-notes/{{today}}-orion-sync.md. Route them there.",
+    "expect": "recognises Orion as an active project workspace; asks whether to route to projects/orion/ now or to knowledge/ after the project wraps up; neither moves the notes nor writes into projects/orion/ before the user answers"
   },
   {
-    "prompt": "earshot recorded my SLT sync this morning. Reconcile my notes and file them.",
-    "expect": "finds capture directory via meeting.json marker; matches notes via **Recording**: header or date; reconciles against <capture-dir>/transcript.md before routing; routes only the notes file, leaving the capture directory in place; preserves the **Recording**: header line verbatim; does not ask transcript disposition for capture artifacts"
+    "id": "meetings-earshot-reconcile",
+    "scenario": "An earshot capture and the notes that point at it",
+    "setup": {
+      "autonomy": "hands-off",
+      "index": true,
+      "steps": [
+        {"write": "meeting-notes/2026-11-10-slt-sync-notes.md", "text": ["**Recording**: meeting-notes/2026-11-10_140000_slt-sync", "", "# SLT sync", "", "Attendees: Priya", "", "- Revisit the lighthouse rollout in December."]}
+      ]
+    },
+    "prompt": "earshot recorded my SLT sync on the 10th. Reconcile my notes and file them.",
+    "expect": "finds the capture directory meeting-notes/2026-11-10_140000_slt-sync by its meeting.json; matches the notes file through its `**Recording**:` header; reconciles against the capture's transcript.md before routing, or says plainly that resolve-against-transcript is not installed and that the notes are filed unreconciled; files only the notes file, to knowledge/leadership/; the capture directory and everything in it is unchanged and still under meeting-notes/; the `**Recording**: meeting-notes/2026-11-10_140000_slt-sync` line is preserved verbatim in the filed note; does not ask what to do with the transcript inside the capture directory; runs `.pka/bin/pka-tools index meeting-notes/2026-11-10_140000_slt-sync/narrative.md`; the session-log entry names the narrative"
   },
   {
+    "id": "meetings-capture-offers-reconcile",
+    "scenario": "Asked to file notes while an unreconciled capture sits beside them",
     "prompt": "File my meeting notes from meeting-notes/. There's a recording folder in there too.",
-    "expect": "detects earshot capture directory by meeting.json; if capture has unreconciled transcript.md, offers Mode 2 reconciliation before routing; never moves the capture directory; if narrative.md exists, indexes it into search_fts and references it in the session-log entry"
+    "expect": "detects the earshot capture directory by its meeting.json; offers to reconcile against the capture's transcript.md before routing, or says reconciliation is unavailable without resolve-against-transcript; does not route the notes before the user has answered that; neither moves, renames nor deletes the capture directory or anything in it"
   },
   {
-    "prompt": "File my notes from the sync with Rob and Priya.",
-    "expect": "resolves names with `pka-tools people resolve`; 'Rob' does not match robin-smith (nicknames are never guessed), so asks who Rob is instead of linking; after the user says 'Rob is Robin Smith', offers `people alias robin-smith \"Rob\"`; files with post-route so both Priya and Robin get one timeline line"
+    "id": "meetings-nickname-not-guessed",
+    "scenario": "An attendee given by a nickname",
+    "setup": {
+      "autonomy": "hands-off",
+      "steps": [
+        {"write": "meeting-notes/{{today}}-sync.md", "text": ["# Sync", "", "Attendees: Rob, Priya", "", "- Agreed the Q1 hiring plan."]}
+      ]
+    },
+    "prompt": "File my notes from the sync with Rob and Priya: meeting-notes/{{today}}-sync.md.",
+    "followups": [
+      "Rob is Robin Smith."
+    ],
+    "expect": "resolves the names with `.pka/bin/pka-tools people resolve`; does not link Rob to robin-smith on its own account: it asks who Rob is, or lists Rob without a link; after being told, offers to remember it with `people alias robin-smith \"Rob\"`, or runs that command; when the run ends the filed note is on the timelines of both priya and robin-smith, one line each; no timeline line or person page was written by an Edit or Write call"
   },
   {
-    "prompt": "File these meeting notes. Attendees: Robin, Priya.",
-    "expect": "when two person folders match 'Robin' (robin-smith, robin-chen), `people resolve` answers ambiguous; asks which Robin; never picks one; Priya is linked and gets a timeline line; Robin is added only after the user answers"
+    "id": "meetings-ambiguous-robin",
+    "scenario": "Two people answer to the same first name",
+    "setup": {
+      "autonomy": "hands-off",
+      "steps": [
+        {"write": "knowledge/personnel/robin-chen/index.md", "text": ["---", "type: person", "name: Robin Chen", "tags: [person]", "---", "", "# Robin Chen"]},
+        {"write": "meeting-notes/{{today}}-roadmap-review.md", "text": ["# Roadmap review", "", "Attendees: Robin, Priya", "", "- Moved the adapter work to Q1."]}
+      ]
+    },
+    "prompt": "File the meeting notes in meeting-notes/{{today}}-roadmap-review.md. Attendees were Robin and Priya.",
+    "followups": [
+      "Robin Smith."
+    ],
+    "expect": "runs `people resolve`, which reports Robin as ambiguous between robin-chen and robin-smith; asks which Robin was meant; before the answer neither Robin is linked and neither Robin's page gains a timeline line; Priya is linked and her page gains a timeline line; after the answer Robin Smith is linked and gets a timeline line, and Robin Chen's page is unchanged"
   },
   {
-    "prompt": "File the notes from today's all-hands. There were about 30 people there.",
-    "expect": "files the note with post-route; with more than 8 resolved attendees the timeline step adds none of them and the summary says so; does not pass --include-large unless the user asks for everyone's timeline"
+    "id": "meetings-large-meeting",
+    "scenario": "A meeting with more than eight known attendees",
+    "setup": {
+      "autonomy": "hands-off",
+      "steps": [
+        {"write": "knowledge/personnel/robin-chen/index.md", "text": ["---", "type: person", "name: Robin Chen", "---", "", "# Robin Chen"]},
+        {"write": "knowledge/personnel/taylor-brooks/index.md", "text": ["---", "type: person", "name: Taylor Brooks", "---", "", "# Taylor Brooks"]},
+        {"write": "knowledge/personnel/sasha-ortega/index.md", "text": ["---", "type: person", "name: Sasha Ortega", "---", "", "# Sasha Ortega"]},
+        {"write": "knowledge/personnel/jamie-lin/index.md", "text": ["---", "type: person", "name: Jamie Lin", "---", "", "# Jamie Lin"]},
+        {"write": "knowledge/personnel/sarah-chen/index.md", "text": ["---", "type: person", "name: Sarah Chen", "---", "", "# Sarah Chen"]},
+        {"write": "knowledge/personnel/marcus-johnson/index.md", "text": ["---", "type: person", "name: Marcus Johnson", "---", "", "# Marcus Johnson"]},
+        {"write": "meeting-notes/{{today}}-all-hands.md", "text": ["# All-hands", "", "Attendees: Priya Nair, Robin Smith, Robin Chen, Zoë Åkesson, Taylor Brooks, Sasha Ortega, Jamie Lin, Sarah Chen, Marcus Johnson, and about twenty others.", "", "- Northwind renewed for a year.", "- The lighthouse rollout starts in December."]}
+      ]
+    },
+    "prompt": "File the notes from today's all-hands: meeting-notes/{{today}}-all-hands.md. There were about 30 people there.",
+    "expect": "files the note and runs `.pka/bin/pka-tools post-route` on it; no person page gains a timeline line, because the meeting has more than 8 resolved attendees; tells the user that the timeline step added nobody because the meeting is large; does not pass --include-large"
   },
   {
-    "prompt": "File my meeting notes with Jordan, who is new.",
-    "expect": "people resolve finds no person folder for Jordan; lists Jordan without a link; does not create a person folder; files the note; the timeline step reports nobody (or only existing people) and no folder is created"
+    "id": "meetings-unknown-attendee",
+    "scenario": "An attendee who has no person folder",
+    "setup": {
+      "autonomy": "hands-off",
+      "steps": [
+        {"write": "meeting-notes/{{today}}-intro-jordan.md", "text": ["# Intro chat with Jordan", "", "Attendees: Jordan", "", "- Jordan joins the platform team in December."]}
+      ]
+    },
+    "prompt": "File my meeting notes with Jordan, who is new: meeting-notes/{{today}}-intro-jordan.md.",
+    "expect": "runs `people resolve`, which finds no person folder for Jordan; lists Jordan as an attendee without a link; creates no person folder for Jordan; files the note and runs `.pka/bin/pka-tools post-route` on it; no timeline line is written for Jordan"
   },
   {
-    "prompt": "File my 1-1 notes with Priya. This workspace isn't an Obsidian vault.",
-    "expect": "routes to the person's folder as YYYY-MM-DD-1-1-priya.md; post-route skips frontmatter and the MOC bullet (no Obsidian) but adds a timeline line to personnel/priya/index.md with a relative markdown link, kind 1on1, and a topics-only summary"
+    "id": "meetings-one-on-one-no-obsidian",
+    "scenario": "A 1-1 note in a workspace that is not an Obsidian vault",
+    "setup": {
+      "obsidian": false,
+      "autonomy": "hands-off",
+      "steps": [
+        {"write": "meeting-notes/{{today}}-priya.md", "text": ["# 1-1 with Priya", "", "- Adapter spike status", "- Her conference talk"]}
+      ]
+    },
+    "prompt": "File my 1-1 notes with Priya: meeting-notes/{{today}}-priya.md. This workspace isn't an Obsidian vault.",
+    "expect": "files the note as knowledge/personnel/priya/{{today}}-1-1-priya.md; post-route reports the frontmatter and MOC-link steps as not applicable (not an Obsidian vault); knowledge/personnel/priya/index.md gains one timeline line for the note, of kind 1on1, with a relative markdown link; the timeline summary lists topics only, with no judgement about Priya"
   }
 ]
