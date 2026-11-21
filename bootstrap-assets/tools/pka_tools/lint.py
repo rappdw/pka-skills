@@ -59,7 +59,10 @@ from typing import Dict, Iterator, List, Optional, Set, Tuple
 from . import frontmatter, pointers
 from .errors import EXIT_FAIL, EXIT_USAGE, ToolError
 from .indexer import TEXT_EXTENSIONS, _is_sidecar, _sidecar_of
-from .markdown import WIKILINK_RE, block_mask, find_heading, heading_of, link_target, protected_spans, section_end
+from .markdown import (
+    WIKILINK_RE, block_mask, find_heading, heading_of, link_target, prose_mask as _line_masks, protected_spans,
+    section_end,
+)
 from .people import registry, words_of
 from .textio import (
     GeneratedRefused, NotText, generated_problem, line_body, read_text, read_text_lossy, sha256_file, split_lines,
@@ -373,47 +376,6 @@ def rule_orphans(scan: Scan) -> List[dict]:
 
 
 # ------------------------------------------------------------ rule 2
-
-def _line_masks(lines: List[str]) -> List[bool]:
-    """Lines that hold no links to check: fenced blocks and HTML comments,
-    Obsidian `%%` comment blocks, `$$` math blocks and indented code blocks."""
-    mask = block_mask(lines)
-    inside: Optional[str] = None
-    previous_blank = True
-    previous_code = False
-    previous_text = ""
-    for idx, line in enumerate(lines):
-        if mask[idx]:
-            previous_blank, previous_code = False, False
-            continue
-        body = line_body(line)
-        stripped = body.strip()
-        if inside is not None:
-            mask[idx] = True
-            if stripped.endswith(inside) or stripped == inside:
-                inside = None
-            continue
-        for fence in ("%%", "$$"):
-            if stripped.startswith(fence) and stripped.count(fence) % 2 == 1:
-                inside = fence
-                mask[idx] = True
-                break
-        if mask[idx]:
-            continue
-        if not stripped:
-            previous_blank = True
-            continue
-        indented = body.startswith("    ") or body.startswith("\t")
-        if indented and (previous_code or (previous_blank and not _LIST_ITEM_RE.match(previous_text)
-                                           and not previous_text.startswith((" ", "\t")))):
-            mask[idx] = True
-            previous_code = True
-        else:
-            previous_code = False
-            previous_text = body
-        previous_blank = False
-    return mask
-
 
 def _guarded_spans(body: str) -> List[Tuple[int, int]]:
     """Inline code and comments, plus `%%…%%` and `$$…$$` on one line."""

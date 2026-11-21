@@ -181,6 +181,47 @@ class Shape(DashboardCase):
         self.assertIn("Reload dashboard.html", self.ok("dashboard", "data"))
 
 
+class PlainWords(DashboardCase):
+    """Titles, summaries and headings lose markdown emphasis, and only that."""
+
+    NOTE = "knowledge/AI/snake.md"
+    BODY = ("# snake_case_title and pka_tools with **bold**, _emphasis_ and `code_span`\n\n"
+            "A line with under_scores and 2*3*4 stars, a __dunder__ word, *one* ~~gone~~ `x_y*z` and a lone * star.\n\n"
+            "## The MAX_SIZE * 2 rule\n\n### ***Very*** important_thing\n")
+
+    def check(self, data):
+        note = files_of(data)[self.NOTE]
+        self.assertEqual(note["title"], "snake_case_title and pka_tools with bold, emphasis and code_span")
+        self.assertEqual(note["summary"], "A line with under_scores and 2*3*4 stars, a dunder word, one gone x_y*z "
+                                          "and a lone * star.")
+        self.assertEqual(note["headings"], ["The MAX_SIZE * 2 rule", "Very important_thing"])
+
+    def test_marks_inside_words_survive_in_both_modes(self):
+        self.write(self.NOTE, self.BODY)
+        self.check(self.data())
+        self.index()
+        self.check(self.data())
+
+    def test_unit(self):
+        from pka_tools import dashboard
+        for text, plain in (
+                ("snake_case_title", "snake_case_title"), ("2*3", "2*3"), ("2*3*4", "2*3*4"), ("a_b_c and d_e", "a_b_c and d_e"),
+                ("**bold** and __bold__", "bold and bold"), ("*it* and _it_", "it and it"), ("***both***", "both"),
+                ("**_nested_**", "nested"), ("~~struck~~", "struck"), ("`code_span`", "code_span"),
+                ("`a*b*c` and *c*", "a*b*c and c"), ("__init__", "init"), ("file __init__.py", "file __init__.py"),
+                ("5 * 3 * 2", "5 * 3 * 2"), ("a lone _ and *", "a lone _ and *"), ("**Robin**: Draft it", "Robin: Draft it"),
+                ("(*aside*)", "(aside)"), ("*not closed", "*not closed"), ("C** and D**", "C** and D**"),
+                ("[label_one](x_y.md) and [[a_b|c_d]]", "label_one and c_d"), ("- [ ] **Sam** `x`", "Sam x")):
+            self.assertEqual(dashboard._plain(text), plain, text)
+
+    @unittest.skipUnless(NODE, "node is not installed: the page's search was not run")
+    def test_the_page_finds_them(self):
+        self.write(self.NOTE, self.BODY)
+        self.data()
+        for query in ("snake_case", "snake_case_title", "under_scores", "2*3", "max_size", "pka_tools"):
+            self.assertEqual(self.page(self.path(DATA), query)["search"]["paths"], [self.NOTE], query)
+
+
 class MarkdownOnly(DashboardCase):
     def test_same_files_and_titles_without_an_index(self):
         plain = self.data()
@@ -192,6 +233,26 @@ class MarkdownOnly(DashboardCase):
         self.assertEqual(indexed["mode"], "index")
         for key in ("dirs", "tags", "files", "people", "projects", "actions", "activity", "sections", "counts"):
             self.assertEqual(plain[key], indexed[key], key)
+
+    def test_a_tag_with_a_comma_is_the_same_tags_in_both_modes(self):
+        note = "knowledge/AI/comma.md"
+        self.write(note, '---\ntags: ["a,b", " c ", plain]\n---\n# Comma\n')
+        plain = files_of(self.data())[note]["tags"]
+        self.index()
+        self.assertEqual(files_of(self.data())[note]["tags"], plain)
+        self.assertEqual(plain, ["a", "b", "c", "plain"])
+
+    def test_a_file_left_out_for_its_name_is_counted_in_both_modes(self):
+        try:
+            self.write("knowledge/AI/back\\slash.md", "# A backslash in the name\n")
+        except OSError:
+            self.skipTest("this filesystem has no backslash in names")
+        out = self.ok("dashboard", "data")
+        self.assertIn("1 file(s) with a path that is not workspace-relative were left out.", out)
+        self.assertEqual(self.json("dashboard", "data")["skipped"], 1)
+        self.index()
+        out = self.ok("dashboard", "data")
+        self.assertNotIn("back", self.text(DATA))
 
 
 class Deterministic(DashboardCase):
@@ -249,6 +310,70 @@ class Paths(DashboardCase):
             self.assertFalse(path.startswith("/") or ".." in path.split("/"), path)
             self.assertTrue(self.path(path).exists(), path)
 
+    TIMELINE_END = "<!-- /pka:timeline -->"
+
+    def add_timeline_lines(self, *lines: str) -> None:
+        self.ok("timeline", "add", "knowledge/personnel/priya/2026-03-31-1-1-priya.md")
+        index = "knowledge/personnel/priya/index.md"
+        text = self.text(index)
+        self.assertIn(self.TIMELINE_END, text)
+        self.write(index, text.replace(self.TIMELINE_END, "".join(line + "\n" for line in lines) + self.TIMELINE_END))
+
+    def test_a_timeline_link_that_leaves_the_workspace_keeps_its_text_and_loses_its_path(self):
+        outside = self.base / "outside"
+        outside.mkdir()
+        (outside / "secret-note.md").write_text("# Not in the workspace\n", encoding="utf-8")
+        self.add_timeline_lines(
+            "- 2026-11-04 · note · [[/etc/hostname]] — absolute",
+            "- 2026-11-03 · note · [[../../outside/secret-note]] — up and out, the file exists",
+            "- 2026-11-02 · note · [[../../outside/no-such-note]] — up and out, no such file",
+            "- 2026-11-01 · note · [[%s]] — the full path" % (outside / "secret-note"),
+            "- 2026-10-31 · note · [[../../../../../../../../etc/passwd]] — far up",
+            "- 2026-10-30 · note · [[AI/../leadership/2026-04-29-slt-meeting]] — dots that stay inside",
+            "- 2026-10-29 · note · [[AI/no-such-note]] — inside, no such file",
+            "- 2026-10-28 · note · [[.obsidian/app.json]] — a hidden folder")
+        for indexed in (False, True):
+            if indexed:
+                self.index()
+            code, out, err = self.tool("dashboard", "data")
+            self.assertEqual((code, err), (0, ""), "no traceback from any link text")
+            self.assertIn("6 timeline link(s) lead outside the workspace or into a hidden folder", out)
+            data = self.data()
+            self.assertEqual(self.result["skipped_links"], 6)
+            entries = {e["summary"]: e for p in data["people"] if p["slug"] == "priya" for e in p["timeline"]}
+            self.assertEqual(len(entries), 9, "every entry is kept")
+            self.assertEqual(entries["dots that stay inside"]["path"], "knowledge/leadership/2026-04-29-slt-meeting.md")
+            for summary, entry in entries.items():
+                if summary != "dots that stay inside" and entry["kind"] == "note":
+                    self.assertEqual(entry["path"], "", summary)
+            text = self.text(DATA)
+            for needle in ("secret-note", "hostname", "passwd", "outside", "..", str(self.base), ".obsidian"):
+                self.assertNotIn(needle, text)
+        # The snapshot is the same whether the file outside exists or not.
+        before = self.read(DATA)
+        (outside / "secret-note.md").unlink()
+        (outside / "no-such-note.md").write_text("now it exists\n", encoding="utf-8")
+        self.ok("dashboard", "data")
+        strip = lambda raw: re.sub(rb'"generated_at":"[^"]*"', b"", raw)
+        self.assertEqual(strip(self.read(DATA)), strip(before))
+
+    def test_a_workspace_without_stray_links_reports_none(self):
+        self.add_timeline_lines("- 2026-10-29 · note · [[AI/no-such-note]] — inside, no such file")
+        out = self.ok("dashboard", "data")
+        self.assertNotIn("timeline link", out)
+        self.data()
+        self.assertEqual(self.result["skipped_links"], 0)
+
+    def test_a_repo_map_row_for_a_hidden_folder_is_not_a_section(self):
+        claude = self.text("CLAUDE.md")
+        row = next(line for line in claude.split("\n") if line.startswith("| `knowledge/reference/`"))
+        self.write("CLAUDE.md", claude.replace(row, row + "\n" + row.replace("knowledge/reference/", ".pka/")
+                                               + "\n" + row.replace("knowledge/reference/", "knowledge/.obsidian/")))
+        data = self.data()
+        folders = [section["folder"] for section in data["sections"]]
+        self.assertIn("knowledge/reference", folders)
+        self.assertFalse([folder for folder in folders if folder.startswith(".") or "/." in folder], folders)
+
     def test_rows_with_paths_that_are_not_workspace_relative_are_left_out(self):
         import sqlite3
         self.index()
@@ -277,6 +402,27 @@ class Paths(DashboardCase):
             self.assertEqual(code, 64, out)
             self.assertIn(needle, err)
             self.assertNotIn("Traceback", err)
+
+    def test_out_is_never_a_hidden_place(self):
+        before = self.snapshot(".pka")
+        for out in (".pka/bin/pka_tools/cli.js", ".pka/bin/data.js", ".pka/data.js", "knowledge/.obsidian/x.js",
+                    ".x.js", "views/.cache/data.js", ".pka", ".pka/bin"):
+            code, _out, err = self.tool("dashboard", "data", "--out", out)
+            self.assertEqual(code, 64, out)
+            self.assertIn("must not be a hidden file or inside a hidden folder", err)
+            self.assertEqual(len(err.strip().split("\n")), 1, err)
+        self.assertEqual(self.changed(before, self.snapshot(".pka")), [])
+        self.assertFalse(self.path("knowledge/.obsidian/x.js").exists())
+        self.assertFalse(self.path(".x.js").exists())
+        self.assertFalse(self.path("views").exists())
+
+    def test_a_folder_with_the_data_files_name_is_refused(self):
+        self.path(DATA).mkdir()
+        code, _out, err = self.tool("dashboard", "data")
+        self.assertEqual(code, 1)
+        self.assertIn("dashboard-data.js is a folder", err)
+        self.assertEqual(len(err.strip().split("\n")), 1, err)
+        self.assertEqual(list(self.path(DATA).iterdir()), [])
 
     def test_awkward_names_survive_and_links_are_encoded(self):
         self.write(AWKWARD, "# Awkward\n\nBody.\n")
@@ -335,6 +481,38 @@ class Generated(DashboardCase):
         # Its own earlier output is replaced.
         self.ok("dashboard", "data")
         self.ok("dashboard", "data")
+
+    def test_an_empty_file_or_one_that_only_starts_like_ours_is_not_overwritten(self):
+        foreign = (b"", b"\n", b"/* pka-dashboard-data v", b"/* pka-dashboard-data v1 */\nmy own notes\n",
+                   b"/* pka-dashboard-data vNEXT - written by me */\nwindow.MINE = 1;\n",
+                   b"/* pka-dashboard-data v1 \xe2\x80\x94 written by `pka-tools dashboard data`. Do not edit */\n",
+                   b"\xff\xfe not text")
+        for content in foreign:
+            self.write(DATA, content)
+            err = self.refused()
+            self.assertIn("dashboard-data.js exists and was not written by `dashboard data`", err)
+            self.assertEqual(self.read(DATA), content)
+        # Its own file is replaced, also one written by a later format, with a BOM or CRLF.
+        self.path(DATA).unlink()
+        self.ok("dashboard", "data")
+        own = self.text(DATA)
+        for variant in (own.replace(" v1 ", " v12 ", 1), "\ufeff" + own, own.replace("\n", "\r\n")):
+            self.write(DATA, variant)
+            self.ok("dashboard", "data")
+            self.assertEqual(self.text(DATA).split("\n", 1)[0], own.split("\n", 1)[0])
+
+    def test_a_folder_that_cannot_be_written_is_one_line_without_an_absolute_path(self):
+        if hasattr(os, "geteuid") and os.geteuid() == 0:
+            self.skipTest("root ignores permission bits")
+        self.path("views").mkdir()
+        os.chmod(str(self.path("views")), 0o555)
+        try:
+            err = self.refused("--out", "views/data.js")
+        finally:
+            os.chmod(str(self.path("views")), 0o755)
+        self.assertIn("dashboard data not written: views/data.js could not be written (Permission denied)", err)
+        self.assertNotIn(str(self.base), err)
+        self.assertNotIn("pka-tmp", err)
 
     def test_no_workspace(self):
         empty = self.base / "empty"
@@ -475,6 +653,110 @@ class ReferencePage(DashboardCase):
         self.assertEqual(report["search"]["total"], 0)
         self.assertIn("Only titles, paths, tags, headings and summaries are searched", report["searchHtml"])
 
+    def test_a_folder_named_like_a_built_in_is_a_folder_like_any_other(self):
+        names = ("constructor", "toString", "valueOf", "__proto__", "hasOwnProperty", "prototype", "watch")
+        for name in names:
+            self.write("knowledge/AI/%s/note.md" % name, "# Note %d\n\nSummary number %d.\n" % ((names.index(name),) * 2))
+            self.write("knowledge/lab-notebook/%s/2026-04-2%d.md" % (name, names.index(name)), "# Entry\n")
+            self.write("knowledge/reference/%s/toString" % name, "plain\n")
+        self.write("knowledge/AI/__proto__/constructor.md", "# Second\n")
+        for indexed in (False, True):
+            if indexed:
+                self.index()
+            self.data()
+            report = self.page(self.path(DATA), "constructor")
+            self.assertIsNone(report["error"])
+            self.assertTrue(report["ok"], report["problem"])
+            views = {view["id"]: view for view in report["views"]}
+            for view in report["views"]:
+                self.assertNotIn("could not be shown", view["html"], view["id"])
+                self.assertNotIn("function ", view["html"], view["id"])
+                self.assertNotIn("[native code]", view["html"], view["id"])
+            for name in names:
+                self.assertIn('href="knowledge/AI/%s/"' % name, views["research"]["html"], name)
+                self.assertIn("Summary number %d." % names.index(name), views["research"]["html"], name)
+            self.assertIn("2 files", views["research"]["html"])
+            self.assertIn("knowledge/AI/constructor/note.md", report["search"]["paths"])
+
+    def test_a_status_or_a_column_named_like_a_built_in(self):
+        self.data()
+        text = self.text(DATA)
+        odd = self.base / "odd.js"
+        odd.write_text(text.replace('"status":"active"', '"status":"constructor"'), encoding="utf-8")
+        self.assertIn('"status":"constructor"', odd.read_text(encoding="utf-8"))
+        report = self.page(odd)
+        views = {view["id"]: view for view in report["views"]}
+        self.assertIn('<span class="badge constructor">constructor</span>', views["projects"]["html"])
+        self.assertNotIn("function", views["projects"]["html"])
+
+    def test_search_marks_words_with_accents(self):
+        self.index()
+        self.data()
+        report = self.page(self.path(DATA), "zurich ubersicht")
+        self.assertEqual(report["search"]["paths"], ["knowledge/AI/northwind/Übersicht – Zürich.md"])
+        self.assertIn("<mark>Übersicht</mark> – <mark>Zürich</mark>", report["searchHtml"])
+        report = self.page(self.path(DATA), "budget")
+        self.assertIn("<mark>Budget</mark> review", report["searchHtml"])
+        # What is marked is still escaped.
+        self.write("knowledge/AI/tags.md", "# A <b>bold</b> café & more\n")
+        self.ok("index")
+        self.data()
+        self.assertIn("A &lt;b&gt;bold&lt;/b&gt; <mark>café</mark> &amp; more", self.page(self.path(DATA), "cafe")["searchHtml"])
+
+    def test_incomplete_data_says_so_instead_of_staying_on_loading(self):
+        self.data()
+        text = self.text(DATA)
+        cases = {
+            "no-columns": re.sub(r'"file_columns":\[[^\]]*\],\n', "", text),
+            "no-tags": re.sub(r'\n"tags":\[[^\]]*\],', "", text),
+            "odd-rows": re.sub(r'"files":\[\n\[', '"files":[\nnull,\n[', text),
+            "cut-short": text[: len(text) // 2],
+        }
+        for name, changed in cases.items():
+            self.assertNotEqual(changed, text, name)
+            path = self.base / (name + ".js")
+            path.write_text(changed, encoding="utf-8")
+            report = self.page(path)
+            self.assertIsNone(report["error"], name)
+            self.assertFalse(report["ok"], name)
+            self.assertEqual(report["status"], "No data", name)
+            self.assertIn("pka-tools dashboard data", report["problemShown"], name)
+            self.assertNotIn("undefined", report["problemShown"], name)
+        self.assertIn("it has no <code>file_columns</code> list", self.page(self.base / "no-columns.js")["problemShown"])
+        self.assertIn("it has no <code>tags</code> list", self.page(self.base / "no-tags.js")["problemShown"])
+        self.assertIn("could not be read", self.page(self.base / "odd-rows.js")["problemShown"])
+        self.assertIn("or it is incomplete and could not be read", self.page(self.base / "cut-short.js")["problemShown"])
+
+    def test_data_dated_in_the_future_is_not_minus_days_ago(self):
+        self.data()
+        for stamp in ("2099-01-01T00:00:00Z", "not a date"):
+            path = self.base / "future.js"
+            path.write_text(re.sub(r'"generated_at":"[^"]*"', '"generated_at":"%s"' % stamp, self.text(DATA)), encoding="utf-8")
+            status = self.page(path)["status"]
+            self.assertNotIn("days ago", status)
+            self.assertNotIn("-", status.split("·")[0].split("(")[-1] if "(" in status.split("·")[0] else "")
+            self.assertNotIn("Invalid Date", status)
+            self.assertNotIn("NaN", status)
+
+    def test_open_actions_are_plain_words_and_say_the_due_date_once(self):
+        note = "knowledge/leadership/2026-11-20-hiring-sync.md"
+        self.write(note, "**Attendees**: Robin, Sam\n\n"
+                         "- [ ] **Robin**: Draft the `Q1_plan` (due: Dec 1)\n"
+                         "- [ ] Send the comparison — @Sam — by 2026-11-28\n"
+                         "- [ ] **Sam**: Book rooms (due: Friday)\n")
+        data = self.data()
+        got = {a["line"]: a for a in data["actions"] if a["path"] == note}
+        self.assertEqual((got[3]["text"], got[3]["owners"], got[3]["due"], got[3]["due_text"]),
+                         ("Robin: Draft the Q1_plan (due: Dec 1)", ["Robin"], "2026-12-01", "Dec 1"))
+        self.assertEqual((got[4]["due"], got[4]["due_text"]), ("2026-11-28", "2026-11-28"))
+        self.assertEqual((got[5]["text"], got[5]["due"], got[5]["due_text"]), ("Sam: Book rooms (due: Friday)", "", "Friday"))
+        html = {view["id"]: view for view in self.page(self.path(DATA))["views"]}["actions"]["html"]
+        self.assertIn("Robin: Draft the Q1_plan (due: Dec 1) <span class=\"badge quiet\">due 2026-12-01</span>", html)
+        self.assertIn("Send the comparison — @Sam — by 2026-11-28<div", html)
+        self.assertEqual(html.count("2026-11-28"), 1, "a date written in the item is not repeated as a badge")
+        self.assertNotIn("**", html)
+        self.assertIn("Sam: Book rooms (due: Friday)<div", html)
+
     def test_markdown_only_mode_draws_the_same_views(self):
         self.data()
         report = self.page(self.path(DATA), "budget")
@@ -491,6 +773,7 @@ class ReferencePage(DashboardCase):
         self.assertFalse(report["ok"])
         self.assertIn("dashboard-data.js", report["problemShown"])
         self.assertIn("pka-tools dashboard data", report["problemShown"])
+        self.assertIn("was not found beside this page, or it is incomplete", report["problemShown"])
 
     def test_data_from_a_later_format_is_refused_politely(self):
         self.data()

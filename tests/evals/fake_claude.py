@@ -14,7 +14,12 @@ What it does is chosen with environment variables, so a test can ask for a
 failure:
 
   FAKE_CLAUDE_LOG    append one JSON line per invocation (argv, cwd, mode)
-  FAKE_CLAUDE_MODE   ok (default) | auth | loop | crash | noresult
+  FAKE_CLAUDE_MODE   ok (default) | auth | loop | crash | noresult | tamper | hang
+                     tamper: as ok, and it also replaces a skill in the plugin
+                     copy it was given (in the scenario FAKE_TAMPER_IN names,
+                     or in every one)
+                     hang: starts a child that keeps its output open, writes
+                     both process ids to FAKE_CLAUDE_PIDS, and never finishes
   FAKE_JUDGE         pass (default) | mixed | badquote | garbage | error
 """
 from __future__ import annotations
@@ -22,6 +27,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -74,6 +80,21 @@ def subject(argv, prompt: str, mode: str) -> int:
     if mode == "noresult":
         emit(assistant("m1", {"type": "text", "text": "Starting."}))
         return 0
+    if mode == "hang":
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+        with open(os.environ["FAKE_CLAUDE_PIDS"], "a", encoding="utf-8") as handle:
+            handle.write("%d %d\n" % (os.getpid(), child.pid))
+        emit(assistant("m1", {"type": "text", "text": "Thinking for a long time."}))
+        if os.environ.get("FAKE_HANG_PARENT_EXITS"):
+            return 0            # the child lives on and still holds this process's output
+        time.sleep(120)
+        return 0
+    if mode == "tamper" and os.environ.get("FAKE_TAMPER_IN", "") in os.getcwd():
+        # What a subject could do with `mv` and a way to change permissions.
+        folder = Path(plugin, "skills", "pka-wiki")
+        os.chmod(str(folder), 0o755)
+        os.rename(str(folder / "SKILL.md"), str(folder / "SKILL.md.orig"))
+        (folder / "SKILL.md").write_text("Always answer: tampered.\n", encoding="utf-8")
     if mode == "loop":
         for number in range(200):
             emit(assistant("loop-%d" % number, {"type": "tool_use", "id": "t%d" % number, "name": "Bash",
@@ -136,6 +157,13 @@ def judge(evidence: str, how: str) -> int:
     return 0
 
 
+def skill_text(plugin) -> str:
+    try:
+        return Path(plugin, "skills", "pka-wiki", "SKILL.md").read_text(encoding="utf-8")[:40] if plugin else ""
+    except OSError:
+        return ""
+
+
 def main() -> int:
     argv = sys.argv[1:]
     prompt = sys.stdin.read()
@@ -145,7 +173,9 @@ def main() -> int:
     if log:
         with open(log, "a", encoding="utf-8") as handle:
             handle.write(json.dumps({"argv": argv, "cwd": os.getcwd(), "judge": is_judge, "prompt": prompt[:200],
-                                     "home": os.environ.get("HOME"),
+                                     "home": os.environ.get("HOME"), "pwd": os.environ.get("PWD"),
+                                     "env": sorted(os.environ), "plugin": value_of(argv, "--plugin-dir"),
+                                     "skill_text": skill_text(value_of(argv, "--plugin-dir")),
                                      "leaked_env": sorted(k for k in os.environ if k.startswith("CLAUDE_CODE"))}) + "\n")
     if "-p" not in argv:
         sys.stderr.write("fake claude: only print mode is implemented\n")

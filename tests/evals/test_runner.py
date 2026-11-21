@@ -7,7 +7,9 @@ import io
 import json
 import re
 import os
+import shlex
 import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -688,34 +690,209 @@ class Commands(Case):
         self.assertEqual(on["sandbox"], {"enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False,
                                          "autoAllowBashIfSandboxed": False, "network": {"allowedDomains": []}})
 
-    def test_child_environment(self) -> None:
-        os.environ.update({"CLAUDE_CODE_SESSION_ID": "parent", "CLAUDECODE": "1", "CLAUDE_CONFIG_DIR": "/elsewhere",
-                           "GIT_AUTHOR_NAME": "someone", "ANTHROPIC_BASE_URL": "https://gateway.example.com"})
-        env = run.child_env(self.CFG, Path("/run/s/home"), Path("/run/s/tmp"))
-        self.assertEqual([key for key in env if key.startswith("CLAUDE")], ["CLAUDE_CONFIG_DIR"])
+    SECRETS = {"GH_TOKEN": "gh-secret", "GITHUB_TOKEN": "gh-secret", "AWS_SECRET_ACCESS_KEY": "aws-secret",
+               "AWS_ACCESS_KEY_ID": "aws-id", "GOOGLE_APPLICATION_CREDENTIALS": "/creds.json",
+               "SSH_AUTH_SOCK": "/tmp/agent.sock", "OPENAI_API_KEY": "other-secret", "NPM_TOKEN": "npm-secret",
+               "CLAUDE_CODE_SESSION_ID": "parent", "CLAUDECODE": "1", "CLAUDE_CODE_ENTRYPOINT": "cli",
+               "GIT_AUTHOR_NAME": "someone", "OLDPWD": str(REPO), "PWD": str(REPO), "XDG_CONFIG_HOME": "/xdg",
+               "ANTHROPIC_CUSTOM_HEADERS": "x-secret: 1", "HTTPS_PROXY": "http://user:pw@proxy.example.com",
+               "USER": "sam", "SHELL": "/bin/zsh", "PKA_DIR": "/home/sam/notes"}
+
+    def test_child_environment_is_built_from_a_list(self) -> None:
+        for name in [key for key in os.environ if key.startswith("LC_")]:
+            del os.environ[name]
+        os.environ.update(self.SECRETS)
+        os.environ.update({"CLAUDE_CONFIG_DIR": "/elsewhere", "LANG": "en_GB.UTF-8", "LC_TIME": "de_DE.UTF-8",
+                           "TERM": "xterm", "TZ": "Europe/Zurich", "ANTHROPIC_API_KEY": "key",
+                           "ANTHROPIC_AUTH_TOKEN": "bearer", "ANTHROPIC_BASE_URL": "https://gateway.example.com",
+                           "CLAUDE_CODE_OAUTH_TOKEN": "oauth"})
+        env = run.child_env(self.CFG, Path("/run/s/home"), Path("/run/s/tmp"), Path("/run/s/ws/projects/orion"))
+        self.assertEqual(sorted(env), sorted([
+            "PATH", "LANG", "LC_TIME", "TERM", "TZ", "HOME", "TMPDIR", "PWD", "CLAUDE_CONFIG_DIR",
+            "PYTHONDONTWRITEBYTECODE", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM",
+            "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_OAUTH_TOKEN"]))
+        for name in self.SECRETS:
+            if name != "PWD":
+                self.assertNotIn(name, env)
         self.assertEqual(env["CLAUDE_CONFIG_DIR"], "/cfg")
         self.assertEqual((env["HOME"], env["TMPDIR"]), ("/run/s/home", "/run/s/tmp"))
+        self.assertEqual(env["PWD"], "/run/s/ws/projects/orion", "PWD is the folder the call starts in, not the checkout")
         self.assertEqual(env["GIT_CONFIG_GLOBAL"], "/run/s/home/.gitconfig")
-        self.assertNotIn("GIT_AUTHOR_NAME", env)
-        self.assertEqual(env["ANTHROPIC_BASE_URL"], "https://gateway.example.com")
-        real = run.child_env(dict(self.CFG, home="real"), Path("/h"), Path("/t"))
+        self.assertEqual(env["CLAUDE_CODE_OAUTH_TOKEN"], "oauth", "a token login is passed, though it starts with CLAUDE")
+        self.assertNotIn(str(REPO), json.dumps(env), "nothing in the environment names the checkout")
+        real = run.child_env(dict(self.CFG, home="real"), Path("/h"), Path("/t"), Path("/w"))
         self.assertEqual(real["HOME"], self._env["HOME"])
+        self.assertEqual((real["TMPDIR"], real["PWD"]), ("/t", "/w"))
+        self.assertNotIn("GH_TOKEN", real)
+
+    def test_login_variables_that_are_not_set_are_not_invented(self) -> None:
+        for name in run.AUTH_ENV:
+            os.environ.pop(name, None)
+        env = run.child_env(self.CFG, Path("/h"), Path("/t"), Path("/w"))
+        self.assertFalse([name for name in run.AUTH_ENV if name in env])
+
+    def test_a_variable_reaches_the_child_only_when_named(self) -> None:
+        os.environ.update({"HTTPS_PROXY": "http://proxy.example.com", "GH_TOKEN": "gh-secret"})
+        env = run.child_env(dict(self.CFG, pass_env=["HTTPS_PROXY", "NOT_SET_ANYWHERE"]), Path("/h"), Path("/t"), Path("/w"))
+        self.assertEqual(env["HTTPS_PROXY"], "http://proxy.example.com")
+        self.assertNotIn("GH_TOKEN", env)
+        self.assertNotIn("NOT_SET_ANYWHERE", env)
+
+    def test_setup_steps_get_no_secrets_either(self) -> None:
+        os.environ.update(self.SECRETS)
+        os.environ["ANTHROPIC_API_KEY"] = "key"
+        env = run.tool_env(Path("/run/s/home"))
+        for name in list(self.SECRETS) + ["ANTHROPIC_API_KEY"]:
+            self.assertNotIn(name, env)
+        self.assertEqual(env["HOME"], "/run/s/home")
 
     def test_the_plugin_copy_is_read_only_and_holds_no_answers(self) -> None:
         plugin = run.prepare_plugin(self.base)
         names = sorted(p.name for p in plugin.iterdir())
-        self.assertIn("skills", names)
-        self.assertIn("bootstrap-assets", names)
-        self.assertIn(".claude-plugin", names)
-        self.assertNotIn("evals", names)
-        self.assertNotIn("tests", names)
-        self.assertNotIn(".git", names)
+        self.assertEqual(names, [".claude-plugin", "CHANGELOG.md", "bootstrap-assets", "skills"])
         skill = plugin / "skills" / "pka-wiki" / "SKILL.md"
         self.assertFalse(skill.stat().st_mode & (stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH))
         before = run.tree_digest(plugin)
         os.chmod(str(skill), 0o644)
         skill.write_text("changed", encoding="utf-8")
         self.assertNotEqual(run.tree_digest(plugin), before)
+
+    def test_the_plugin_copy_matches_what_git_tracks(self) -> None:
+        plugin = run.prepare_plugin(self.base)
+        copied = sorted(rel for rel, info in run.snapshot(plugin).items() if not info.get("dir"))
+        proc = subprocess.run(["git", "-C", str(REPO), "ls-files", "-z", "--", ".claude-plugin", "skills",
+                               "bootstrap-assets", "CHANGELOG.md"], stdout=subprocess.PIPE, check=True)
+        tracked = sorted(name for name in proc.stdout.decode("utf-8").split("\0")
+                         if name and (REPO / name).is_file() and not (REPO / name).is_symlink())
+        self.assertEqual(copied, tracked)
+        self.assertTrue((plugin / "skills" / "pka-tutorial" / "SKILL.md").is_file())
+        self.assertTrue((plugin / "bootstrap-assets" / "tools" / "pka_tools" / "cli.py").is_file())
+
+    def checkout(self, tracked: bool) -> Path:
+        """A small stand-in checkout, with files that must never reach a subject."""
+        repo = self.base / "checkout"
+        files = {
+            ".claude-plugin/plugin.json": '{"name": "pka-skills", "version": "0.0.0"}\n',
+            "skills/pka-wiki/SKILL.md": "# the skill\n",
+            "bootstrap-assets/tools/pka-tools": "#!/usr/bin/env python3\n",
+            "CHANGELOG.md": "# Changelog\n",
+            "README.md": "# readme\n",
+            "docs/index.html": "<p>the site</p>\n",
+            "evals/pka-wiki.evals.json": "[]\n",
+            "tests/test_tools.sh": "#!/bin/sh\n",
+        }
+        for rel, text in files.items():
+            (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+            (repo / rel).write_text(text, encoding="utf-8")
+        if tracked:
+            env = dict(os.environ, HOME=str(self.home), GIT_CONFIG_GLOBAL=str(self.home / ".gitconfig"),
+                       GIT_CONFIG_NOSYSTEM="1")
+            subprocess.run(["git", "init", "-q", str(repo)], env=env, check=True, stdout=subprocess.DEVNULL)
+            subprocess.run(["git", "-C", str(repo), "add", "--", "."], env=env, check=True)
+        # What a working checkout also holds: none of this is tracked.
+        for rel in ("docs/private-plan.md", "skills/untracked-notes.md", "skills/pka-wiki/draft.md", "PRIVATE.md",
+                    "bootstrap-assets/tools/__pycache__/x.pyc", "pka-bench/results.json", ".claude-plugin/secret.json"):
+            (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+            (repo / rel).write_text("PRIVATE-TEXT\n", encoding="utf-8")
+        os.symlink(str(repo / "docs" / "private-plan.md"), str(repo / "skills" / "link-to-plan.md"))
+        return repo
+
+    def copied(self, plugin: Path):
+        return sorted(rel for rel, info in run.snapshot(plugin).items() if not info.get("dir"))
+
+    def test_an_untracked_file_never_reaches_the_plugin_copy(self) -> None:
+        repo = self.checkout(tracked=True)
+        plugin = run.prepare_plugin(self.base / "run", repo)
+        self.assertEqual(self.copied(plugin), [".claude-plugin/plugin.json", "CHANGELOG.md",
+                                               "bootstrap-assets/tools/pka-tools", "skills/pka-wiki/SKILL.md"])
+        for path in plugin.rglob("*"):
+            if path.is_file() and not path.is_symlink():
+                self.assertNotIn("PRIVATE-TEXT", path.read_text(encoding="utf-8"), path)
+        # A tracked file is copied as it is in the working tree; one removed from it is left out.
+        os.chmod(str(repo / "skills" / "pka-wiki" / "SKILL.md"), 0o644)
+        (repo / "skills" / "pka-wiki" / "SKILL.md").write_text("# edited, not committed\n", encoding="utf-8")
+        (repo / "CHANGELOG.md").unlink()
+        again = run.prepare_plugin(self.base / "run2", repo)
+        self.assertEqual((again / "skills" / "pka-wiki" / "SKILL.md").read_text(encoding="utf-8"), "# edited, not committed\n")
+        self.assertFalse((again / "CHANGELOG.md").exists())
+
+    def test_outside_git_only_the_named_parts_are_copied(self) -> None:
+        repo = self.checkout(tracked=False)
+        plugin = run.prepare_plugin(self.base / "run", repo)
+        copied = self.copied(plugin)
+        self.assertIn("skills/pka-wiki/SKILL.md", copied)
+        self.assertIn("CHANGELOG.md", copied)
+        for rel in copied:
+            self.assertIn(rel.split("/")[0], (".claude-plugin", "skills", "bootstrap-assets", "CHANGELOG.md"), rel)
+            self.assertNotIn("__pycache__", rel)
+        self.assertNotIn("skills/link-to-plan.md", copied, "a symbolic link is not followed out of the parts")
+        for name in ("docs", "evals", "tests", "pka-bench", "README.md", "PRIVATE.md"):
+            self.assertFalse((plugin / name).exists(), name)
+
+    def test_a_path_outside_the_parts_is_refused(self) -> None:
+        for rel in ("docs/v1.7-plan.md", "docs/index.html", "evals/pka-wiki.evals.json", "tests/lib.sh", "README.md",
+                    "PRIVATE.md", "pka-bench/x.json", "../outside.md", "/etc/hostname", "skills/../docs/x.md",
+                    ".git/config", "skills", "", "skills//x.md", "skills/__pycache__/x.pyc", "x/skills/SKILL.md"):
+            self.assertFalse(run.plugin_path_allowed(rel), rel)
+        for rel in ("skills/pka-wiki/SKILL.md", "bootstrap-assets/tools/pka_tools/cli.py", ".claude-plugin/plugin.json",
+                    "CHANGELOG.md", "skills/pka-interface/references/docs/x.md"):
+            self.assertTrue(run.plugin_path_allowed(rel), rel)
+        original = run.tracked_files
+        run.tracked_files = lambda repo: ["skills/pka-wiki/SKILL.md", "docs/private-plan.md"]
+        try:
+            with self.assertRaises(run.RunnerError) as caught:
+                run.plugin_files(REPO)
+        finally:
+            run.tracked_files = original
+        self.assertIn("refusing to copy 'docs/private-plan.md'", str(caught.exception))
+
+    def test_a_checkout_whose_files_git_cannot_list_is_an_error_not_a_guess(self) -> None:
+        repo = self.checkout(tracked=False)
+        (repo / ".git").write_text("gitdir: /nowhere/at/all\n", encoding="utf-8")
+        with self.assertRaises(run.RunnerError) as caught:
+            run.prepare_plugin(self.base / "run", repo)
+        self.assertIn("cannot list the tracked files", str(caught.exception))
+        self.assertNotIn("\n", str(caught.exception))
+        self.assertFalse((self.base / "run" / "plugin" / "skills").exists())
+
+    def test_nothing_in_the_plugin_copy_can_be_changed_without_a_chmod(self) -> None:
+        if hasattr(os, "geteuid") and os.geteuid() == 0:
+            self.skipTest("root ignores permission bits")
+        plugins = run.PluginCopies(self.base)
+        copy = plugins.copy_for(self.base / "one")
+        self.assertEqual(run.tree_digest(copy), plugins.digest)
+        skill = copy / "skills" / "pka-wiki"
+        for attempt in (lambda: (skill / "SKILL.md").write_text("tampered", encoding="utf-8"),
+                        lambda: os.rename(str(skill / "SKILL.md"), str(skill / "x")),
+                        lambda: (skill / "SKILL.md").unlink(),
+                        lambda: (skill / "new.md").write_text("added", encoding="utf-8"),
+                        lambda: os.rename(str(skill), str(copy / "skills" / "moved")),
+                        lambda: (copy / "extra.md").write_text("added", encoding="utf-8")):
+            with self.assertRaises(OSError):
+                attempt()
+        self.assertTrue(plugins.unchanged(copy))
+        self.assertEqual(plugins.rebuilt, 0)
+
+    def test_a_changed_copy_is_noticed_and_the_next_one_is_fresh(self) -> None:
+        plugins = run.PluginCopies(self.base)
+        copy = plugins.copy_for(self.base / "one")
+        skill = copy / "skills" / "pka-wiki"
+        os.chmod(str(skill), 0o755)
+        os.rename(str(skill / "SKILL.md"), str(skill / "x"))
+        (skill / "SKILL.md").write_text("tampered\n", encoding="utf-8")
+        self.assertFalse(plugins.unchanged(copy))
+        fresh = plugins.copy_for(self.base / "two")
+        self.assertTrue(plugins.unchanged(fresh))
+        self.assertNotEqual((fresh / "skills" / "pka-wiki" / "SKILL.md").read_text(encoding="utf-8"), "tampered\n")
+        # The run's own copy is never given out; if it is changed all the same, it is rebuilt.
+        os.chmod(str(plugins.master / "skills" / "pka-wiki"), 0o755)
+        os.chmod(str(plugins.master / "skills" / "pka-wiki" / "SKILL.md"), 0o644)
+        (plugins.master / "skills" / "pka-wiki" / "SKILL.md").write_text("tampered\n", encoding="utf-8")
+        self.assertFalse(plugins.unchanged(fresh), "a scenario during which the run's copy changed is not trusted")
+        self.assertEqual(plugins.rebuilt, 1)
+        third = plugins.copy_for(self.base / "three")
+        self.assertTrue(plugins.unchanged(third))
+        self.assertNotEqual((third / "skills" / "pka-wiki" / "SKILL.md").read_text(encoding="utf-8"), "tampered\n")
 
     def test_the_runner_is_standard_library_only_and_never_runs_git(self) -> None:
         source = (REPO / "evals" / "run.py").read_text(encoding="utf-8")
@@ -731,8 +908,13 @@ class Commands(Case):
                 self.assertNotIn(name, ("urllib", "http", "socket", "requests", "ssl", "ftplib", "smtplib"))
                 if allowed is not None:
                     self.assertIn(name, allowed | {"__future__"})
+        # One git command, and it only reads: the list of tracked files for the plugin copy.
+        self.assertEqual(source.count('"ls-files"'), 1)
+        self.assertEqual(len(re.findall(r"\[git,", source)), 1)
         self.assertNotIn('["git"', source)
         self.assertNotIn("'git'", source)
+        for verb in ("commit", "push", "add", "reset", "checkout", "stash", "clean", "config", "clone", "fetch", "pull"):
+            self.assertNotRegex(source, r"""\[git,[^\]]*["']%s["']""" % verb)
         compile(source, "run.py", "exec", flags=0, dont_inherit=True, optimize=0)
 
 
@@ -743,8 +925,6 @@ class Runs(Case):
         super().setUp()
         self.shim = self.base / "bin" / "claude"
         self.shim.parent.mkdir()
-        self.shim.write_text('#!/bin/sh\nexec "%s" "%s" "$@"\n' % (sys.executable, FAKE), encoding="utf-8")
-        os.chmod(str(self.shim), 0o755)
         self.log = self.base / "calls.jsonl"
         self.work = self.base / "work"
         self.work.mkdir()
@@ -756,8 +936,19 @@ class Runs(Case):
                 del os.environ[key]
         os.environ.update({"FAKE_CLAUDE_LOG": str(self.log), "CLAUDE_CONFIG_DIR": str(self.config),
                            "CLAUDE_CODE_SESSION_ID": "the-parent-session"})
+        self.write_shim()
+
+    def write_shim(self) -> None:
+        """The stand-in CLI. The runner builds the child's environment from a
+        list, so the FAKE_* settings of a test cannot travel through it: they
+        are written into the shim instead."""
+        settings = "".join("export %s=%s\n" % (key, shlex.quote(value)) for key, value in sorted(os.environ.items())
+                           if key.startswith("FAKE_"))
+        self.shim.write_text('#!/bin/sh\n%sexec "%s" "%s" "$@"\n' % (settings, sys.executable, FAKE), encoding="utf-8")
+        os.chmod(str(self.shim), 0o755)
 
     def go(self, *args: str, sandbox: str = "off"):
+        self.write_shim()
         out, err = io.StringIO(), io.StringIO()
         argv = list(args) + ["--claude", str(self.shim), "--work-dir", str(self.work), "--sandbox", sandbox]
         stderr, sys.stderr = sys.stderr, err
@@ -845,6 +1036,9 @@ class Runs(Case):
         self.assertEqual(one["home_changes"], ["~/outside.txt"])
         self.assertEqual(one["isolation"], {"sandbox": "off", "home": "scratch", "plugin_copy_unchanged": True,
                                             "left_in_cli_config": []})
+        self.assertIs(one["plugin_copy_changed"], False)
+        self.assertTrue(subject["plugin"].endswith("/librarian-quick-lint/plugin"), "each scenario loads its own copy")
+        self.assertEqual(subject["pwd"], subject["cwd"])
         self.assertEqual(one["turns"][0]["permission_denials"][0]["tool_input"], {"command": "git status"})
         evidence = one["evidence"]
         self.assertNotIn("SECRET-SKILL-TEXT", evidence)
@@ -1057,6 +1251,277 @@ class Runs(Case):
             sys.stderr = stderr
         self.assertEqual(code, 2)
         self.assertIn("cannot find the Claude Code CLI", err.getvalue())
+
+    # ---- what reaches the subject and the judge
+
+    def test_no_secret_of_the_parent_reaches_the_subject_or_the_judge(self) -> None:
+        secrets = dict(Commands.SECRETS)
+        del secrets["PWD"]
+        os.environ.update(secrets)
+        os.environ.update({"ANTHROPIC_API_KEY": "key-for-the-cli", "CLAUDE_CODE_OAUTH_TOKEN": "token-for-the-cli"})
+        code, out, err = self.go("--skill", "wiki", "--limit", "2", "--results-dir", str(self.results))
+        self.assertEqual((code, err), (0, ""), out)
+        calls = self.calls()
+        self.assertEqual({c["judge"] for c in calls}, {False, True})
+        allowed = {"PATH", "LANG", "TERM", "TZ", "HOME", "TMPDIR", "PWD", "CLAUDE_CONFIG_DIR", "PYTHONDONTWRITEBYTECODE",
+                   "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
+                   "ANTHROPIC_BASE_URL", "CLAUDE_CODE_OAUTH_TOKEN"}
+        for call in calls:
+            names = {name for name in call["env"] if not name.startswith(("FAKE_", "LC_"))}
+            # A shell adds a few of its own to whatever it is given.
+            names -= {"SHLVL", "_", "OLDPWD", "IFS", "OPTIND", "PS1", "PS2", "PS4", "MAILCHECK", "PPID"}
+            self.assertEqual(names - allowed, set(), "judge" if call["judge"] else "subject")
+            self.assertTrue({"ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"} <= names, "the CLI can still log in")
+            for name in secrets:
+                if name != "OLDPWD":
+                    self.assertNotIn(name, call["env"], name)
+            self.assertEqual(call["pwd"], call["cwd"])
+            self.assertNotIn(str(REPO), call["pwd"])
+        self.assertIn("environment built from a list", out)
+        self.assertNotIn("--pass-env", out.split("How a run is confined")[1].split("\n\n")[0])
+
+    def test_pass_env_is_explicit_and_recorded(self) -> None:
+        os.environ.update({"HTTPS_PROXY": "http://proxy.example.com", "GH_TOKEN": "gh-secret"})
+        code, out, err = self.go("--scenario", "wiki-list", "--results-dir", str(self.results), "--pass-env", "HTTPS_PROXY")
+        self.assertEqual((code, err), (0, ""), out)
+        for call in self.calls():
+            self.assertIn("HTTPS_PROXY", call["env"])
+            self.assertNotIn("GH_TOKEN", call["env"])
+        self.assertIn("because you asked (--pass-env): HTTPS_PROXY", out)
+        self.assertEqual(json.loads((self.results / "run.json").read_text(encoding="utf-8"))["pass_env"], ["HTTPS_PROXY"])
+        self.assertIn("extra variables passed to the CLI: HTTPS_PROXY", (self.results / "summary.md").read_text(encoding="utf-8"))
+        code, out, err = self.go("--scenario", "wiki-list", "--results-dir", str(self.results), "--pass-env", "A=B")
+        self.assertEqual(code, 2)
+        self.assertIn("--pass-env takes the name of an environment variable", err)
+
+    # ---- the plugin copy
+
+    def test_a_scenario_that_changes_its_plugin_copy_is_invalid_and_the_next_gets_a_fresh_one(self) -> None:
+        os.environ.update({"FAKE_CLAUDE_MODE": "tamper", "FAKE_TAMPER_IN": "/wiki-list/"})
+        three = ["--scenario", "wiki-list", "--scenario", "wiki-create", "--scenario", "wiki-retire"]
+        code, out, err = self.go(*three, "--results-dir", str(self.results))
+        self.assertEqual(code, 2, out)
+        records = {r["id"]: r for r in run.read_results(self.results)}
+        self.assertEqual(len(records), 3)
+        bad = records["wiki-list"]
+        self.assertEqual((bad["status"], bad["verdict"], bad["plugin_copy_changed"]), ("invalid", None, True))
+        self.assertIs(bad["isolation"]["plugin_copy_unchanged"], False)
+        self.assertIn("was changed during it", bad["error"])
+        self.assertIsNone(bad["judgement"])
+        self.assertTrue(bad["evidence"], "what happened is kept for whoever looks into it")
+        subjects = [c for c in self.calls() if not c["judge"]]
+        self.assertEqual(len([c for c in self.calls() if c["judge"] and "/wiki-list/" in c["cwd"]]), 0,
+                         "an invalid run is not sent to the judge")
+        for call in subjects:
+            self.assertNotIn("tampered", call["skill_text"], "every scenario starts from an unchanged copy: %s" % call["cwd"])
+        self.assertEqual(len({c["plugin"] for c in subjects}), 3)
+        for ident, record in records.items():
+            if ident != "wiki-list":
+                self.assertEqual((record["status"], record["plugin_copy_changed"]), ("graded", False), ident)
+                self.assertIs(record["isolation"]["plugin_copy_unchanged"], True)
+        summary = (self.results / "summary.md").read_text(encoding="utf-8")
+        self.assertIn("- INVALID: 1 scenario(s) changed the plugin copy they were given and were not graded: wiki-list.", summary)
+        self.assertIn("| wiki-list | pka-wiki | invalid |", summary)
+        self.assertIn("- Scenarios: 3 (graded 2, not graded 1)", summary)
+        self.assertEqual(json.loads((self.results / "summary.json").read_text(encoding="utf-8"))["totals"]["invalid"], ["wiki-list"])
+        self.assertIn("invalid ", out)
+        # --resume runs the invalid one again; --rejudge does not grade it.
+        os.environ["FAKE_CLAUDE_MODE"] = "ok"
+        before = len(self.calls())
+        code, out, err = self.go(*three, "--rejudge", str(self.results))
+        self.assertEqual([c["cwd"].split("/")[-2] for c in self.calls()[before:] if c["judge"]].count("wiki-list"), 0)
+        code, out, err = self.go(*three, "--resume", str(self.results))
+        self.assertEqual(code, 0, out + err)
+        self.assertEqual(self.result("pka-wiki", "wiki-list")["status"], "graded")
+
+    def test_an_invalid_scenario_is_caught_even_when_the_subject_then_fails(self) -> None:
+        os.environ["FAKE_CLAUDE_MODE"] = "tamper"
+        original = run.parse_stream
+        run.parse_stream = lambda lines: ([], None, {})         # as if the CLI printed no result
+        try:
+            code, out, err = self.go("--scenario", "wiki-list", "--results-dir", str(self.results))
+        finally:
+            run.parse_stream = original
+        got = self.result("pka-wiki", "wiki-list")
+        self.assertEqual((got["status"], got["plugin_copy_changed"]), ("invalid", True))
+
+    # ---- setup that cannot be built
+
+    BAD_STEPS = (
+        ({"write": "CLAUDE.md/x", "text": "x"}, "step 1 (write CLAUDE.md/x) cannot be applied"),
+        ({"write": "n" * 300, "text": "x"}, "…) cannot be applied: File name too long"),
+        ({"copy": "knowledge/AI", "to": "knowledge/leadership"}, "step 1 (copy knowledge/AI) cannot be applied: File exists"),
+        ({"mkdir": "CLAUDE.md"}, "cannot be applied"),
+    )
+    BAD_FILES = (
+        ({"write": ".", "text": "x"}, "not the workspace itself"),
+        ({"age": "CLAUDE.md", "days": "abc"}, "'days' must be a number"),
+        ({"age": "CLAUDE.md", "days": True}, "'days' must be a number"),
+        ({"replace": "CLAUDE.md", "old": 5, "new": "x"}, "'old' must be a string or a list of strings"),
+        ({"write": "a.md", "text": {"a": 1}}, "'text' must be a string or a list of strings"),
+        ({"write": 7, "text": "x"}, "setup path must be relative"),
+        ({"lint_report": {"days_ago": "3"}}, "lint_report takes an object"),
+        ({"tool": ["status"], "allow_fail": "yes"}, "'allow_fail' must be true or false"),
+    )
+
+    def test_a_step_that_fails_is_one_line_never_a_traceback(self) -> None:
+        for number, (step, expected) in enumerate(self.BAD_STEPS):
+            with self.assertRaises(run.RunnerError) as caught:
+                self.build({"steps": [step]}, "bad%d" % number)
+            self.assertIn(expected, str(caught.exception))
+            self.assertNotIn("\n", str(caught.exception))
+            self.assertNotIn(str(self.base), str(caught.exception), "no absolute path in the message")
+        for step, expected in self.BAD_FILES:
+            problems = run.validate_setup({"steps": [step]}, "x")
+            self.assertTrue(any(expected in problem for problem in problems), (step, problems))
+
+    def with_scenarios(self, *scenarios):
+        """Run with these scenarios in place of the shipped files."""
+        from unittest import mock
+        evals = self.base / "evals"
+        evals.mkdir(exist_ok=True)
+        (evals / "pka-wiki.evals.json").write_text(json.dumps(list(scenarios)), encoding="utf-8")
+        return mock.patch.object(run, "EVALS_DIR", evals)
+
+    def test_a_setup_that_fails_does_not_cost_the_run_its_summary(self) -> None:
+        good = {"id": "wiki-good", "prompt": "List the wikis.", "expect": "lists them"}
+        scenarios = [{"id": "wiki-bad-%d" % n, "prompt": "x", "expect": "y", "setup": {"steps": [step]}}
+                     for n, (step, _expected) in enumerate(self.BAD_STEPS)] + [good]
+        with self.with_scenarios(*scenarios):
+            code, out, err = self.go("--dry-run")
+            self.assertEqual(code, 2)
+            self.assertNotIn("Traceback", out + err)
+            self.assertEqual(out.count("SETUP FAILED: setup: step 1"), len(self.BAD_STEPS), out)
+            self.assertIn("1 scenario(s) prepared, %d failed to set up." % len(self.BAD_STEPS), out)
+            code, out, err = self.go("--results-dir", str(self.results))
+            self.assertEqual((code, err), (2, ""), out)
+        self.assertTrue((self.results / "summary.md").is_file(), "the scenario that ran is summarised")
+        records = {r["id"]: r for r in run.read_results(self.results)}
+        self.assertEqual(records["wiki-good"]["status"], "graded")
+        self.assertEqual(records["wiki-bad-0"]["status"], "error")
+        self.assertIn("step 1 (write CLAUDE.md/x) cannot be applied", records["wiki-bad-0"]["error"])
+        self.assertEqual(len([c for c in self.calls() if not c["judge"]]), 1, "only the good scenario reached the CLI")
+        self.assertEqual(list(self.work.iterdir()), [])
+
+    def test_an_eval_file_with_a_wrong_type_is_refused_before_anything_runs(self) -> None:
+        for step, expected in self.BAD_FILES:
+            with self.with_scenarios({"id": "wiki-bad", "prompt": "x", "expect": "y", "setup": {"steps": [step]}}):
+                code, out, err = self.go("--dry-run")
+            self.assertEqual(code, 2, step)
+            self.assertIn(expected, err)
+            self.assertNotIn("Traceback", err)
+        with self.with_scenarios({"id": "wiki-empty", "prompt": "x", "expect": ";;"}):
+            code, out, err = self.go("--validate")
+        self.assertEqual(code, 2)
+        self.assertIn("'expect' holds no expectation", err)
+        self.assertEqual(self.calls(), [])
+
+    def test_damaged_result_files_are_one_line_or_ignored(self) -> None:
+        code, _, _ = self.go("--scenario", "wiki-list", "--results-dir", str(self.results))
+        self.assertEqual(code, 0)
+        # A result file without its skill is not a result: --resume carries on without it.
+        (self.results / "pka-wiki" / "stray.json").write_text('{"id": "stray", "status": "graded"}', encoding="utf-8")
+        (self.results / "pka-wiki" / "broken.json").write_text("{not json", encoding="utf-8")
+        code, out, err = self.go("--scenario", "wiki-list", "--resume", str(self.results))
+        self.assertEqual((code, err), (0, ""), out)
+        self.assertIn("1 scenario(s) selected, 1 already graded", out)
+        for damaged in ("{not json", "[1, 2]"):
+            (self.results / "run.json").write_text(damaged, encoding="utf-8")
+            before = len(self.calls())
+            code, out, err = self.go("--scenario", "wiki-list", "--rejudge", str(self.results))
+            self.assertEqual(code, 2)
+            self.assertEqual(err.count("\n"), 1, err)
+            self.assertIn("run.json", err)
+            self.assertNotIn("Traceback", err)
+            self.assertEqual(len(self.calls()), before, "nothing is sent to the judge before the problem is reported")
+
+    # ---- where scratch folders may be made
+
+    def test_a_work_folder_in_the_checkout_or_at_the_root_is_refused(self) -> None:
+        for folder in (REPO, REPO / "evals", REPO / "tests" / "evals", Path("/")):
+            out, err = io.StringIO(), io.StringIO()
+            stderr, sys.stderr = sys.stderr, err
+            try:
+                code = run.main(["--dry-run", "--scenario", "wiki-list", "--work-dir", str(folder)], out)
+            finally:
+                sys.stderr = stderr
+            self.assertEqual(code, 2, folder)
+            self.assertEqual(err.getvalue().count("\n"), 1, err.getvalue())
+            self.assertIn("filesystem root" if folder == Path("/") else "inside this checkout", err.getvalue())
+            self.assertEqual(sorted(REPO.glob("**/pka-evals.*")), [], "nothing was created in the checkout")
+
+    # ---- stopping
+
+    def pids(self, path: Path, wait: float = 20.0):
+        deadline = time.time() + wait
+        while time.time() < deadline:
+            if path.exists() and path.read_text(encoding="utf-8").strip():
+                return [int(part) for part in path.read_text(encoding="utf-8").split()]
+            time.sleep(0.05)
+        self.fail("the stand-in CLI never started")
+
+    def alive(self, pid: int) -> bool:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        # A zombie still has an entry; it is gone for every purpose that matters here.
+        try:
+            with open("/proc/%d/stat" % pid, encoding="utf-8") as handle:
+                return handle.read().rsplit(")", 1)[1].split()[0] != "Z"
+        except OSError:
+            return True
+
+    def gone(self, pids, wait: float = 10.0) -> bool:
+        deadline = time.time() + wait
+        while time.time() < deadline:
+            if not any(self.alive(pid) for pid in pids):
+                return True
+            time.sleep(0.05)
+        return False
+
+    @unittest.skipUnless(hasattr(os, "killpg"), "needs process groups")
+    def test_a_timeout_stops_whatever_the_cli_started(self) -> None:
+        pid_file = self.base / "pids.txt"
+        os.environ.update({"FAKE_CLAUDE_MODE": "hang", "FAKE_CLAUDE_PIDS": str(pid_file), "FAKE_HANG_PARENT_EXITS": "1"})
+        started = time.time()
+        code, out, err = self.go("--scenario", "wiki-list", "--results-dir", str(self.results), "--timeout", "2")
+        self.assertLess(time.time() - started, 20, "the run does not wait for a process that kept the output open")
+        self.assertTrue(self.gone(self.pids(pid_file)), "nothing the CLI started is left running")
+        self.assertEqual(self.result("pka-wiki", "wiki-list")["turns"][0]["stopped"], "timeout")
+        self.assertEqual(list(self.work.iterdir()), [])
+
+    @unittest.skipUnless(hasattr(os, "killpg") and hasattr(signal, "SIGTERM"), "needs process groups and SIGTERM")
+    def test_sigterm_stops_the_model_call_and_removes_the_run_folder(self) -> None:
+        for number, (signum, expected) in enumerate(((signal.SIGTERM, 128 + signal.SIGTERM), (signal.SIGINT, 130))):
+            pid_file = self.base / ("pids-%d.txt" % number)
+            os.environ.update({"FAKE_CLAUDE_MODE": "hang", "FAKE_CLAUDE_PIDS": str(pid_file)})
+            self.write_shim()
+            results = self.base / ("results-%d" % number)
+            runner = subprocess.Popen(
+                [sys.executable, str(REPO / "evals" / "run.py"), "--skill", "wiki", "--limit", "2", "--claude", str(self.shim),
+                 "--work-dir", str(self.work), "--sandbox", "off", "--results-dir", str(results), "--timeout", "100"],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+            try:
+                pids = self.pids(pid_file)
+                self.assertTrue(all(self.alive(pid) for pid in pids))
+                self.assertEqual(len(list(self.work.glob("pka-evals.*"))), 1)
+                runner.send_signal(signum)
+                out, err = runner.communicate(timeout=30)
+            finally:
+                if runner.poll() is None:
+                    runner.kill()
+                    runner.communicate()
+            self.assertEqual(runner.returncode, expected, err)
+            self.assertNotIn("Traceback", err)
+            self.assertEqual(err.count("\n"), 1, err)
+            self.assertIn("--resume", err)
+            self.assertTrue(self.gone(pids), "the model call and what it started are stopped, not orphaned")
+            self.assertEqual(list(self.work.iterdir()), [], "the run folder is removed")
+            self.assertEqual(len(pid_file.read_text(encoding="utf-8").splitlines()), 1, "no further scenario was started")
+            self.assertEqual(run.read_results(results), [], "a scenario cut short leaves no result to mistake for one")
 
     def test_list_and_validate(self) -> None:
         code, out, _ = self.go("--list", "--tag", "smoke")

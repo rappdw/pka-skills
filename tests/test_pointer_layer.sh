@@ -25,7 +25,7 @@ configure_test_git_identity
 # Obsidian the pointer layer is opt-in (PR7).
 new_vault() {
   local ws
-  ws=$(make_workspace)
+  ws=$(make_workspace) || return 1
   mkdir -p "$ws/.pka" "$ws/knowledge/.obsidian"
   install_pka_tools "$ws"
   echo "$ws"
@@ -46,7 +46,7 @@ write_note() {
 
 # ----------- PR1 -----------
 start_test "PR1 — New domain, no MOC: pointer section created with first row"
-ws=$(new_vault)
+ws=$(new_vault) || exit 1
 write_note "$ws/knowledge/northwind/2026-04-23-joint-partnership-meeting.md" \
   "type: meeting" "date: 2026-04-23" "topic: northwind-partnership-2026" \
   "attendees: [sasha-ortega, jamie-lin, taylor-brooks]" "tags: [meeting, ai]"
@@ -64,7 +64,7 @@ cleanup_workspace "$ws"
 
 # ----------- PR2 -----------
 start_test "PR2 — Existing MOC with two rows: matching route extends first row"
-ws=$(new_vault)
+ws=$(new_vault) || exit 1
 mkdir -p "$ws/knowledge/northwind"
 cat > "$ws/knowledge/northwind/_MOC.md" <<'EOF'
 # Northwind
@@ -99,7 +99,7 @@ cleanup_workspace "$ws"
 
 # ----------- PR3 -----------
 start_test "PR3 — File with non-matching topic: new row appended at bottom"
-ws=$(new_vault)
+ws=$(new_vault) || exit 1
 mkdir -p "$ws/knowledge/northwind"
 cat > "$ws/knowledge/northwind/_MOC.md" <<'EOF'
 # Northwind
@@ -127,7 +127,7 @@ cleanup_workspace "$ws"
 
 # ----------- PR4 -----------
 start_test "PR4 — Search: pointer row ranks above body matches"
-ws=$(new_vault)
+ws=$(new_vault) || exit 1
 mkdir -p "$ws/knowledge/AI/northwind"
 python3 - "$ws" <<'PY'
 import sys
@@ -161,7 +161,7 @@ cleanup_workspace "$ws"
 
 # ----------- PR5 -----------
 start_test "PR5 — Rename: pointer-row wikilinks updated across all MOCs"
-ws=$(new_vault)
+ws=$(new_vault) || exit 1
 mkdir -p "$ws/knowledge/AI" "$ws/knowledge/leadership"
 for d in AI leadership; do
 cat > "$ws/knowledge/$d/_MOC.md" <<'EOF'
@@ -193,7 +193,7 @@ cleanup_workspace "$ws"
 
 # ----------- PR6 -----------
 start_test "PR6 — Check flags broken pointer-row wikilinks"
-ws=$(new_vault)
+ws=$(new_vault) || exit 1
 mkdir -p "$ws/knowledge/AI"
 echo "body" > "$ws/knowledge/AI/exists.md"
 cat > "$ws/knowledge/AI/_MOC.md" <<'EOF'
@@ -215,7 +215,7 @@ cleanup_workspace "$ws"
 
 # ----------- cross-MOC -----------
 start_test "PR-extra — Cross-MOC duplication: row added to each tagged domain's MOC"
-ws=$(new_vault)
+ws=$(new_vault) || exit 1
 mkdir -p "$ws/knowledge/AI/northwind" "$ws/knowledge/leadership"
 write_note "$ws/knowledge/AI/northwind/2026-04-23-meeting.md" \
   "type: meeting" "date: 2026-04-23" "topic: northwind-partnership-2026" "tags: [meeting, ai, leadership]"
@@ -226,7 +226,7 @@ cleanup_workspace "$ws"
 
 # ----------- PR7 -----------
 start_test "PR7 — Without Obsidian: no MOC is created until the user opts in"
-ws=$(make_workspace)
+ws=$(make_workspace) || exit 1
 mkdir -p "$ws/.pka" "$ws/knowledge/AI" "$ws/knowledge/leadership"
 install_pka_tools "$ws"
 write_note "$ws/knowledge/AI/2026-04-23-meeting.md" \

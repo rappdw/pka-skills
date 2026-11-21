@@ -17,7 +17,7 @@ configure_test_git_identity
 
 new_vault() {
   local ws
-  ws=$(make_workspace)
+  ws=$(make_workspace) || return 1
   mkdir -p "$ws/.pka" "$ws/knowledge/.obsidian"
   install_pka_tools "$ws"
   echo "$ws"
@@ -25,7 +25,7 @@ new_vault() {
 
 # ----------- S3 -----------
 start_test "S3 — Obsidian bootstrap, cold vault"
-ws=$(new_vault)
+ws=$(new_vault) || exit 1
 mkdir -p "$ws/knowledge/AI/azure" "$ws/knowledge/personnel/robin-smith" "$ws/knowledge/personnel/jane" \
          "$ws/knowledge/leadership" "$ws/knowledge/lab-notebook"
 echo "ai content" > "$ws/knowledge/AI/foo.md"
@@ -66,7 +66,7 @@ cleanup_workspace "$ws"
 
 # ----------- S4 -----------
 start_test "S4 — Obsidian bootstrap, idempotent"
-ws=$(new_vault)
+ws=$(new_vault) || exit 1
 mkdir -p "$ws/knowledge/AI" "$ws/knowledge/personnel/robin"
 echo "ai" > "$ws/knowledge/AI/foo.md"
 echo "robin" > "$ws/knowledge/personnel/robin/2026-04-22-1on1.md"
@@ -84,7 +84,7 @@ cleanup_workspace "$ws"
 
 # ----------- S5 -----------
 start_test "S5 — Obsidian bootstrap, partial pre-existing"
-ws=$(new_vault)
+ws=$(new_vault) || exit 1
 mkdir -p "$ws/knowledge/AI" "$ws/knowledge/personnel/robin" "$ws/knowledge/personnel/jane"
 echo "ai" > "$ws/knowledge/AI/foo.md"
 echo "robin" > "$ws/knowledge/personnel/robin/note.md"
@@ -120,7 +120,7 @@ cleanup_workspace "$ws"
 
 # ----------- S6 -----------
 start_test "S6 — Obsidian bootstrap, malformed frontmatter"
-ws=$(new_vault)
+ws=$(new_vault) || exit 1
 mkdir -p "$ws/knowledge/AI"
 cat > "$ws/knowledge/AI/broken.md" <<'EOF'
 ---
@@ -152,7 +152,7 @@ cleanup_workspace "$ws"
 
 # ----------- no vault -----------
 start_test "S-extra — No .obsidian/: refuses and changes nothing"
-ws=$(make_workspace)
+ws=$(make_workspace) || exit 1
 mkdir -p "$ws/.pka" "$ws/knowledge/AI"
 install_pka_tools "$ws"
 echo "ai" > "$ws/knowledge/AI/foo.md"

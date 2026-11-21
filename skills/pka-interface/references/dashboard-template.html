@@ -162,11 +162,15 @@ mark { background: var(--mark); color: inherit; }
 
 <!-- pka:loader:start (copy this block unchanged; replace it whole when the skill's copy changes) -->
 <script>
-/* pka-loader 1: turns window.PKA_DATA (data version 1) into objects the views use. */
+/* pka-loader 2: turns window.PKA_DATA (data version 1) into objects the views use. */
 var PKA = (function (raw) {
   'use strict';
-  var P = { ok: false, problem: '', raw: raw || null, files: [], byPath: {}, people: [], projects: [],
+  /* A map whose keys come from the data (paths, folder names, statuses) has no
+     prototype: a folder named `constructor` or `__proto__` is then a key like any other. */
+  function map() { return Object.create(null); }
+  var P = { ok: false, problem: '', raw: raw || null, files: [], byPath: map(), people: [], projects: [],
             actions: [], activity: [], sections: [], counts: {}, mode: '', title: '', generatedAt: null };
+  P.map = map;
   var REFRESH = 'Ask your assistant to "refresh the dashboard data", or run ' +
                 '<code>.pka/bin/pka-tools dashboard data</code> in the workspace, then reload this page.';
 
@@ -260,37 +264,72 @@ var PKA = (function (raw) {
     out.hits = found.slice(0, limit || 50);
     return out;
   };
-  P.mark = function (text, terms) {   /* escaped text with the matched words marked */
-    var words = (terms || []).filter(Boolean).map(function (t) { return t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); });
-    if (!words.length) return P.esc(text);
-    return String(text).split(new RegExp('(' + words.join('|') + ')', 'i')).map(function (part, pos) {
-      return pos % 2 ? '<mark>' + P.esc(part) + '</mark>' : P.esc(part);
-    }).join('');
+  /* Escaped text with the matched words marked. The terms are folded (lower
+     case, no accents), so the text is folded letter by letter and the marks
+     are put back on the letters as written: "zurich" marks "Zürich". */
+  P.mark = function (text, terms) {
+    var words = (terms || []).filter(Boolean);
+    var chars = Array.from ? Array.from(String(text)) : String(text).split('');
+    if (!words.length || !chars.length) return P.esc(text);
+    var folded = '', owner = [];
+    chars.forEach(function (ch, pos) {
+      var f = P.fold(ch);
+      for (var k = 0; k < f.length; k++) owner.push(pos);
+      folded += f;
+    });
+    var hit = [];
+    words.forEach(function (word) {
+      for (var at = folded.indexOf(word); at !== -1; at = folded.indexOf(word, at + word.length)) {
+        for (var k = at; k < at + word.length; k++) hit[owner[k]] = true;
+      }
+    });
+    var out = '', open = false, run = '';
+    function flush() { if (run) out += open ? '<mark>' + P.esc(run) + '</mark>' : P.esc(run); run = ''; }
+    chars.forEach(function (ch, pos) {
+      if (!!hit[pos] !== open) { flush(); open = !!hit[pos]; }
+      run += ch;
+    });
+    flush();
+    return out;
   };
 
+  var UPDATE = 'Ask your assistant to "update the dashboard".';
   if (!raw) {
-    P.problem = 'There is no data to show yet: <code>dashboard-data.js</code> was not found beside this page. ' + REFRESH;
+    P.problem = 'There is no data to show yet: <code>dashboard-data.js</code> was not found beside this page, ' +
+                'or it is incomplete and could not be read. ' + REFRESH;
     return P;
   }
-  if (raw.version !== 1 || !raw.files || !raw.dirs) {
+  if (raw.version !== 1 || !Array.isArray(raw.files) || !Array.isArray(raw.dirs)) {
     P.problem = 'The data beside this page is in a format this page does not read (data version ' +
-                P.esc(raw.version) + '). Ask your assistant to "update the dashboard".';
+                P.esc(raw.version) + '). ' + UPDATE;
     return P;
   }
-  var col = {};
+  if (!Array.isArray(raw.file_columns) || !Array.isArray(raw.tags)) {
+    P.problem = 'The data beside this page is incomplete: it has no <code>' +
+                (Array.isArray(raw.file_columns) ? 'tags' : 'file_columns') + '</code> list. ' + REFRESH;
+    return P;
+  }
+  var col = map();
   raw.file_columns.forEach(function (name, pos) { col[name] = pos; });
-  P.files = raw.files.map(function (row) {
-    var dir = raw.dirs[row[col.dir]] || '', name = row[col.name];
-    var file = {
-      path: dir ? dir + '/' + name : name, dir: dir, name: name,
-      title: row[col.title] || P.titleOf(name), date: row[col.date], modified: row[col.modified],
-      size: row[col.size], tags: row[col.tags].map(function (t) { return raw.tags[t]; }),
-      summary: row[col.summary], headings: row[col.headings],
-      type: (/\.([A-Za-z0-9]{1,8})$/.exec(name) || ['', ''])[1].toLowerCase()
-    };
-    P.byPath[file.path] = file;
-    return file;
-  });
+  try {
+    P.files = raw.files.map(function (row) {
+      var dir = raw.dirs[row[col.dir]] || '', name = String(row[col.name]);
+      var file = {
+        path: dir ? dir + '/' + name : name, dir: dir, name: name,
+        title: row[col.title] || P.titleOf(name), date: row[col.date] || '', modified: row[col.modified] || '',
+        size: row[col.size] || 0, tags: (row[col.tags] || []).map(function (t) { return raw.tags[t]; }),
+        summary: row[col.summary] || '', headings: row[col.headings] || [],
+        type: (/\.([A-Za-z0-9]{1,8})$/.exec(name) || ['', ''])[1].toLowerCase()
+      };
+      P.byPath[file.path] = file;
+      return file;
+    });
+  } catch (err) {
+    P.files = [];
+    P.byPath = map();
+    P.problem = 'The data beside this page could not be read (' + P.esc(err && err.message) + '). ' + REFRESH;
+    return P;
+  }
   P.people = raw.people || [];
   P.projects = raw.projects || [];
   P.actions = raw.actions || [];
@@ -309,7 +348,7 @@ var PKA = (function (raw) {
 
 <!-- pka:views:start (the view functions; one per data-view value) -->
 <script>
-/* pka-views 1: draws each section that has a data-view attribute. */
+/* pka-views 2: draws each section that has a data-view attribute. */
 (function () {
   'use strict';
   var esc = PKA.esc, link = PKA.link;
@@ -347,7 +386,7 @@ var PKA = (function (raw) {
     more();
   }
 
-  var VIEWS = {};
+  var VIEWS = PKA.map();
 
   /* Per-person folders: one card per person, most recent first. Source: PKA.people. */
   VIEWS.people = function (body, folder) {
@@ -394,7 +433,7 @@ var PKA = (function (raw) {
 
   /* One entry per subfolder (a topic), with its files. Source: PKA.under(folder), grouped by subfolder. */
   VIEWS.topics = function (body, folder) {
-    var base = folder.replace(/\/+$/, ''), groups = {}, names = [];
+    var base = folder.replace(/\/+$/, ''), groups = PKA.map(), names = [];
     PKA.under(folder).forEach(function (f) {
       var rest = f.dir.slice(base.length + 1), topic = rest ? rest.split('/')[0] : '';
       if (!groups[topic]) { groups[topic] = []; names.push(topic); }
@@ -418,7 +457,7 @@ var PKA = (function (raw) {
   VIEWS.calendar = function (body, folder) {
     var notes = PKA.newest(PKA.under(folder).filter(function (f) { return f.date; }));
     if (!notes.length) { body.innerHTML = empty('No dated entries here yet.'); return; }
-    var byDay = {}, months = [];
+    var byDay = PKA.map(), months = [];
     notes.forEach(function (f) {
       (byDay[f.date] = byDay[f.date] || []).push(f);
       if (months.indexOf(f.date.slice(0, 7)) === -1) months.push(f.date.slice(0, 7));
@@ -448,14 +487,15 @@ var PKA = (function (raw) {
 
   /* One card per project. Source: PKA.projects. */
   VIEWS.projects = function (body) {
-    var order = { active: 0, archiving: 1, archived: 2 };
+    var order = PKA.map(), labels = PKA.map();
+    order.active = 0; order.archiving = 1; order.archived = 2;
+    labels.active = 'Active'; labels.archiving = 'Winding down'; labels.archived = 'Archived';
     var projects = PKA.projects.slice().sort(function (a, b) {
       var x = order[a.status] === undefined ? 0 : order[a.status], y = order[b.status] === undefined ? 0 : order[b.status];
       if (x !== y) return x - y;
       return a.latest < b.latest ? 1 : a.latest > b.latest ? -1 : a.name < b.name ? -1 : 1;
     });
     if (!projects.length) { body.innerHTML = empty('No project folders yet.'); return; }
-    var labels = { active: 'Active', archiving: 'Winding down', archived: 'Archived' };
     body.innerHTML = '<div class="grid">' + projects.map(function (p) {
       var idle = PKA.daysSince(p.latest);
       var quiet = p.status === 'active' && idle !== null && idle >= 60;
@@ -520,8 +560,11 @@ var PKA = (function (raw) {
     body.innerHTML = note + '<div class="pka-list"></div>';
     paged(body.querySelector('.pka-list'), PKA.actions, function (shown) {
       return shown.map(function (a) {
+        /* The due date as a badge only when the item's own words do not already show it
+           (`(due: Dec 1)` resolved to a date); a date written in the item is not said twice. */
+        var due = a.due && String(a.text).indexOf(a.due) === -1 ? a.due : '';
         return '<div class="row"><div class="when">' + esc(a.date) + '</div><div class="what">☐ ' + esc(a.text) +
-          (a.due ? ' <span class="badge quiet">due ' + esc(a.due) + '</span>' : '') +
+          (due ? ' <span class="badge quiet">due ' + esc(due) + '</span>' : '') +
           '<div class="excerpt">' + link(a.path, titleFor(a.path)) + ', line ' + a.line + '</div></div></div>';
       }).join('');
     }, 25);
@@ -578,9 +621,10 @@ var PKA = (function (raw) {
       return;
     }
     if (PKA.title) document.getElementById('pka-title').textContent = PKA.title;
-    var when = PKA.generatedAt, days = when ? Math.floor((Date.now() - when.getTime()) / 86400000) : null;
+    var when = PKA.generatedAt && !isNaN(PKA.generatedAt.getTime()) ? PKA.generatedAt : null;
+    var days = when ? Math.floor((Date.now() - when.getTime()) / 86400000) : null;
     status.innerHTML = 'Data from ' + esc(when ? when.toLocaleString() : 'an unknown time') +
-      (days ? ' (' + days + ' day' + (days === 1 ? '' : 's') + ' ago)' : '') + ' · ' +
+      (days > 0 ? ' (' + days + ' day' + (days === 1 ? '' : 's') + ' ago)' : '') + ' · ' +
       esc(PKA.mode === 'index' ? 'index mode' : 'markdown-only mode') +
       ' · it shows the workspace as it was then. ' + PKA.refreshHint;
     if (days !== null && days >= 7) status.className = 'stale';
