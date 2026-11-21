@@ -29,7 +29,7 @@ fi
 # references, no v1.6 H2 sections.
 make_v15_workspace() {
   local ws
-  ws=$(make_workspace)
+  ws=$(make_workspace) || return 1
   mkdir -p "$ws/.pka/roles"
   cat > "$ws/.pka/roles/orchestrator.md" <<'EOF'
 ---
@@ -133,7 +133,7 @@ run_upgrade() {
 
 # ----------- U1: v1.5 → v1.6 upgrade -----------
 start_test "U1 — v1.5 workspace upgrade: shared refs + new H2 sections"
-ws=$(make_v15_workspace)
+ws=$(make_v15_workspace) || exit 1
 out=$(run_upgrade "$ws" 2>&1)
 echo "$out" | head -25 | sed 's/^/  > /'
 
@@ -202,7 +202,7 @@ cleanup_workspace "$ws"
 
 # ----------- U2: idempotent -----------
 start_test "U2 — Idempotent: second run produces no role changes"
-ws=$(make_v15_workspace)
+ws=$(make_v15_workspace) || exit 1
 run_upgrade "$ws" >/dev/null 2>&1
 
 snap_orch=$(file_hash "$ws/.pka/roles/orchestrator.md")
@@ -222,7 +222,7 @@ cleanup_workspace "$ws"
 
 # ----------- U3: preserves customizations -----------
 start_test "U3 — Preserves customizations: user-modified sections byte-identical"
-ws=$(make_v15_workspace)
+ws=$(make_v15_workspace) || exit 1
 # Customize orchestrator: add a user section + tweak Output Conventions
 cat >> "$ws/.pka/roles/orchestrator.md" <<'EOF'
 
@@ -253,7 +253,7 @@ cleanup_workspace "$ws"
 
 # ----------- U4: frontmatter preserved -----------
 start_test "U4 — Frontmatter preserved (role, model, tools fields untouched)"
-ws=$(make_v15_workspace)
+ws=$(make_v15_workspace) || exit 1
 # Customize frontmatter
 replace_in_file "$ws/.pka/roles/orchestrator.md" "model: claude-opus-4-5" "model: claude-opus-4-7"
 pre_fm=$(sed -n '1,/^---$/p; /^---$/q' "$ws/.pka/roles/orchestrator.md" | head -n -1)
@@ -290,7 +290,7 @@ cleanup_workspace "$ws"
 
 # ----------- U5: backup created -----------
 start_test "U5 — Backup created on every non-dry-run invocation"
-ws=$(make_v15_workspace)
+ws=$(make_v15_workspace) || exit 1
 run_upgrade "$ws" >/dev/null 2>&1
 
 backup_count=$(find "$ws/.pka/upgrade-backups" -mindepth 2 -maxdepth 2 -name roles -type d 2>/dev/null | wc -l | tr -d ' ')
@@ -314,7 +314,7 @@ cleanup_workspace "$ws"
 
 # ----------- U6: dry-run mode -----------
 start_test "U6 — --dry-run: reports changes but does not write files"
-ws=$(make_v15_workspace)
+ws=$(make_v15_workspace) || exit 1
 snap_orch=$(file_hash "$ws/.pka/roles/orchestrator.md")
 
 out=$(run_upgrade "$ws" --dry-run 2>&1)
@@ -329,7 +329,7 @@ cleanup_workspace "$ws"
 
 # ----------- U7: refuses without .pka/roles/ -----------
 start_test "U7 — Refuses on workspace without .pka/roles/: exit 1, no files created"
-ws=$(make_workspace)
+ws=$(make_workspace) || exit 1
 out=$(run_upgrade "$ws" 2>&1) && exit_code=0 || exit_code=$?
 
 assert_eq "1" "$exit_code" "exit 1 when .pka/roles/ absent"
@@ -340,7 +340,7 @@ cleanup_workspace "$ws"
 
 # ----------- U8: fenced code blocks are not structure -----------
 start_test "U8 — Headings inside a fenced code block are ignored"
-ws=$(make_v15_workspace)
+ws=$(make_v15_workspace) || exit 1
 # Put an example block ABOVE the real sections: it shows both an anchor
 # heading and one of the headings the upgrade adds.
 python3 - "$ws/.pka/roles/orchestrator.md" <<'PY'
@@ -377,7 +377,7 @@ cleanup_workspace "$ws"
 
 # ----------- U9: line endings preserved -----------
 start_test "U9 — CRLF role files stay CRLF"
-ws=$(make_v15_workspace)
+ws=$(make_v15_workspace) || exit 1
 f="$ws/.pka/roles/librarian.md"
 python3 - "$f" <<'PY'
 import sys
@@ -405,7 +405,7 @@ cleanup_workspace "$ws"
 
 # ----------- U10: missing anchor is reported -----------
 start_test "U10 — Role file without an anchor heading: appended and reported"
-ws=$(make_v15_workspace)
+ws=$(make_v15_workspace) || exit 1
 cat > "$ws/.pka/roles/researcher.md" <<'EOF'
 ---
 role: researcher
@@ -433,7 +433,7 @@ cleanup_workspace "$ws"
 
 # ----------- U11: two runs in the same second -----------
 start_test "U11 — Two runs in the same second both succeed with separate backups"
-ws=$(make_v15_workspace)
+ws=$(make_v15_workspace) || exit 1
 run_upgrade "$ws" >/dev/null 2>&1; rc1=$?
 run_upgrade "$ws" >/dev/null 2>&1; rc2=$?
 run_upgrade "$ws" >/dev/null 2>&1; rc3=$?

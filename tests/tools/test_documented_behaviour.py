@@ -164,7 +164,8 @@ class EmptyFolder(support.ToolsCase):
         self.assertEqual(self.json("people", "list")["people"], [])
         self.assertEqual(self.json("lint", "--quick", "--no-report")["counts"]["4"], 5)   # all five, still empty
         # The first note filed there is read from where the layout says meetings go.
-        self.write("knowledge/meetings/2026-11-20-kickoff.md", "- [ ] **Sam**: Write the plan (due: 2026-12-01)\n")
+        self.write("knowledge/meetings/2026-11-20-kickoff.md",
+                   "**Attendees**: Sam, Robin\n\n- [ ] **Sam**: Write the plan (due: 2026-12-01)\n")
         self.assertEqual(self.json("actions", "--all-dates")["items"][0]["owners"], ["Sam"])
         # What the skill tells the user about the first health check: the
         # folders that hold nothing yet are listed (rule 4).

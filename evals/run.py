@@ -32,6 +32,7 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import sqlite3
 import stat
 import subprocess
@@ -52,9 +53,25 @@ PLUGIN_TOOL = REPO / "bootstrap-assets" / "tools" / "pka-tools"
 OLD_ROLES = REPO / "tests" / "fixtures" / "v1.7.0-roles"
 FIXTURE_FILES = EVALS_DIR / "fixtures"
 
-# What the subject's plugin copy holds. evals/ and tests/ are left out on
-# purpose: the subject must not be able to read the expected answers.
-PLUGIN_PARTS = (".claude-plugin", "skills", "bootstrap-assets", "docs", "CHANGELOG.md", "README.md", "LICENSE")
+# What the subject's plugin copy holds: what a plugin needs to work, and of
+# that only the files git tracks. docs/, evals/, tests/ and anything else in
+# the checkout are never copied: the subject must not be able to read the
+# expected answers, or a file the owner keeps untracked beside the sources.
+# CHANGELOG.md is there because the tutorial skill reads it.
+PLUGIN_DIRS = (".claude-plugin", "skills", "bootstrap-assets")
+PLUGIN_FILES = ("CHANGELOG.md",)
+NEVER_COPIED = ("docs", "evals", "tests", "pka-bench", ".git", ".github", ".claude")
+PLUGIN_SKIP_NAMES = ("__pycache__", ".DS_Store")
+
+# The environment of a `claude` child is built from these names and nothing
+# else. PASSED_ENV is copied from the parent when set; so is every LC_*.
+# AUTH_ENV is what the CLI reads to authenticate without a browser (its
+# documentation, "Authentication precedence"): an API key, a bearer token
+# with the endpoint it belongs to, or a long-lived token from
+# `claude setup-token`. A login stored by `/login` is found through
+# CLAUDE_CONFIG_DIR, which the runner sets itself.
+PASSED_ENV = ("PATH", "LANG", "TERM", "TZ")
+AUTH_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_OAUTH_TOKEN")
 
 SUBJECT_TOOLS = "Bash,Read,Edit,Write,Glob,Grep,Skill"
 SKILLS = ("pka-bootstrap", "pka-interface", "pka-librarian", "pka-meetings", "pka-tutorial", "pka-wiki")
@@ -84,6 +101,10 @@ class RunnerError(Exception):
 
 class AuthError(RunnerError):
     """The CLI could not authenticate; nothing else will work either."""
+
+
+class InvalidRun(RunnerError):
+    """The scenario ran, and its result cannot be trusted."""
 
 
 # --------------------------------------------------------------------- small helpers
@@ -175,6 +196,8 @@ def inside(root: Path, rel: str) -> Path:
     parts = Path(rel).parts
     if ".." in parts:
         raise RunnerError("setup path must stay inside the workspace: %r" % (rel,))
+    if not parts:
+        raise RunnerError("setup path must name a file or folder in the workspace, not the workspace itself: %r" % (rel,))
     return root / rel
 
 
@@ -184,7 +207,8 @@ def make_writable(root: Path) -> None:
             path = os.path.join(folder, name)
             if not os.path.islink(path):
                 try:
-                    os.chmod(path, os.stat(path).st_mode | stat.S_IWUSR | stat.S_IRUSR)
+                    extra = stat.S_IXUSR if os.path.isdir(path) else 0
+                    os.chmod(path, os.stat(path).st_mode | stat.S_IWUSR | stat.S_IRUSR | extra)
                 except OSError:
                     pass
     try:
@@ -221,6 +245,16 @@ def split_expectations(expect: str) -> List[str]:
             current.append(char)
     out.append("".join(current).strip())
     return [item for item in out if item]
+
+
+def _is_text(value: Any) -> bool:
+    return isinstance(value, str) or (isinstance(value, list) and all(isinstance(line, str) for line in value))
+
+
+def _is_number(value: Any, whole: bool = False) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int,) if whole else (int, float)):
+        return False
+    return value == value and 0 <= value < 1_000_000
 
 
 def validate_setup(setup: Any, where: str) -> List[str]:
@@ -279,8 +313,19 @@ def validate_setup(setup: Any, where: str) -> List[str]:
                 errors.append("%s (%s) has an unknown key %r" % (label, verb, key))
         if verb == "tool" and not (isinstance(step[verb], list) and all(isinstance(a, str) for a in step[verb])):
             errors.append("%s: tool takes a list of arguments" % label)
-        if verb == "lint_report" and not isinstance(step[verb], dict):
-            errors.append("%s: lint_report takes an object: {\"days_ago\": N, \"quick\": true|false}" % label)
+        if verb == "lint_report":
+            spec = step[verb]
+            if not isinstance(spec, dict) or set(spec) - {"days_ago", "quick"} \
+                    or not _is_number(spec.get("days_ago", 0), whole=True) \
+                    or not isinstance(spec.get("quick", False), bool):
+                errors.append("%s: lint_report takes an object: {\"days_ago\": N, \"quick\": true|false}" % label)
+        for key in ("text", "old", "new"):
+            if key in step and key in need and not _is_text(step[key]):
+                errors.append("%s (%s): %r must be a string or a list of strings" % (label, verb, key))
+        if verb == "age" and "days" in step and not _is_number(step["days"]):
+            errors.append("%s (age): 'days' must be a number of days, 0 or more" % label)
+        if "allow_fail" in step and not isinstance(step["allow_fail"], bool):
+            errors.append("%s (tool): 'allow_fail' must be true or false" % label)
         if verb == "fixture_file" and not (isinstance(step[verb], str) and (FIXTURE_FILES / step[verb]).is_file()
                                            and "/" not in step[verb]):
             errors.append("%s: no file %r in evals/fixtures/" % (label, step[verb]))
@@ -334,6 +379,8 @@ def load_scenarios(evals_dir: Path = EVALS_DIR) -> List[dict]:
             for key in ("prompt", "expect"):
                 if not isinstance(item.get(key), str) or not item[key].strip():
                     errors.append("%s: needs a non-empty %r" % (where, key))
+            if isinstance(item.get("expect"), str) and item["expect"].strip() and not split_expectations(item["expect"]):
+                errors.append("%s: 'expect' holds no expectation, only separators" % where)
             followups = item.get("followups", [])
             if not isinstance(followups, list) or not all(isinstance(f, str) and f.strip() for f in followups):
                 errors.append("%s: followups must be a list of strings" % where)
@@ -477,9 +524,16 @@ def write_current_roles(ws: Path) -> None:
                                      encoding="utf-8")
 
 
+def base_env() -> Dict[str, str]:
+    """PATH, LANG, LC_*, TERM and TZ from the parent; nothing else."""
+    return {key: value for key, value in os.environ.items() if key in PASSED_ENV or key.startswith("LC_")}
+
+
 def tool_env(home: Path) -> Dict[str, str]:
-    env = {key: value for key, value in os.environ.items()
-           if not key.startswith(("CLAUDE", "GIT_")) and key not in ("WORKSPACE_ROOT", "XDG_CONFIG_HOME")}
+    """The environment of a setup step (the plugin's own `pka-tools`)."""
+    env = base_env()
+    if os.environ.get("TMPDIR"):
+        env["TMPDIR"] = os.environ["TMPDIR"]
     env.update({"HOME": str(home), "GIT_CONFIG_GLOBAL": str(home / ".gitconfig"),
                 "GIT_CONFIG_NOSYSTEM": "1", "PYTHONDONTWRITEBYTECODE": "1"})
     return env
@@ -600,6 +654,14 @@ def apply_step(ws: Path, home: Path, step: dict) -> None:
         _age(path, float(step["days"]))
 
 
+def _plain_error(exc: BaseException) -> str:
+    """One line for an exception, without the absolute path the system adds."""
+    if isinstance(exc, OSError) and exc.strerror:
+        return exc.strerror
+    text = str(exc).strip().split("\n")[0]
+    return text or type(exc).__name__
+
+
 def effective_setup(setup: dict) -> dict:
     """The setup with every default written out."""
     fixture = setup.get("fixture", "vault")
@@ -669,8 +731,16 @@ def build_workspace(setup: dict, ws: Path, home: Path) -> dict:
                     conn.commit()
                 finally:
                     conn.close()
-    for step in plan["steps"]:
-        apply_step(ws, home, step)
+    for number, step in enumerate(plan["steps"], 1):
+        try:
+            apply_step(ws, home, step)
+        except RunnerError:
+            raise
+        except (OSError, ValueError, TypeError, AttributeError, shutil.Error) as exc:
+            verb = next(v for v in STEP_VERBS if v in step)
+            shown = step[verb] if isinstance(step[verb], str) else verb
+            raise RunnerError("setup: step %d (%s %s) cannot be applied: %s" % (
+                number, verb, shown if len(str(shown)) <= 80 else str(shown)[:79] + "…", _plain_error(exc)))
     cwd = inside(ws, plan["cwd"]) if plan["cwd"] != "." else ws
     if not cwd.is_dir():
         raise RunnerError("setup: cwd %r is not a folder in the workspace" % plan["cwd"])
@@ -888,19 +958,31 @@ def judge_command(cfg: dict) -> List[str]:
             "--json-schema", json.dumps(JUDGE_SCHEMA, separators=(",", ":"))]
 
 
-def child_env(cfg: dict, home: Path, tmp: Path) -> Dict[str, str]:
-    """The environment of a `claude` child: this session's own CLAUDE_* variables
-    are dropped (a child must not attach to the session that launched the
-    runner), HOME and TMPDIR point into the scratch run directory, and the
-    CLI's own configuration directory is named explicitly so that it can still
-    find its login."""
-    env = {key: value for key, value in os.environ.items()
-           if not key.startswith(("CLAUDE", "GIT_")) and key not in ("WORKSPACE_ROOT", "XDG_CONFIG_HOME")}
-    env["CLAUDE_CONFIG_DIR"] = cfg["config_dir"]
-    env["PYTHONDONTWRITEBYTECODE"] = "1"
+def child_env(cfg: dict, home: Path, tmp: Path, cwd: Path) -> Dict[str, str]:
+    """The environment of a `claude` child, subject or judge. It is built
+    from a list, not filtered from the parent's:
+
+      from the parent   PATH, LANG, LC_*, TERM, TZ; the variables in AUTH_ENV
+                        that are set; and any name given with --pass-env
+      set here          HOME and TMPDIR (inside the scratch run folder; HOME
+                        is the real one with --home real), PWD (the folder
+                        the call starts in), CLAUDE_CONFIG_DIR (where the CLI
+                        keeps a stored login), PYTHONDONTWRITEBYTECODE, and
+                        with a scratch home the two variables that keep git
+                        away from the user's configuration
+
+    Nothing else reaches the child: no token for another service, no cloud
+    key, no agent socket, none of the parent session's CLAUDE_* variables."""
+    env = base_env()
+    for name in AUTH_ENV + tuple(cfg.get("pass_env") or ()):
+        if os.environ.get(name):
+            env[name] = os.environ[name]
+    env.update({"TMPDIR": str(tmp), "PWD": str(cwd), "CLAUDE_CONFIG_DIR": cfg["config_dir"],
+                "PYTHONDONTWRITEBYTECODE": "1"})
     if cfg["home"] == "scratch":
-        env.update({"HOME": str(home), "TMPDIR": str(tmp),
-                    "GIT_CONFIG_GLOBAL": str(home / ".gitconfig"), "GIT_CONFIG_NOSYSTEM": "1"})
+        env.update({"HOME": str(home), "GIT_CONFIG_GLOBAL": str(home / ".gitconfig"), "GIT_CONFIG_NOSYSTEM": "1"})
+    else:
+        env["HOME"] = os.environ.get("HOME") or str(Path.home())
     return env
 
 
@@ -1013,10 +1095,50 @@ def count_turns(lines: List[str]) -> int:
     return len(seen)
 
 
+# Every `claude` child runs in a process group of its own, so that stopping it
+# also stops whatever it started. The calls in flight are kept here so that a
+# signal to the runner can stop them all.
+_LIVE: Dict[int, Tuple["subprocess.Popen[bytes]", List[str]]] = {}
+_LIVE_LOCK = threading.RLock()
+_STOP = {"signal": None}       # the signal that ended the run, once one has arrived
+
+
+def _kill_group(proc: "subprocess.Popen[bytes]") -> None:
+    """Kill the child and everything in its process group."""
+    try:
+        if hasattr(os, "killpg"):
+            os.killpg(proc.pid, signal.SIGKILL)
+        else:
+            proc.kill()
+    except (OSError, ProcessLookupError):
+        try:
+            proc.kill()
+        except OSError:
+            pass
+
+
+def stop_children(reason: str = "terminated") -> None:
+    with _LIVE_LOCK:
+        live = list(_LIVE.values())
+    for proc, stopped in live:
+        stopped.append(reason)
+        _kill_group(proc)
+
+
+def _on_signal(signum, _frame) -> None:
+    """SIGINT, SIGTERM or SIGHUP: stop every model call, then unwind through
+    the `finally` blocks that remove the run folder."""
+    _STOP["signal"] = signum
+    stop_children()
+    raise KeyboardInterrupt
+
+
 def run_cli(cmd: List[str], prompt: str, cwd: Path, env: Dict[str, str], raw: Path, timeout: float,
             turn_cap: Optional[int] = None) -> Tuple[List[str], str, Optional[str], int]:
     """Run one `claude -p` call. Returns (stdout lines, stderr text, why the
     runner stopped it or None, exit code)."""
+    if _STOP["signal"] is not None:
+        raise RunnerError("the run was stopped before this call started")
     raw.parent.mkdir(parents=True, exist_ok=True)
     prompt_file = raw.with_suffix(".prompt.txt")
     prompt_file.write_text(prompt, encoding="utf-8")
@@ -1026,18 +1148,19 @@ def run_cli(cmd: List[str], prompt: str, cwd: Path, env: Dict[str, str], raw: Pa
     with open(str(prompt_file), "rb") as stdin, open(str(err_file), "wb") as stderr, \
             open(str(raw), "w", encoding="utf-8") as out:
         try:
-            proc = subprocess.Popen(cmd, cwd=str(cwd), env=env, stdin=stdin, stdout=subprocess.PIPE, stderr=stderr)
+            proc = subprocess.Popen(cmd, cwd=str(cwd), env=env, stdin=stdin, stdout=subprocess.PIPE, stderr=stderr,
+                                    start_new_session=True)
         except OSError as exc:
             raise RunnerError("cannot run %s: %s" % (cmd[0], exc.strerror or exc))
+        with _LIVE_LOCK:
+            _LIVE[proc.pid] = (proc, stopped)
 
         def kill(reason: str) -> None:
-            if proc.poll() is None:
-                stopped.append(reason)
-                try:
-                    proc.kill()
-                except OSError:
-                    pass
+            stopped.append(reason)
+            _kill_group(proc)
 
+        if _STOP["signal"] is not None:      # the signal arrived while the child was starting
+            kill("terminated")
         timer = threading.Timer(timeout, kill, args=("timeout",))
         timer.daemon = True
         timer.start()
@@ -1048,13 +1171,19 @@ def run_cli(cmd: List[str], prompt: str, cwd: Path, env: Dict[str, str], raw: Pa
                 line = chunk.decode("utf-8", errors="replace")
                 lines.append(line)
                 out.write(line)
-                if turn_cap is not None and '"tool_use"' in line:
+                if turn_cap is not None and '"tool_use"' in line and not stopped:
                     turns = count_turns(lines)
                     if turns > turn_cap:
                         kill("turn-cap")
             proc.wait()
         finally:
             timer.cancel()
+            # The child itself (if an exception got here first) and anything
+            # it started and left behind.
+            _kill_group(proc)
+            proc.wait()
+            with _LIVE_LOCK:
+                _LIVE.pop(proc.pid, None)
             if proc.stdout is not None:
                 proc.stdout.close()
     stderr_text = err_file.read_text(encoding="utf-8", errors="replace")
@@ -1331,8 +1460,8 @@ def verdict_for(met: int, total: int) -> str:
 
 def run_judge(cfg: dict, scenario: dict, evidence: str, judge_dir: Path, raw: Path, home: Path, tmp: Path) -> dict:
     judge_dir.mkdir(parents=True, exist_ok=True)
-    lines, stderr, stopped, code = run_cli(judge_command(cfg), evidence, judge_dir, child_env(cfg, home, tmp),
-                                           raw, cfg["timeout"])
+    lines, stderr, stopped, code = run_cli(judge_command(cfg), evidence, judge_dir,
+                                           child_env(cfg, home, tmp, judge_dir), raw, cfg["timeout"])
     stdout = "".join(lines)
     if stopped:
         raise JudgeError("the judge call was stopped (%s)" % stopped)
@@ -1346,24 +1475,114 @@ def run_judge(cfg: dict, scenario: dict, evidence: str, judge_dir: Path, raw: Pa
 
 # --------------------------------------------------------------------- one scenario
 
-def prepare_plugin(run_dir: Path) -> Path:
-    """A read-only copy of the plugin for the subject to load."""
+def plugin_path_allowed(rel: str) -> bool:
+    """True for a checkout-relative path that may go into the plugin copy:
+    one of PLUGIN_FILES, or a file under one of PLUGIN_DIRS."""
+    if not isinstance(rel, str) or not rel or rel.startswith("/") or "\\" in rel or "\0" in rel:
+        return False
+    parts = rel.split("/")
+    if any(part in ("", ".", "..") for part in parts) or parts[0] in NEVER_COPIED:
+        return False
+    if any(part in PLUGIN_SKIP_NAMES or part.endswith(".pyc") for part in parts):
+        return False
+    if len(parts) == 1:
+        return rel in PLUGIN_FILES
+    return parts[0] in PLUGIN_DIRS
+
+
+def tracked_files(repo: Path) -> Optional[List[str]]:
+    """The files git tracks under the plugin's parts, or None when `repo` is
+    not a git checkout. This is the one git command the runner runs, and it
+    only reads."""
+    if not (repo / ".git").exists():
+        return None
+    git = shutil.which("git")
+    if not git:
+        raise RunnerError("%s is a git checkout and git is not installed: the plugin copy is made from the files "
+                          "git tracks, so that an untracked file is never handed to the model" % repo)
+    env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    names = [name for name in PLUGIN_DIRS + PLUGIN_FILES if (repo / name).exists()]
+    try:
+        proc = subprocess.run([git, "-C", str(repo), "ls-files", "-z", "--"] + names, env=env,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    except OSError as exc:
+        raise RunnerError("cannot list the tracked files of %s: %s" % (repo, exc.strerror or exc))
+    if proc.returncode != 0:
+        detail = proc.stderr.decode("utf-8", errors="replace").strip().split("\n")[0]
+        raise RunnerError("cannot list the tracked files of %s: %s" % (repo, detail or "git exited %d" % proc.returncode))
+    return sorted(name for name in proc.stdout.decode("utf-8", errors="surrogateescape").split("\0") if name)
+
+
+def plugin_files(repo: Path) -> List[str]:
+    """Checkout-relative paths of the files the plugin copy holds.
+
+    In a git checkout: the tracked files under PLUGIN_DIRS and PLUGIN_FILES,
+    with the content they have in the working tree. An untracked file is
+    never listed, wherever it is. Outside git (an unpacked archive) there is
+    no such list, so every file under those parts is taken. In both cases a
+    symbolic link is left out, and a path that is not under the parts is
+    refused."""
+    listed = tracked_files(repo)
+    if listed is None:
+        listed = []
+        for name in PLUGIN_DIRS:
+            for folder, dirs, files in os.walk(str(repo / name), followlinks=False):
+                dirs[:] = sorted(d for d in dirs if d not in PLUGIN_SKIP_NAMES)
+                listed.extend((Path(folder) / f).relative_to(repo).as_posix() for f in sorted(files))
+        listed.extend(name for name in PLUGIN_FILES if (repo / name).exists())
+    out = []
+    for rel in listed:
+        if any(part in PLUGIN_SKIP_NAMES or part.endswith(".pyc") for part in rel.split("/")):
+            continue
+        if not plugin_path_allowed(rel):
+            raise RunnerError("refusing to copy %r into the plugin copy: it is not under %s" % (
+                rel, ", ".join(PLUGIN_DIRS + PLUGIN_FILES)))
+        source = repo / rel
+        if source.is_symlink() or not source.is_file():
+            continue            # a link, or tracked and deleted in the working tree
+        out.append(rel)
+    return out
+
+
+def lock_tree(root: Path) -> None:
+    """Take write permission off every file and every folder under `root`,
+    and off `root` itself: nothing can be changed, added, renamed or removed
+    inside it without a chmod first (which the subject's allow list does not
+    have)."""
+    no_write = ~(stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH)
+    for folder, dirs, files in os.walk(str(root), topdown=False):
+        for name in files + dirs:
+            path = os.path.join(folder, name)
+            if not os.path.islink(path):
+                os.chmod(path, os.stat(path).st_mode & no_write)
+    os.chmod(str(root), os.stat(str(root)).st_mode & no_write)
+
+
+def build_plugin_copy(target: Path, repo: Path = REPO) -> Path:
+    """Copy the plugin's files from `repo` to `target` and lock the copy."""
+    files = plugin_files(repo)
+    remove_tree(target)
+    target.mkdir(parents=True)
+    for rel in files:
+        destination = target / rel
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(str(repo / rel), str(destination))
+        shutil.copymode(str(repo / rel), str(destination))
+    if not (target / ".claude-plugin" / "plugin.json").is_file():
+        remove_tree(target)
+        raise RunnerError("the plugin copy has no .claude-plugin/plugin.json: is %s the plugin's checkout, with its "
+                          "files tracked by git?" % repo)
+    lock_tree(target)
+    return target
+
+
+def prepare_plugin(run_dir: Path, repo: Path = REPO) -> Path:
+    """The run's own copy of the plugin (see `plugin_files` for what is in
+    it). No subject is given this copy: each scenario gets a copy of it."""
     plugin = run_dir / "plugin"
     if plugin.exists():
         return plugin
-    plugin.mkdir(parents=True)
-    for name in PLUGIN_PARTS:
-        source = REPO / name
-        if source.is_dir():
-            shutil.copytree(str(source), str(plugin / name),
-                            ignore=shutil.ignore_patterns("__pycache__", "*.pyc", ".DS_Store"))
-        elif source.exists():
-            shutil.copyfile(str(source), str(plugin / name))
-    for folder, dirs, files in os.walk(str(plugin)):
-        for name in files:
-            path = os.path.join(folder, name)
-            os.chmod(path, os.stat(path).st_mode & ~(stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH))
-    return plugin
+    return build_plugin_copy(plugin, repo)
 
 
 def tree_digest(root: Path) -> str:
@@ -1371,6 +1590,62 @@ def tree_digest(root: Path) -> str:
     for rel, info in sorted(snapshot(root).items()):
         digest.update(("%s\0%s\0" % (rel, info.get("sha256") or info.get("link") or "")).encode("utf-8"))
     return digest.hexdigest()
+
+
+class PluginCopies:
+    """The plugin copies of one run.
+
+    `master` is built once from the checkout and never handed to a subject.
+    Every scenario gets its own locked copy of it, in its own scratch
+    folder, so that one scenario cannot change what the next one loads, and
+    a change is attributed to the scenario that made it even with --jobs.
+    After every scenario its copy is hashed and compared with the master,
+    and the master is compared with what it was when it was built; if the
+    master was changed it is rebuilt before the next scenario."""
+
+    def __init__(self, run_dir: Path, repo: Path = REPO):
+        self.repo = repo
+        self.master = prepare_plugin(run_dir, repo)
+        self.digest = tree_digest(self.master)
+        self.rebuilt = 0
+        self._lock = threading.Lock()
+
+    def copy_for(self, base: Path) -> Path:
+        target = base / "plugin"
+        with self._lock:
+            self._check_master()
+            remove_tree(target)
+            shutil.copytree(str(self.master), str(target), symlinks=True)
+        lock_tree(target)
+        return target
+
+    def _check_master(self) -> bool:
+        """Rebuild the master if it is not what was built. True when it was intact."""
+        if self.master.is_dir() and tree_digest(self.master) == self.digest:
+            return True
+        build_plugin_copy(self.master, self.repo)
+        self.digest = tree_digest(self.master)
+        self.rebuilt += 1
+        return False
+
+    def unchanged(self, copy: Path) -> bool:
+        """True when the scenario's copy and the master are both as built."""
+        with self._lock:
+            before = self.digest
+            intact = self._check_master()
+            return intact and copy.is_dir() and tree_digest(copy) == before
+
+
+def check_work_dir(work_dir: Path) -> None:
+    """Scratch workspaces must not be made at the filesystem root or inside
+    this checkout (a stopped run would leave untracked folders in it, and a
+    workspace there would have the checkout above it)."""
+    resolved = work_dir.resolve()
+    if resolved == Path(resolved.anchor):
+        raise RunnerError("the work folder cannot be the filesystem root (%s); choose another --work-dir" % resolved)
+    if resolved == REPO or REPO in resolved.parents:
+        raise RunnerError("the work folder %s is inside this checkout; choose a --work-dir (or a TMPDIR) outside %s"
+                          % (resolved, REPO))
 
 
 def ancestors_clean(path: Path) -> Optional[str]:
@@ -1386,14 +1661,16 @@ def ancestors_clean(path: Path) -> Optional[str]:
 def scenario_dirs(run_dir: Path, scenario: dict) -> Dict[str, Path]:
     base = run_dir / scenario["id"]
     return {"base": base, "ws": base / "ws", "start": base / "start", "home": base / "home",
-            "tmp": base / "tmp", "judge": base / "judge", "settings": base / "settings.json"}
+            "tmp": base / "tmp", "judge": base / "judge", "settings": base / "settings.json",
+            "plugin": base / "plugin"}
 
 
-def prepare_scenario(cfg: dict, scenario: dict, run_dir: Path, plugin: Path) -> dict:
+def prepare_scenario(cfg: dict, scenario: dict, run_dir: Path, plugins: PluginCopies) -> dict:
     dirs = scenario_dirs(run_dir, scenario)
     remove_tree(dirs["base"])
     for key in ("ws", "home", "tmp", "judge"):
         dirs[key].mkdir(parents=True)
+    plugin = plugins.copy_for(dirs["base"])
     plan = build_workspace(scenario["setup"], dirs["ws"], dirs["home"])
     shutil.copytree(str(dirs["ws"]), str(dirs["start"]), symlinks=True)
     home_before = snapshot(dirs["home"])
@@ -1404,7 +1681,7 @@ def prepare_scenario(cfg: dict, scenario: dict, run_dir: Path, plugin: Path) -> 
     session = str(uuid.uuid4()) if multi else None
     commands = [subject_command(cfg, plugin, dirs["settings"], session, False)]
     commands += [subject_command(cfg, plugin, dirs["settings"], session, True) for _ in scenario["followups"]]
-    return {"dirs": dirs, "plan": plan, "cwd": cwd, "session": session, "commands": commands,
+    return {"dirs": dirs, "plan": plan, "cwd": cwd, "session": session, "commands": commands, "plugin": plugin,
             "home_before": home_before, "prompts": [fill(scenario["prompt"])] + [fill(f) for f in scenario["followups"]]}
 
 
@@ -1438,7 +1715,12 @@ def forget_session(cfg: dict, session: Optional[str], ws: Path) -> List[str]:
     return left
 
 
-def run_scenario(cfg: dict, scenario: dict, run_dir: Path, plugin: Path, results_dir: Path) -> dict:
+INVALID_NOTE = ("the plugin copy this scenario was given was changed during it, so what the subject loaded cannot be "
+                "trusted: the result is not graded. The next scenario starts from a fresh copy; run this one again "
+                "with --resume")
+
+
+def run_scenario(cfg: dict, scenario: dict, run_dir: Path, plugins: PluginCopies, results_dir: Path) -> dict:
     started = time.time()
     record: dict = {
         "id": scenario["id"], "skill": scenario["skill"], "scenario": scenario["scenario"],
@@ -1448,21 +1730,21 @@ def run_scenario(cfg: dict, scenario: dict, run_dir: Path, plugin: Path, results
         "status": "error", "verdict": None, "met": 0, "total": len(scenario["expectations"]),
         "model": cfg["model"], "judge_model": cfg["judge_model"], "plugin_version": plugin_version(),
         "started": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
-        "error": None, "turns": [], "judgement": None,
+        "error": None, "turns": [], "judgement": None, "plugin_copy_changed": False,
         "subject_cost_usd": 0.0, "judge_cost_usd": 0.0, "cost_usd": 0.0,
         "tokens": {key: 0 for key in USAGE_KEYS}, "judge_tokens": {key: 0 for key in USAGE_KEYS},
     }
     raw_dir = results_dir / "raw"
     prepared = None
     forgotten = False
+    checked = False
     try:
-        prepared = prepare_scenario(cfg, scenario, run_dir, plugin)
-        dirs, plan = prepared["dirs"], prepared["plan"]
+        prepared = prepare_scenario(cfg, scenario, run_dir, plugins)
+        dirs, plan, plugin = prepared["dirs"], prepared["plan"], prepared["plugin"]
         record["effective_setup"] = plan
         record["commands"] = {"subject": [shell_line(c) for c in prepared["commands"]],
                               "judge": shell_line(judge_command(cfg))}
-        env = child_env(cfg, dirs["home"], dirs["tmp"])
-        plugin_before = tree_digest(plugin)
+        env = child_env(cfg, dirs["home"], dirs["tmp"], prepared["cwd"])
         turns: List[dict] = []
         for number, (prompt, cmd) in enumerate(zip(prepared["prompts"], prepared["commands"]), 1):
             raw = raw_dir / ("%s.turn%d.jsonl" % (scenario["id"], number))
@@ -1481,6 +1763,8 @@ def run_scenario(cfg: dict, scenario: dict, run_dir: Path, plugin: Path, results
             message = str(metrics.get("result") or "") + "\n" + stderr
             if metrics["is_error"] and looks_like_auth_failure(message):
                 raise AuthError((str(metrics.get("result") or "").strip() or stderr.strip()).split("\n")[0])
+            if stopped == "terminated":
+                raise RunnerError("the run was stopped before this scenario finished")
             if not metrics["had_result"] and not stopped:
                 detail = stderr.strip().split("\n")[0] if stderr.strip() else "exit code %d, no result event" % code
                 raise RunnerError("the subject run produced no result: %s" % detail)
@@ -1496,13 +1780,17 @@ def run_scenario(cfg: dict, scenario: dict, run_dir: Path, plugin: Path, results
         record["home_changes"] = home_changes
         left = forget_session(cfg, prepared["session"], dirs["ws"])
         forgotten = True
+        unchanged = plugins.unchanged(plugin)
+        checked = True
         record["isolation"] = {
             "sandbox": cfg["sandbox"], "home": cfg["home"],
-            "plugin_copy_unchanged": tree_digest(plugin) == plugin_before,
+            "plugin_copy_unchanged": unchanged,
             "left_in_cli_config": left,
         }
         evidence = build_evidence(scenario, plan, turns, diff, home_changes, plugin)
         record["evidence"] = evidence
+        if not unchanged:
+            raise InvalidRun(INVALID_NOTE)
         record["status"] = "judge-error"
         judgement = run_judge(cfg, scenario, evidence, dirs["judge"],
                               raw_dir / ("%s.judge.json" % scenario["id"]), dirs["home"], dirs["tmp"])
@@ -1511,9 +1799,27 @@ def run_scenario(cfg: dict, scenario: dict, run_dir: Path, plugin: Path, results
         raise
     except JudgeError as exc:
         record["error"] = str(exc)
+    except InvalidRun:
+        pass                    # marked below, with every other way a changed copy is found
     except RunnerError as exc:
         record["error"] = str(exc)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        # A scenario must never take the run down with it: the others still
+        # run, and the summary is still written.
+        record["error"] = "%s: %s" % (type(exc).__name__, _plain_error(exc))
     finally:
+        # The plugin copy is checked after EVERY scenario, also one that
+        # stopped on an error before the check above.
+        if prepared is not None and not checked:
+            try:
+                unchanged = plugins.unchanged(prepared["plugin"])
+            except (OSError, RunnerError):
+                unchanged = False
+            record.setdefault("isolation", {"sandbox": cfg["sandbox"], "home": cfg["home"]})
+            record["isolation"]["plugin_copy_unchanged"] = unchanged
+        if prepared is not None and not record["isolation"]["plugin_copy_unchanged"]:
+            record.update({"plugin_copy_changed": True, "status": "invalid", "verdict": None, "judgement": None,
+                           "error": INVALID_NOTE})
         record["cost_usd"] = round(record["subject_cost_usd"] + record["judge_cost_usd"], 6)
         record["wall_seconds"] = round(time.time() - started, 1)
         if prepared is not None and not forgotten:
@@ -1559,7 +1865,7 @@ def read_results(results_dir: Path) -> List[dict]:
             record = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        if isinstance(record, dict) and "id" in record and "status" in record:
+        if isinstance(record, dict) and all(isinstance(record.get(key), str) for key in ("id", "status", "skill")):
             out.append(record)
     return out
 
@@ -1569,7 +1875,7 @@ def summarise(records: List[dict]) -> dict:
     verdicts = ("pass", "partial", "fail")
     by_skill: Dict[str, dict] = {}
     totals = {"scenarios": len(records), "graded": 0, "pass": 0, "partial": 0, "fail": 0, "error": 0,
-              "cost_usd": 0.0, "subject_cost_usd": 0.0, "judge_cost_usd": 0.0, "wall_seconds": 0.0,
+              "invalid": [], "cost_usd": 0.0, "subject_cost_usd": 0.0, "judge_cost_usd": 0.0, "wall_seconds": 0.0,
               "tokens": {key: 0 for key in USAGE_KEYS}, "expectations_met": 0, "expectations": 0}
     for record in records:
         skill = by_skill.setdefault(record["skill"], {"scenarios": 0, "pass": 0, "partial": 0, "fail": 0,
@@ -1584,6 +1890,8 @@ def summarise(records: List[dict]) -> dict:
         else:
             totals["error"] += 1
             skill["error"] += 1
+            if record.get("plugin_copy_changed") or record.get("status") == "invalid":
+                totals["invalid"].append(record["id"])
         for key in ("cost_usd", "subject_cost_usd", "judge_cost_usd", "wall_seconds"):
             totals[key] += float(record.get(key) or 0.0)
         skill["cost_usd"] += float(record.get("cost_usd") or 0.0)
@@ -1595,6 +1903,7 @@ def summarise(records: List[dict]) -> dict:
     totals["wall_seconds"] = round(totals["wall_seconds"], 1)
     for skill in by_skill.values():
         skill["cost_usd"] = round(skill["cost_usd"], 4)
+    totals["invalid"].sort()
     return {"totals": totals, "by_skill": dict(sorted(by_skill.items()))}
 
 
@@ -1619,8 +1928,15 @@ def render_summary(records: List[dict], meta: dict) -> str:
     lines = ["# Eval run %s" % meta.get("name", ""), ""]
     lines.append("- Plugin version: %s; subject model: %s; judge model: %s" % (
         meta.get("plugin_version", "?"), meta.get("model", "?"), meta.get("judge_model", "?")))
-    lines.append("- Isolation: OS sandbox %s; home directory: %s" % (meta.get("sandbox", "?"), meta.get("home", "?")))
+    lines.append("- Isolation: OS sandbox %s; home directory: %s%s" % (
+        meta.get("sandbox", "?"), meta.get("home", "?"),
+        "; extra variables passed to the CLI: %s" % ", ".join(meta["pass_env"]) if meta.get("pass_env") else ""))
     lines.append("- Scenarios: %d (graded %d, not graded %d)" % (totals["scenarios"], totals["graded"], totals["error"]))
+    if totals["invalid"]:
+        lines.append("- INVALID: %d scenario(s) changed the plugin copy they were given and were not graded: %s. "
+                     "Each scenario runs with its own copy, so the others are not affected. Run these again with "
+                     "--resume, and read their transcripts to see what was changed."
+                     % (len(totals["invalid"]), ", ".join(totals["invalid"])))
     lines.append("- Verdicts: %d pass, %d partial, %d fail; expectations met: %d of %d" % (
         totals["pass"], totals["partial"], totals["fail"], totals["expectations_met"], totals["expectations"]))
     lines.append("- Cost as reported by the CLI: $%.4f (subject $%.4f, judge $%.4f)" % (
@@ -1682,14 +1998,21 @@ def isolation_report(cfg: dict) -> str:
     lines = [
         "How a run is confined:",
         "  workspace   a fresh folder per scenario under %s; it is the only folder the file tools may write" % cfg["work_dir"],
-        "  plugin      a read-only copy of this checkout without evals/ and tests/ (the checkout itself is never loaded)",
+        "  plugin      a locked copy per scenario of the files git tracks under %s (nothing from docs/, evals/, tests/;"
+        % ", ".join(name + "/" for name in PLUGIN_DIRS),
+        "              no untracked file); it is hashed after every scenario, and a scenario that changed it is not graded",
         "  tools       %s; no web access, no subagents, no MCP servers" % SUBJECT_TOOLS,
         "  permissions --permission-mode dontAsk: anything not on the allow list is denied, nobody is asked",
         "  shell       allow list only: the two copies of pka-tools and upgrade-roles.py, ls cat head tail wc grep stat which",
         "              date pwd echo test cd mkdir mv cp%s; no git, no curl, no pip, no python -c beyond two import checks"
         % (" rm" if sandbox else ""),
         "  home        %s" % ("a scratch HOME and TMPDIR inside the run folder (the CLI's own config directory is passed "
-                             "by name so it can log in)" if cfg["home"] == "scratch" else "the real HOME (--home real)"),
+                             "by name so it can log in)" if cfg["home"] == "scratch"
+                             else "the real HOME (--home real); TMPDIR inside the run folder"),
+        "  environment built from a list: PATH, LANG, LC_*, TERM, TZ, HOME, TMPDIR, PWD, CLAUDE_CONFIG_DIR and, when set,",
+        "              %s%s. The subject's shell can read these." % (
+            ", ".join(AUTH_ENV), "; also, because you asked (--pass-env): %s" % ", ".join(cfg["pass_env"])
+            if cfg.get("pass_env") else ""),
         "  settings    user and local settings, user CLAUDE.md, user plugins and MCP servers are not loaded",
     ]
     if sandbox:
@@ -1731,7 +2054,11 @@ def make_config(args: argparse.Namespace, need_cli: bool) -> dict:
         "sandbox": args.sandbox, "home": args.home, "keep_workspaces": args.keep_workspaces,
         "work_dir": str(work_dir),
         "config_dir": os.environ.get("CLAUDE_CONFIG_DIR") or str(Path.home() / ".claude"),
+        "pass_env": sorted(set(getattr(args, "pass_env", None) or [])),
     }
+    for name in cfg["pass_env"]:
+        if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", name):
+            raise RunnerError("--pass-env takes the name of an environment variable, not %r" % name)
     return cfg
 
 
@@ -1739,6 +2066,7 @@ def make_run_dir(cfg: dict) -> Path:
     base = Path(cfg["work_dir"])
     if not base.is_dir():
         raise RunnerError("--work-dir %s is not a folder" % base)
+    check_work_dir(base)
     try:
         run_dir = Path(tempfile.mkdtemp(prefix="pka-evals.", dir=str(base))).resolve()
     except OSError as exc:
@@ -1754,7 +2082,7 @@ def dry_run(cfg: dict, scenarios: List[dict], out) -> int:
     run_dir = make_run_dir(cfg)
     failures = 0
     try:
-        plugin = prepare_plugin(run_dir)
+        plugins = PluginCopies(run_dir)
         out.write("Dry run: %d scenario(s). Workspaces are built and nothing is sent to a model.\n\n" % len(scenarios))
         out.write(isolation_report(cfg) + "\n\n")
         out.write("Caps: %d turns and $%.2f per subject call, $%.2f per judge call, $%.2f for the whole run, "
@@ -1762,10 +2090,11 @@ def dry_run(cfg: dict, scenarios: List[dict], out) -> int:
                                           cfg["max_total_usd"], cfg["timeout"]))
         for scenario in scenarios:
             try:
-                prepared = prepare_scenario(cfg, scenario, run_dir, plugin)
-            except RunnerError as exc:
+                prepared = prepare_scenario(cfg, scenario, run_dir, plugins)
+            except (RunnerError, OSError, ValueError, TypeError, AttributeError) as exc:
                 failures += 1
-                out.write("%s  SETUP FAILED: %s\n\n" % (scenario["id"], exc))
+                out.write("%s  SETUP FAILED: %s\n\n" % (
+                    scenario["id"], exc if isinstance(exc, RunnerError) else _plain_error(exc)))
                 continue
             files = snapshot(prepared["dirs"]["ws"])
             out.write("%s  (%s; %d expectation(s); %d user message(s))%s\n" % (
@@ -1800,7 +2129,7 @@ def real_run(cfg: dict, scenarios: List[dict], results_dir: Path, jobs: int, out
     meta = {"name": results_dir.name, "plugin_version": plugin_version(), "model": cfg["model"],
             "judge_model": cfg["judge_model"], "sandbox": cfg["sandbox"], "home": cfg["home"],
             "max_turns": cfg["max_turns"], "max_usd": cfg["max_usd"], "max_total_usd": cfg["max_total_usd"],
-            "selected": [s["id"] for s in scenarios]}
+            "pass_env": cfg["pass_env"], "selected": [s["id"] for s in scenarios]}
     (results_dir / "run.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
     out.write("%d scenario(s) selected, %d already graded in %s, %d to run.\n" % (
         len(scenarios), len(scenarios) - len(todo), results_dir, len(todo)))
@@ -1811,17 +2140,19 @@ def real_run(cfg: dict, scenarios: List[dict], results_dir: Path, jobs: int, out
 
     def work(scenario: dict) -> None:
         with lock:
-            if state["abort"]:
+            if state["abort"] or _STOP["signal"] is not None:
                 return
             if state["spent"] >= cfg["max_total_usd"]:
                 state["skipped"] += 1
                 return
         try:
-            record = run_scenario(cfg, scenario, run_dir, plugin, results_dir)
+            record = run_scenario(cfg, scenario, run_dir, plugins, results_dir)
         except AuthError as exc:
             with lock:
                 state["abort"] = "Claude Code could not authenticate: %s" % exc
             return
+        if _STOP["signal"] is not None and record["status"] != "graded":
+            return              # cut short by the signal: nothing worth keeping, --resume runs it again
         write_result(results_dir, record)
         with lock:
             state["spent"] += record["cost_usd"]
@@ -1832,9 +2163,14 @@ def real_run(cfg: dict, scenarios: List[dict], results_dir: Path, jobs: int, out
             out.flush()
 
     try:
-        plugin = prepare_plugin(run_dir)
+        plugins = PluginCopies(run_dir)
         with ThreadPoolExecutor(max_workers=max(1, jobs)) as pool:
             list(pool.map(work, todo))
+    except KeyboardInterrupt:
+        stop_children()
+        if read_results(results_dir):
+            write_summary(results_dir, meta)        # what finished before the signal is still summarised
+        raise
     finally:
         if not cfg["keep_workspaces"]:
             remove_tree(run_dir)
@@ -1858,9 +2194,20 @@ def rejudge(cfg: dict, results_dir: Path, scenarios: List[dict], out) -> int:
     """Grade stored transcripts again (after changing an expectation or the
     judge), without running the subject."""
     by_id = {s["id"]: s for s in scenarios}
-    records = [r for r in read_results(results_dir) if r["id"] in by_id and r.get("evidence")]
+    records = [r for r in read_results(results_dir) if r["id"] in by_id and r.get("evidence")
+               and not r.get("plugin_copy_changed")]
     if not records:
         raise RunnerError("no stored transcripts for the selected scenarios in %s" % results_dir)
+    meta_path = results_dir / "run.json"
+    meta: Any = {"name": results_dir.name}
+    if meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise RunnerError("%s is not readable JSON (%s); restore it, or delete it to grade without it"
+                              % (meta_path, _plain_error(exc)))
+        if not isinstance(meta, dict):
+            raise RunnerError("%s does not hold a JSON object; restore it, or delete it to grade without it" % meta_path)
     run_dir = make_run_dir(cfg)
     try:
         for record in records:
@@ -1885,8 +2232,6 @@ def rejudge(cfg: dict, results_dir: Path, scenarios: List[dict], out) -> int:
             out.write("  %-8s %s\n" % (record["verdict"] if record["status"] == "graded" else record["status"], record["id"]))
     finally:
         remove_tree(run_dir)
-    meta_path = results_dir / "run.json"
-    meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {"name": results_dir.name}
     meta["judge_model"] = cfg["judge_model"]
     _summary, text = write_summary(results_dir, meta)
     out.write("\n" + text)
@@ -1932,12 +2277,37 @@ def build_parser() -> argparse.ArgumentParser:
                      help="require Claude Code's OS sandbox for shell commands (default), or run without it")
     env.add_argument("--home", choices=("scratch", "real"), default="scratch",
                      help="give the run a scratch HOME (default), or the real one if the CLI cannot log in otherwise")
-    env.add_argument("--work-dir", metavar="DIR", help="where scratch workspaces are made (default: the system temp folder)")
+    env.add_argument("--work-dir", metavar="DIR", help="where scratch workspaces are made (default: the system temp "
+                                                       "folder); not inside this checkout")
+    env.add_argument("--pass-env", action="append", default=[], metavar="NAME",
+                     help="also pass this environment variable to the CLI, and so to the commands the model runs "
+                          "(repeatable). By default only PATH, LANG, LC_*, TERM, TZ and the CLI's login variables "
+                          "are passed")
     env.add_argument("--keep-workspaces", action="store_true", help="do not delete the scratch workspaces afterwards")
     return parser
 
 
 def main(argv: Optional[List[str]] = None, out=None) -> int:
+    """Run with handlers for SIGINT, SIGTERM and SIGHUP that stop every model
+    call (each runs in a process group of its own) before the run folder is
+    removed. The handlers are put back afterwards."""
+    previous = {}
+    _STOP["signal"] = None
+    if threading.current_thread() is threading.main_thread():
+        for name in ("SIGINT", "SIGTERM", "SIGHUP"):
+            if hasattr(signal, name):
+                previous[getattr(signal, name)] = signal.signal(getattr(signal, name), _on_signal)
+    try:
+        return _main(argv, out)
+    except KeyboardInterrupt:           # a second signal, during the clean-up of the first
+        stop_children()
+        return 130
+    finally:
+        for signum, handler in previous.items():
+            signal.signal(signum, handler)
+
+
+def _main(argv: Optional[List[str]] = None, out=None) -> int:
     out = out or sys.stdout
     args = build_parser().parse_args(argv)
     try:
@@ -1993,8 +2363,12 @@ def main(argv: Optional[List[str]] = None, out=None) -> int:
         sys.stderr.write("evals/run.py: %s\n" % exc)
         return 2
     except KeyboardInterrupt:
-        sys.stderr.write("evals/run.py: interrupted; continue with --resume\n")
-        return 130
+        stop_children()
+        signum = _STOP["signal"]
+        sys.stderr.write("evals/run.py: %s; the model calls were stopped and the scratch folder removed. "
+                         "Continue with --resume\n" % ("interrupted" if signum in (None, signal.SIGINT)
+                                                       else "stopped by signal %d" % signum))
+        return 130 if signum in (None, signal.SIGINT) else 128 + int(signum)
 
 
 if __name__ == "__main__":

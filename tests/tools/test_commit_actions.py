@@ -109,13 +109,33 @@ class Actions(support.ToolsCase):
         self.assertEqual([item["text"] for item in result["items"]], ["Circulate minutes"])
 
     def test_default_window_is_the_last_seven_days(self):
+        # The day is pinned, so the test does not depend on when it runs.
+        self.env["PKA_ACTIONS_TODAY"] = "2026-11-20"
+        for day, text in (("2026-11-20", "today"), ("2026-11-18", "recent item"), ("2026-11-13", "seven days back"),
+                          ("2026-11-12", "eight days back"), ("2026-10-21", "old item")):
+            self.write("knowledge/leadership/%s-standup.md" % day, "- [ ] %s\n" % text)
+        result = self.json("actions")
+        self.assertEqual([item["text"] for item in result["items"]], ["seven days back", "recent item", "today"])
+        self.assertEqual((result["since"], result["until"]), ("2026-11-13", None))
+        self.assertIn("since 2026-11-13,", self.ok("actions"))
+        # An explicit window does not look at the day at all.
+        self.env["PKA_ACTIONS_TODAY"] = "1999-01-01"
+        self.assertEqual(len(self.json("actions", "--since", "2026-11-12", "--until", "2026-11-18")["items"]), 3)
+
+    def test_without_the_override_the_window_ends_today(self):
         import datetime
-        today = datetime.date.today()
-        recent = (today - datetime.timedelta(days=2)).isoformat()
-        old = (today - datetime.timedelta(days=30)).isoformat()
-        self.write("knowledge/leadership/%s-standup.md" % recent, "- [ ] recent item\n")
-        self.write("knowledge/leadership/%s-standup.md" % old, "- [ ] old item\n")
-        self.assertEqual([item["text"] for item in self.json("actions")["items"]], ["recent item"])
+        self.env.pop("PKA_ACTIONS_TODAY", None)
+        expected = (datetime.date.today() - datetime.timedelta(days=7)).isoformat()
+        self.assertIn(self.json("actions")["since"], (expected, (datetime.date.today() - datetime.timedelta(days=8)).isoformat()))
+
+    def test_a_bad_override_is_a_usage_error(self):
+        for value in ("tomorrow", "2026-13-45", "20261120", "2026-11-20T09:00:00Z"):
+            self.env["PKA_ACTIONS_TODAY"] = value
+            code, _out, err = self.tool("actions")
+            self.assertEqual(code, 64, value)
+            self.assertIn("PKA_ACTIONS_TODAY must be a date like 2026-11-20", err)
+            self.assertEqual(len(err.strip().split("\n")), 1, err)
+            self.assertEqual(self.tool("actions", "--all-dates")[0], 0, "not read when there is no default window")
 
     def test_frontmatter_date_is_used_when_the_filename_has_none(self):
         self.write("knowledge/leadership/offsite.md", "---\ndate: 2026-04-10\n---\n- [ ] book venue\n")

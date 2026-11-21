@@ -17,7 +17,8 @@ timeline entries, projects, open action items and the recent session log.
 Note bodies are not in it.
 
 The file is a snapshot. It is generated (never written through a symbolic
-link), holds workspace-relative paths only, and is the same bytes for the
+link), holds workspace-relative paths only (a timeline link that leaves the
+workspace keeps its text and loses its path), and is the same bytes for the
 same workspace at the same moment (`generated_at` is the one value that
 changes from run to run; `PKA_DASHBOARD_NOW` pins it).
 
@@ -53,6 +54,9 @@ DATA_NAME = "dashboard-data.js"
 PAGE_NAME = "dashboard.html"
 GLOBAL = "PKA_DATA"
 MARKER = "/* pka-dashboard-data v"
+# The whole first line of a file this command wrote, in any version of the format.
+_OURS = re.compile(r"^/\* pka-dashboard-data v\d{1,6} \u2014 written by `pka-tools dashboard data`\. "
+                   r"Do not edit: run it again instead\. \*/\r?\n?$")
 NOW_ENV = "PKA_DASHBOARD_NOW"     # YYYY-MM-DDTHH:MM:SSZ; lets a test (or a rehearsal) pick the moment
 
 HEAD_CHARS = 6000        # how much of a note is read for its title, headings and summary
@@ -72,7 +76,11 @@ _NOW_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$")
 _WIKI = re.compile(r"\[\[([^\[\]|]*?)(?:\\?\|([^\[\]]*))?\]\]")
 _MD_LINK = re.compile(r"!?\[([^\]]*)\]\([^)]*\)")
 _LEAD = re.compile(r"^\s*(?:>\s*)*(?:(?:[-*+]|\d{1,9}[.)])\s+(?:\[[ xX]\]\s+)?)?")
-_MARKS = re.compile(r"[*_`~]+")
+# Emphasis is a run of `*`, `_` or `~~` that opens at the start of a word and
+# closes at the end of one. A mark inside a word (`snake_case`, `2*3`) is text,
+# and so is one that a file extension follows (`__init__.py`).
+_EMPHASIS = re.compile(r"(?<![\w*_~\\])(\*{1,3}|_{1,3}|~~)(?=\S)(.+?)(?<=[^\s\\])\1(?![\w*_~]|\.\w)")
+_CODE_SPAN = re.compile(r"(`+)(?!`)(.+?)(?<!`)\1(?!`)")
 _TABLE_ROW = re.compile(r"^\s*\|")
 _RULE = re.compile(r"^\s*(?:[-*_=]\s*){3,}$")
 
@@ -112,12 +120,37 @@ def _clip(text: str, limit: int) -> str:
     return text[: limit - 1].rstrip() + "…"
 
 
-def _plain(text: str) -> str:
-    """A line of markdown as plain words."""
+def _unmark(text: str) -> str:
+    """Take emphasis marks off the words they emphasise, and nothing else."""
+    for _ in range(4):                      # `***x***`, `**_x_**`: marks nest a few deep
+        stripped = _EMPHASIS.sub(lambda m: m.group(2), text)
+        if stripped == text:
+            break
+        text = stripped
+    return text
+
+
+def _inline(text: str) -> str:
+    """Inline markdown as plain words: a link is its label, `**bold**`,
+    `_emphasis_` and `~~struck~~` lose their marks, a code span loses its
+    backticks and keeps its content as written. Marks that are not markup
+    stay: `snake_case_title`, `2*3`, a lone `*`."""
     text = _WIKI.sub(lambda m: (m.group(2) or m.group(1).rsplit("/", 1)[-1]), text)
     text = _MD_LINK.sub(lambda m: m.group(1), text)
-    text = _LEAD.sub("", text, count=1)
-    return _MARKS.sub("", text).strip()
+    out = []
+    last = 0
+    for match in _CODE_SPAN.finditer(text):
+        out.append(_unmark(text[last:match.start()]))
+        out.append(match.group(2).strip())
+        last = match.end()
+    out.append(_unmark(text[last:]))
+    return "".join(out).strip()
+
+
+def _plain(text: str) -> str:
+    """A line of markdown as plain words: `_inline`, less the list marker,
+    quote mark or checkbox the line starts with."""
+    return _inline(_LEAD.sub("", text, count=1))
 
 
 def _clean_rel(rel: object) -> Optional[str]:
@@ -251,7 +284,7 @@ def _from_index(ws: Workspace, conn: sqlite3.Connection, report: dict) -> Tuple[
     return list(meta.values()), newest or None
 
 
-def _from_walk(ws: Workspace) -> List[dict]:
+def _from_walk(ws: Workspace, report: dict) -> List[dict]:
     files, _scopes, _missing, _loose = indexer._collect(ws, [])
     out = []
     for path in files:
@@ -259,6 +292,7 @@ def _from_walk(ws: Workspace) -> List[dict]:
             continue
         rel = _clean_rel(ws.rel(path))
         if rel is None:
+            report["skipped"] += 1
             continue
         try:
             stat = path.stat()
@@ -285,7 +319,9 @@ def _file_rows(entries: List[dict]) -> Tuple[List[str], List[str], List[list]]:
     for entry in entries:
         text = entry["text"]
         if text is not None and text.tags is not None and not entry["tags"]:
-            entry["tags"] = text.tags
+            # The index stores a file's tags joined by commas, so a tag written
+            # with a comma in it is two tags there; it is two tags here as well.
+            entry["tags"] = [part.strip() for tag in text.tags for part in tag.split(",") if part.strip()]
     entries.sort(key=lambda item: item["path"])
     dirs = sorted({entry["path"].rsplit("/", 1)[0] if "/" in entry["path"] else "" for entry in entries})
     dir_pos = {name: pos for pos, name in enumerate(dirs)}
@@ -328,12 +364,43 @@ def _sections(ws: Workspace, folders: _Folders) -> List[dict]:
     out = []
     for entry in ws.repo_map():
         folder = _clean_rel(entry.folder)
-        if folder is None:
-            continue
+        if folder is None or any(part.startswith(".") for part in folder.split("/")):
+            continue            # `.pka/`, `.obsidian/`: never a section of the dashboard
         out.append({"folder": folder, "priority": entry.priority.strip(), "status": entry.status.strip(),
                     "tags": sorted(entry.tags), "files": folders.count.get(folder, 0),
                     "latest": folders.latest.get(folder, "")})
     return out
+
+
+def _link_path(ws: Workspace, key: str, report: dict) -> str:
+    """The workspace-relative path of the note a timeline link names, or "".
+
+    The link is resolved as written (`..` collapsed) before anything is
+    looked up. A target that is not inside the workspace is never tested
+    for existence and never recorded: the entry keeps its text, has no
+    path, and is counted in `skipped_links`. A target inside the workspace
+    that does not exist has no path either, and is not counted."""
+    try:
+        base = os.path.normpath(os.path.join(str(ws.link_root), key))
+    except (TypeError, ValueError):
+        report["skipped_links"] += 1
+        return ""
+    root = str(ws.root)
+    if "\0" in key or not base.startswith(root.rstrip(os.sep) + os.sep):
+        report["skipped_links"] += 1
+        return ""
+    for candidate in (base + ".md", base):
+        try:
+            found = os.path.isfile(candidate)
+        except (OSError, ValueError):
+            found = False
+        if found:
+            rel = _clean_rel(Path(candidate).relative_to(ws.root).as_posix())
+            if rel is None:
+                report["skipped_links"] += 1        # a hidden folder such as `.obsidian/`
+                return ""
+            return rel
+    return ""
 
 
 def _people(ws: Workspace, folders: _Folders, report: dict) -> List[dict]:
@@ -360,10 +427,9 @@ def _people(ws: Workspace, folders: _Folders, report: dict) -> List[dict]:
                 found.sort(key=lambda e: e["date"], reverse=True)       # stable: same-day lines keep their order
                 item["timeline_total"] = len(found)
                 for entry in found[:TIMELINE_PER_PERSON]:
-                    target = timeline_mod.note_file(ws, entry["key"]) if entry["key"] else None
+                    path = _link_path(ws, entry["key"], report) if entry["key"] else ""
                     item["timeline"].append({
-                        "date": entry["date"], "kind": entry["kind"], "summary": entry["summary"],
-                        "path": ws.rel(target) if target is not None else ""})
+                        "date": entry["date"], "kind": entry["kind"], "summary": entry["summary"], "path": path})
         out.append(item)
     out.sort(key=lambda p: p["slug"])
     return out
@@ -435,7 +501,8 @@ def _projects(ws: Workspace, conn: Optional[sqlite3.Connection], folders: _Folde
 def _actions(ws: Workspace) -> Tuple[List[dict], int]:
     result = actions_mod.run(ws, None, None)
     items = [{"path": item["path"], "line": item["line"], "date": item["date"] or "",
-              "text": _clip(item["text"], 240), "owners": item["owners"], "due": item["due"] or ""}
+              "text": _clip(_inline(item["text"]), 240), "owners": item["owners"], "due": item["due"] or "",
+              "due_text": item["due_text"] or ""}
              for item in result["items"] if _clean_rel(item["path"])]
     items.sort(key=lambda item: (item["date"], item["path"], -item["line"]), reverse=True)
     return items[:ACTIONS_MAX], len(items)
@@ -471,11 +538,25 @@ def _title(ws: Workspace) -> str:
 # ---------------------------------------------------------------- the file
 
 def _target(ws: Workspace, out: Optional[str]) -> Path:
-    path = ws.resolve(out) if out else ws.root / DATA_NAME
-    if path == ws.root or path.is_dir():
+    """Where the file goes. `--out` must name a `.js` file inside the
+    workspace (`ws.resolve` refuses anything else) that is not hidden and
+    not inside a hidden folder: `.pka/` holds the tools and the index, and
+    `.obsidian/`, `.git/` and the like belong to other programs."""
+    if not out:
+        path = ws.root / DATA_NAME
+        if path.is_dir() and not path.is_symlink():
+            raise ToolError("%s is a folder; the data file cannot be written there. Rename the folder or choose "
+                            "another place with --out." % DATA_NAME, EXIT_FAIL)
+        return path
+    path = ws.resolve(out)
+    if path == ws.root or (path.is_dir() and not path.is_symlink()):
         path = path / DATA_NAME
     if path.suffix.lower() != ".js":
         raise ToolError("--out must name a .js file (the page loads it as a script): %s" % out, EXIT_USAGE)
+    hidden = [part for part in path.relative_to(ws.root).parts if part.startswith(".")]
+    if hidden:
+        raise ToolError("--out must not be a hidden file or inside a hidden folder (%s): %s. .pka/ holds the tools "
+                        "and the index; write the data beside the page." % (hidden[0], out), EXIT_USAGE)
     return path
 
 
@@ -485,15 +566,21 @@ def _root_prefix(ws: Workspace, path: Path) -> str:
 
 
 def _not_ours(path: Path) -> bool:
-    """True when a file is already there and this command did not write it."""
+    """True when a file is already there and this command did not write it:
+    anything whose first line is not, in full, the line `render` writes. An
+    empty file is not ours either."""
     if not path.is_file() or path.is_symlink():
         return False
     try:
         with open(str(path), "rb") as handle:
-            start = handle.read(len(MARKER) + 3)
+            first = handle.readline(400)
     except OSError:
         return True
-    return bool(start) and not start.lstrip(b"\xef\xbb\xbf").startswith(MARKER.encode("ascii"))
+    try:
+        line = first.decode("utf-8")
+    except UnicodeDecodeError:
+        return True
+    return not _OURS.match(line.lstrip("\ufeff"))
 
 
 def render(data: dict) -> str:
@@ -512,7 +599,7 @@ def render(data: dict) -> str:
 
 def build(ws: Workspace, stamp: str, root_prefix: str = "") -> Tuple[dict, dict]:
     """(data, report). `data` is what the page gets, in the order it is written."""
-    report = {"missing": 0, "skipped": 0, "notes": []}
+    report = {"missing": 0, "skipped": 0, "skipped_links": 0, "notes": []}
     indexed_at = None
     if ws.db_path.is_file():
         mode = "index"
@@ -522,7 +609,7 @@ def build(ws: Workspace, stamp: str, root_prefix: str = "") -> Tuple[dict, dict]
             projects = _projects(ws, conn, folders)
     else:
         mode = "markdown-only"
-        entries = _from_walk(ws)
+        entries = _from_walk(ws, report)
         folders = _Folders(entries)
         projects = _projects(ws, None, folders)
     dirs, tags, rows = _file_rows(entries)
@@ -574,10 +661,13 @@ def run(ws: Workspace, out: Optional[str] = None) -> dict:
     except GeneratedRefused as exc:
         raise ToolError("dashboard data not written: %s." % exc, EXIT_FAIL)
     except OSError as exc:
-        raise ToolError("dashboard data not written: %s" % exc, EXIT_FAIL)
+        # The system's message names the temporary file by its absolute path; say where, relative to the workspace.
+        raise ToolError("dashboard data not written: %s could not be written (%s)." % (
+            rel, exc.strerror or type(exc).__name__), EXIT_FAIL)
     return {
         "path": rel, "bytes": len(text.encode("utf-8")), "version": DATA_VERSION, "mode": data["mode"],
         "generated_at": stamp, "indexed_at": data["indexed_at"], "counts": data["counts"],
-        "missing": report["missing"], "skipped": report["skipped"], "notes": report["notes"],
+        "missing": report["missing"], "skipped": report["skipped"], "skipped_links": report["skipped_links"],
+        "notes": report["notes"],
         "page": (path.parent / PAGE_NAME).is_file(), "seconds": round(time.time() - started, 2),
     }

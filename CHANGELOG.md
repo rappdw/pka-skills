@@ -122,6 +122,39 @@ All 84 scenarios were read against the v1.10.0 skills and rewritten so that a tr
 
 - New suite `eval-runner` (`tests/test_evals.sh`, 65 tests, no model, no network): see `tests/README.md`.
 
+### Review fixes — tool, eval runner and test harness
+
+Found by an independent review of this release before it shipped; none of it was in an earlier release.
+
+**`pka-tools actions`**
+
+- **`due` is set only when an item gives exactly one date.** `(due: 2026-12-01 or 2026-12-05)`, a range (`due 2026-12-01 to 2026-12-05`), two brackets, or a bracket that disagrees with the date after the dash returned the first date as if it were the due date. They now give `due: null` and `due_text` with everything written. A bracket that is not a date no longer hides a date after the dash: `(due: tomorrow) — @Sam — 2026-12-09` gives `due: 2026-12-09` and `due_text: "tomorrow"` (it gave no date).
+- **A bold label is not an owner.** `**Budget**:`, `**Orion**:`, `**Decision Needed**:` were returned as owners. A bold lead-in is now an owner only when it looks like a name and names someone known: a person folder, an attendee of the same note, or the owner in `.pka/owner-profile.md`. A thinkkit note names its attendees, so its items keep their owners; a bare `**Sam**: …` in a note with no attendee list, in a workspace where Sam has no person folder and is not the profile's owner, now has no owner. `@Sam` is always an owner.
+- Not read as a due date any more: `(due diligence)`, `[by Robin]`, `stand by 2026-12-01`, a date inside backticks. A month-name date without a year that fell in the two months before the note (`(due: Dec 24)` on 25 December) is left as written instead of being put a year ahead.
+- `@Sam.` at the end of a sentence is `Sam`, not `Sam.`; `@types/node` and `` `@dataclass` `` are not owners. Checkboxes inside a quote or an Obsidian callout (`> - [ ]`) are read; checkboxes in an HTML comment, a `$$` block, a `%%` comment or an indented code block are not.
+- `PKA_ACTIONS_TODAY=YYYY-MM-DD` pins "today" for the default seven-day window (for tests and rehearsals).
+
+**`pka-tools dashboard data` and the dashboard page**
+
+- **A timeline line that links outside the workspace** (`[[/etc/hostname]]`, `[[../../elsewhere/note]]`) made the command fail with a traceback, or put a path outside the workspace into the data. Such an entry now keeps its text and has no link, the target is never looked up, and the result counts them (`skipped_links`, and a line in the text output).
+- **Titles, summaries and headings kept losing `_` and `*`**: `snake_case_title` became `snakecasetitle`, `2*3*4` became `234`, and the page's search could not find them. Only real emphasis marks are removed now.
+- **A folder named `constructor`, `toString` or `__proto__`** made the page's topics view fail. The page's scripts no longer use plain objects for keys that come from the data. The template's blocks are now `pka-loader 2` and `pka-views 2`: "update my dashboard" replaces them in a page built from an earlier copy.
+- `--out` is refused for a hidden file or a path inside a hidden folder (`.pka/bin/…`, `knowledge/.obsidian/…`). An existing empty `dashboard-data.js`, or a file that only begins like one of ours, is no longer overwritten. An error names the file relative to the workspace, not by an absolute path.
+- Open actions in the page are plain words (`Robin: Draft the plan`, not `**Robin**: …`), carry `due_text`, and show a due date once. Search marks words with accents. Incomplete or cut-short data gives a message instead of "Loading…"; data dated in the future no longer shows "(-192 days ago)".
+
+**`pka-tools status`** has a new line, `Also indexed: meeting-notes (only the narrative.md of each earshot capture)`, when that folder exists (`index_captures` in `--json`). `index` already read those files and named the folder on its `Scope:` line while `status` did not mention it.
+
+**Eval runner (`evals/run.py`)**
+
+- **Untracked files no longer reach the model.** The plugin copy was made by copying folders, `docs/` among them, so an untracked file there (or under `skills/`) was handed to the subject. The copy now holds only files git tracks under `.claude-plugin/`, `skills/` and `bootstrap-assets/`, plus `CHANGELOG.md`; nothing from `docs/`, `evals/` or `tests/`.
+- **The CLI's environment is built from a list.** It was the parent's environment less a few names, so `GH_TOKEN`, cloud keys and `SSH_AUTH_SOCK` reached the subject and the judge, and `PWD` named the checkout. Now: `PATH`, `LANG`, `LC_*`, `TERM`, `TZ`, a scratch `HOME` and `TMPDIR`, `PWD` set to the workspace, and the CLI's login variables (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` with `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_OAUTH_TOKEN`; a token login used to be dropped). `--pass-env NAME` adds a variable by name. The subject's shell can still read whatever the CLI was given, the login variable included: `evals/README.md` says so.
+- **The plugin copy cannot be changed quietly.** Folders in it were writable, the copy was shared by every scenario, and the check that it was unchanged was recorded and never read. Each scenario now gets its own locked copy; it is hashed after every scenario, and a scenario that changed it is marked invalid and named in the summary.
+- A setup step that cannot be applied is one line, not a traceback, and no longer costs the run its summary. A stopped run (`SIGTERM`, Ctrl-C, a timeout) kills the model call with everything it started and removes its scratch folder. `--work-dir` inside the checkout or at `/` is refused.
+
+**Test harness**
+
+- `tests/lib.sh` removed directories by their name. It now keeps a record of the directories it creates and removes only those. A relative `TMPDIR` works, and a test script stops when its workspace cannot be created instead of carrying on with an empty path.
+
 ## v1.10.0 — 2026-11-20
 
 Lint becomes a tool, finds duplicates, and can run every week. Phase 6 of the v1.7 plan. The repository also gains a walkthrough website.

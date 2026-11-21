@@ -86,6 +86,7 @@ def cmd_status(args: argparse.Namespace) -> int:
         "schema_version": schema,
         "schema_current": schema == db_mod.SCHEMA_VERSION if schema is not None else None,
         "index_roots": [ws.rel(root) or "." for root in ws.index_roots()],
+        "index_captures": indexer.capture_root(ws),
         "meeting_homes": [ws.rel(folder) for folder in ws.meeting_homes()],
         "people_home": ws.rel(people) if people else None,
         "repo_map_entries": len(ws.repo_map()),
@@ -101,6 +102,10 @@ def cmd_status(args: argparse.Namespace) -> int:
             else "index, schema version %d%s" % (schema, "" if data["schema_current"] else " (needs `db migrate`)")
         ),
         "Index roots:      %s" % (", ".join(data["index_roots"]) or "none"),
+    ] + ([
+        "Also indexed:     %s (only the %s of each earshot capture)" % (
+            data["index_captures"], ", ".join(indexer.CAPTURE_INDEXED)),
+    ] if data["index_captures"] else []) + [
         "Meeting homes:    %s" % (", ".join(data["meeting_homes"]) or "none"),
         "People home:      %s" % (data["people_home"] or "none"),
     ]
@@ -240,10 +245,10 @@ def cmd_search(args: argparse.Namespace) -> int:
 
 def cmd_actions(args: argparse.Namespace) -> int:
     ws = _workspace(args)
-    today = _dt.date.today()
     since = until = None
     if not args.all_dates:
-        since = actions_mod.parse_date(args.since, "--since") if args.since else today - _dt.timedelta(days=7)
+        since = (actions_mod.parse_date(args.since, "--since") if args.since
+                 else actions_mod.today() - _dt.timedelta(days=7))
         until = actions_mod.parse_date(args.until, "--until") if args.until else None
     result = actions_mod.run(ws, since, until, scope=args.scope, under=args.under,
                              include_undated=args.include_undated)
@@ -650,7 +655,11 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
     if result["missing"]:
         text.append("  %d indexed file(s) no longer exist and were left out (run `pka-tools index`)." % result["missing"])
     if result["skipped"]:
-        text.append("  %d index row(s) with a path that is not workspace-relative were left out." % result["skipped"])
+        text.append("  %d %s with a path that is not workspace-relative were left out." % (
+            result["skipped"], "index row(s)" if result["mode"] == "index" else "file(s)"))
+    if result["skipped_links"]:
+        text.append("  %d timeline link(s) lead outside the workspace or into a hidden folder: the entries are shown without a link."
+                    % result["skipped_links"])
     text += ["  note: %s" % note for note in result["notes"]]
     text.append("Reload %s to see it." % dashboard_mod.PAGE_NAME if result["page"]
                 else "There is no %s beside it yet: ask for the dashboard to be built." % dashboard_mod.PAGE_NAME)

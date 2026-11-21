@@ -59,8 +59,13 @@ try {
     if (src) {
       report.external.push(src[1]);
       if (dataPath) {
-        vm.runInContext(fs.readFileSync(dataPath, 'utf8'), context, { filename: src[1] });
-        report.loaded = true;
+        // A script that does not parse or that throws stops itself, not the page.
+        try {
+          vm.runInContext(fs.readFileSync(dataPath, 'utf8'), context, { filename: src[1] });
+          report.loaded = true;
+        } catch (err) {
+          report.dataError = String(err && err.message || err);
+        }
       }
       continue;
     }
