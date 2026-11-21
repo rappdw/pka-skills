@@ -11,11 +11,11 @@ You can install one skill or all six. They compose but are independently useful.
 | Skill | Purpose | Standalone? | Optional Dependency |
 |-------|---------|-------------|---------------------|
 | `pka-bootstrap` | First-run setup, Repo Map, SQLite, roles, lifecycle | Yes — foundation | — |
-| `pka-librarian` | Document ingestion, OCR, routing, indexing, lint | Yes | — |
+| `pka-librarian` | Document ingestion, OCR, routing, indexing, timeline backfill, health checks (lint) | Yes | — |
 | `pka-interface` | Browser dashboard | Best with bootstrap | — |
 | `pka-meetings` | Meeting capture, reconciliation, routing, indexing | Yes (route-only without thinkkit) | [thinkkit](https://github.com/rappdw/thinkkit) (`take-notes`, `resolve-against-transcript`) |
 | `pka-wiki` | Topic wiki synthesis, ingest, query enhancement | Best with bootstrap + librarian | — |
-| `pka-tutorial` | Conversational onboarding and capability walkthrough | Best with bootstrap | — |
+| `pka-tutorial` | Guided tour in your own workspace (eleven modules), and the upgrade walkthrough | Best with bootstrap | — |
 
 ## Design Principles
 
@@ -65,6 +65,9 @@ Bootstrap will:
 3. Ask three questions (name, autonomy level, confirm the map)
 4. Write `CLAUDE.md`, `.pka/` infrastructure, and inboxes
 5. Initialize SQLite if your knowledge base is large enough
+6. Show a weekly health-check schedule entry you can install or ignore (it installs nothing)
+
+Then say *"Give me a tour"*, or read the [tutorial](docs/TUTORIAL.md).
 
 ## Build Order
 
@@ -74,6 +77,10 @@ If building from scratch, skills should be implemented in this order:
 2. **pka-librarian** — content indexing, OCR, transcript awareness
 3. **pka-interface** — visualization, meeting timeline views
 4. **pka-meetings** — meeting pipeline (depends on Repo Map, SQLite, thinkkit)
+5. **pka-wiki** — topic wikis (depends on the Repo Map and the librarian's indexing)
+6. **pka-tutorial** — the guided tour and upgrade walkthrough (describes all of the above)
+
+`pka-tools` (`bootstrap-assets/tools/`) underlies all six: it is installed into the workspace by bootstrap and run by every skill.
 
 ## Coexistence: Obsidian
 
@@ -101,7 +108,8 @@ A user with no Obsidian vault sees identical behavior to before. See [`docs/spec
 
 ## Documentation
 
-- [Tutorial](docs/TUTORIAL.md) — A practical walkthrough of the system after setup
+- [Walkthrough site](https://rappdw.github.io/pka-skills/) — one concept per screen, with examples (source: `docs/index.html`)
+- [Tutorial](docs/TUTORIAL.md) — the long-form written reference for the current release: setup, daily use, people and timelines, the pointer layer, health checks, upgrading
 - Individual skill documentation in `skills/<name>/SKILL.md`
 - Addendum spec: [`specification-addendum.md`](docs/specification-addendum.md) — Obsidian coexistence
 - Toolkit: [`bootstrap-assets/tools/README.md`](bootstrap-assets/tools/README.md) — the `pka-tools` commands, exit codes and editing rules
@@ -153,7 +161,10 @@ pka-skills/
 │   ├── pka-wiki.evals.json
 │   └── pka-tutorial.evals.json
 ├── docs/
-│   └── TUTORIAL.md
+│   ├── TUTORIAL.md             # the written reference
+│   ├── index.html              # the walkthrough site (GitHub Pages), with site.css and site.js
+│   └── specification-addendum.md
+├── scripts/                    # seeds.py: keeps the role seeds embedded in upgrade-roles.py in step
 ├── README.md
 ├── CHANGELOG.md
 └── LICENSE
