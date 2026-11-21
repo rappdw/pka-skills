@@ -1268,8 +1268,10 @@ class Runs(Case):
                    "ANTHROPIC_BASE_URL", "CLAUDE_CODE_OAUTH_TOKEN"}
         for call in calls:
             names = {name for name in call["env"] if not name.startswith(("FAKE_", "LC_"))}
-            # A shell adds a few of its own to whatever it is given.
-            names -= {"SHLVL", "_", "OLDPWD", "IFS", "OPTIND", "PS1", "PS2", "PS4", "MAILCHECK", "PPID"}
+            # A shell adds a few of its own to whatever it is given, and macOS
+            # gives every process __CF_USER_TEXT_ENCODING. None carries a secret.
+            names -= {"SHLVL", "_", "OLDPWD", "IFS", "OPTIND", "PS1", "PS2", "PS4", "MAILCHECK", "PPID",
+                      "__CF_USER_TEXT_ENCODING"}
             self.assertEqual(names - allowed, set(), "judge" if call["judge"] else "subject")
             self.assertTrue({"ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"} <= names, "the CLI can still log in")
             for name in secrets:
