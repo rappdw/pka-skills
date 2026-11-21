@@ -39,7 +39,7 @@ which tesseract 2>/dev/null && echo "tesseract available"
 2. Fall back to pypdf if pdfplumber unavailable
 3. Extract all pages; concatenate with page separators
 4. Store in sidecar `.txt` file alongside original
-5. Store in `file_index.ocr_text` and `search_fts.content`
+5. Run `.pka/bin/pka-tools index <file>` (or let `post-route` do it when the file is being filed): it reads the sidecar into the index. Never write index rows by hand
 
 ### Image-Only PDFs
 1. Requires tesseract
@@ -108,7 +108,7 @@ When OCR tools are unavailable:
 
 For multilingual knowledge bases:
 - pdfplumber and tesseract both support language hints
-- If a file appears to be non-English, note the detected language in `file_index`
+- If a file appears to be non-English, say so in the routing report and pass the language hint to the extraction tool; the index has no language field
 - Tesseract language packs: `brew install tesseract-lang` (macOS) / `apt install tesseract-ocr-<lang>` (Linux)
 - Default to English if no language signal detected
 

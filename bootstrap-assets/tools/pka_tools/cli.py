@@ -25,6 +25,7 @@ from . import db as db_mod
 from . import indexer, install as install_mod, mocs, obsidian, people as people_mod, pointers, postroute
 from . import backfill as backfill_mod, search as search_mod, sessionlog, timeline as timeline_mod
 from . import lint as lint_mod
+from . import dashboard as dashboard_mod
 from .errors import EXIT_FAIL, EXIT_OK, EXIT_USAGE, ToolError
 from .workspace import Workspace, find_root
 
@@ -85,6 +86,7 @@ def cmd_status(args: argparse.Namespace) -> int:
         "schema_version": schema,
         "schema_current": schema == db_mod.SCHEMA_VERSION if schema is not None else None,
         "index_roots": [ws.rel(root) or "." for root in ws.index_roots()],
+        "index_captures": indexer.capture_root(ws),
         "meeting_homes": [ws.rel(folder) for folder in ws.meeting_homes()],
         "people_home": ws.rel(people) if people else None,
         "repo_map_entries": len(ws.repo_map()),
@@ -100,6 +102,10 @@ def cmd_status(args: argparse.Namespace) -> int:
             else "index, schema version %d%s" % (schema, "" if data["schema_current"] else " (needs `db migrate`)")
         ),
         "Index roots:      %s" % (", ".join(data["index_roots"]) or "none"),
+    ] + ([
+        "Also indexed:     %s (only the %s of each earshot capture)" % (
+            data["index_captures"], ", ".join(indexer.CAPTURE_INDEXED)),
+    ] if data["index_captures"] else []) + [
         "Meeting homes:    %s" % (", ".join(data["meeting_homes"]) or "none"),
         "People home:      %s" % (data["people_home"] or "none"),
     ]
@@ -239,10 +245,10 @@ def cmd_search(args: argparse.Namespace) -> int:
 
 def cmd_actions(args: argparse.Namespace) -> int:
     ws = _workspace(args)
-    today = _dt.date.today()
     since = until = None
     if not args.all_dates:
-        since = actions_mod.parse_date(args.since, "--since") if args.since else today - _dt.timedelta(days=7)
+        since = (actions_mod.parse_date(args.since, "--since") if args.since
+                 else actions_mod.today() - _dt.timedelta(days=7))
         until = actions_mod.parse_date(args.until, "--until") if args.until else None
     result = actions_mod.run(ws, since, until, scope=args.scope, under=args.under,
                              include_undated=args.include_undated)
@@ -252,7 +258,12 @@ def cmd_actions(args: argparse.Namespace) -> int:
         result["open"], window, result["files_scanned"], ", ".join(result["scope"]) or "nothing")]
     for item in result["items"]:
         text.append("- [ ] %s" % item["text"])
-        text.append("      %s:%d" % (item["path"], item["line"]))
+        facts = []
+        if item["owners"]:
+            facts.append("owner: %s" % ", ".join(item["owners"]))
+        if item["due"] or item["due_text"]:
+            facts.append("due: %s" % (item["due"] or "%s (as written)" % item["due_text"]))
+        text.append("      %s:%d%s" % (item["path"], item["line"], "  [%s]" % "; ".join(facts) if facts else ""))
     _emit(args, result, text)
     return EXIT_OK
 
@@ -632,6 +643,30 @@ def cmd_lint(args: argparse.Namespace) -> int:
     return EXIT_FAIL if args.strict and result["findings"] else EXIT_OK
 
 
+def cmd_dashboard(args: argparse.Namespace) -> int:
+    ws = _workspace(args)
+    result = dashboard_mod.run(ws, out=args.out)
+    counts = result["counts"]
+    text = ["Dashboard data written: %s (%s, %s mode, %.2fs)" % (
+        result["path"], lint_mod.human_size(result["bytes"]), result["mode"], result["seconds"])]
+    text.append("  %d file(s), %d of them notes; %d people; %d project(s); %d open action item(s); %d log entr%s" % (
+        counts["files"], counts["notes"], counts["people"], counts["projects"], counts["open_actions"],
+        counts["activity"], "y" if counts["activity"] == 1 else "ies"))
+    if result["missing"]:
+        text.append("  %d indexed file(s) no longer exist and were left out (run `pka-tools index`)." % result["missing"])
+    if result["skipped"]:
+        text.append("  %d %s with a path that is not workspace-relative were left out." % (
+            result["skipped"], "index row(s)" if result["mode"] == "index" else "file(s)"))
+    if result["skipped_links"]:
+        text.append("  %d timeline link(s) lead outside the workspace or into a hidden folder: the entries are shown without a link."
+                    % result["skipped_links"])
+    text += ["  note: %s" % note for note in result["notes"]]
+    text.append("Reload %s to see it." % dashboard_mod.PAGE_NAME if result["page"]
+                else "There is no %s beside it yet: ask for the dashboard to be built." % dashboard_mod.PAGE_NAME)
+    _emit(args, result, text)
+    return EXIT_OK
+
+
 def cmd_obsidian(args: argparse.Namespace) -> int:
     ws = _workspace(args)
     summary = obsidian.bootstrap(ws, dry_run=args.dry_run)
@@ -897,6 +932,14 @@ def build_parser() -> argparse.ArgumentParser:
     q = lsub.add_parser("check", parents=[common], help="report entries that do not follow the grammar")
     q.add_argument("--strict", action="store_true", help="exit 1 when any entry is malformed")
     q.set_defaults(func=cmd_log)
+
+    p = sub.add_parser("dashboard", help="data for dashboard.html")
+    dsub = p.add_subparsers(dest="dashboard_command", metavar="<dashboard command>", parser_class=_Parser)
+    dsub.required = True
+    q = dsub.add_parser("data", parents=[common],
+                        help="write dashboard-data.js, the snapshot the dashboard page loads")
+    q.add_argument("--out", metavar="PATH", help="where to write it (default: dashboard-data.js at the workspace root)")
+    q.set_defaults(func=cmd_dashboard)
 
     p = sub.add_parser("obsidian", help="Obsidian vault helpers")
     osub = p.add_subparsers(dest="obsidian_command", metavar="<obsidian command>", parser_class=_Parser)

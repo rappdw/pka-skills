@@ -1,12 +1,159 @@
 # Changelog
 
-## Unreleased
+## v1.11.0 — not yet released
+
+Phase 7 of the v1.7 plan: the dashboard works, action items from thinkkit are read, the documentation and the walkthrough site describe the current release, the skills stop contradicting each other, and the evals can be run.
+
+**Existing workspaces:** run `bootstrap upgrade` to get the new `pka-tools`. It adds two sections to the role files ("Owner profile and decision log" in all three roles, "Answering and delegating" in the orchestrator) and lists any role file that still pins a model; nothing you edited is changed. Say yes to the refresh it offers: that is what gives the orchestrator its session-end step (refresh the dashboard data once). Existing `model:` lines are listed under "Pinned models" and left alone, so "roles no longer pin a model" is true of a new workspace; in yours, remove the line by hand (or say yes when bootstrap offers to) if you want a role to follow the session's model. Then say "update my dashboard": a dashboard made by an earlier release never loaded its data when opened by double-click, and stays as it is until you ask; it is backed up first. Your `CLAUDE.md` is never edited by an upgrade, so it does not gain the two new session steps (the health-check line at session start, the dashboard refresh at session end); the refreshed orchestrator role file carries both, and `references/upgrade.md` lists adding them to `CLAUDE.md` as a manual follow-up.
 
 ### Fixed — the test harness could delete the checkout
 
 - With `TMPDIR` set to a folder that did not exist, `tests/lib.sh` got an empty path back from `mktemp`, resolved it to the current directory, registered that for removal, and deleted it when the test script exited. Run from the repository root, `./tests/run-all.sh` removed the checkout, untracked files included. Only the shell suites were affected; nothing a user of the plugin runs.
 - The harness now checks once that its temp folder exists and is writable, and stops with one line if not. Every directory it creates goes through one checked helper, and it removes only directories it created: the name must match, and it is never the current directory or an ancestor of it.
 - New suite `tests/test_harness_safety.sh` runs first in `run-all.sh`, in a sacrificial folder with its own copy of `lib.sh`; if it fails, no other suite runs.
+
+### Skills and tool clean-up (Phase 7: issues #14, #17 to #22, plan findings E4 and C10)
+
+**Existing workspaces:** the next `bootstrap upgrade` adds two sections to the orchestrator's role file ("Answering and delegating", "Owner profile and decision log") and one to the librarian's and the researcher's ("Owner profile and decision log"). A section you already wrote under one of those headings is left as it is. The summary also lists any role file whose frontmatter pins a model; nothing in frontmatter is changed. Your `CLAUDE.md` is not edited.
+
+#### Fixed
+
+- **Action items captured by thinkkit now have an owner and a due date in `pka-tools actions`** (#14). `- [ ] **Robin**: Draft the Q1 hiring plan (due: 2026-12-01)` was listed with neither. `actions` now reads a bold name with a colon at the start of an item as its owner (several names are split; a bold label such as `**Note**:` or a phrase is not an owner) and `(due: …)` as its due date. A date written with a month name is resolved, using the note's date when the year is missing. A due date that is not a calendar date ("Friday", "12/1") is returned as written in a new `due_text` field and is not guessed. The text output shows owner and due date beside each item.
+- **A due date no longer needs the word `by`** when it is an ISO date that ends the item after a dash (`— @Sam — 2026-11-21`), the form the meetings skill itself told roles to write. An ISO date anywhere else in an item is still not a due date.
+- **Filing never rewrites an existing action item.** The meetings skill said items were normalised into PKA's form; its reference said manually written items were not modified. Both now say the same: a checkbox line stays byte for byte as written, and only items found in other patterns are added, as `- [ ] <action> — @<owner> — by <date>`.
+- **A transitioned project is searchable only through its own Repo Map row, and the workflow now adds it before indexing** (#19). Run as documented, with the archive destination at priority Archive, the move took the project out of the index: `index` dropped its `projects/` rows and added none. The workflow now gives the project a row at its new path (Priority Reference, Status archived) and then runs `index`, after which the whole project is indexed, not just its top-level files. A restore removes the row and runs `index --prune`, which is what clears the rows left at the archive path. The bootstrap skill, `inference-guide.md`, `sqlite-modes.md` and the tools README say what the index roots are and that an Archive row does not exclude a folder that lies inside another root.
+
+#### Changed
+
+- **Skill descriptions** are all under 1,024 characters (pka-bootstrap 1,283 → 1,013, pka-librarian 1,196 → 956, pka-tutorial 1,030 → 955) and no longer compete for a newcomer's first message. `pka-tutorial` owns "I just installed PKA", tours, "how do I…", "what can this do" and "what's new"; `pka-bootstrap` owns carrying out setup and upgrade and no longer claims every mention of PKA; the others name their own job and defer.
+- **Role seeds no longer pin a model.** A role file has no `model:` line and runs on the session's model; the roster's Model column says `session`. `upgrade-roles.py` does not edit frontmatter: it lists existing `model:` lines under "Pinned models" and says they can be removed by hand.
+- **The owner profile and the decision log are used** (C10). The orchestrator reads `.pka/owner-profile.md` once at session start (how to write for the owner, what they know, what they are working on) and is the only role that edits it; the autonomy level stays in `CLAUDE.md` alone. A decision-log entry is appended when a decision is made (structure, project lifecycle, roles, autonomy, policies by the orchestrator; routing policies by the librarian), in the format of `references/decision-log.md`, never edited afterwards, and read before a recommendation an earlier decision may cover. The `CLAUDE.md` template has a section for both files and a session-start step.
+- **The orchestrator answers lookups itself** and delegates filing and synthesis (#21). The `CLAUDE.md` template and the role seed said it never did knowledge work directly, which contradicted the tutorial.
+- **Bootstrap in an empty folder is specified** (#18): the inboxes, `.pka/`, `.pkaignore` and `CLAUDE.md` are created as always; content folders only when the user accepts the one starter layout offered (`knowledge/` with `meetings/` and `personnel/`, `projects/`, archive at `knowledge/archive/`) or names their own; declining leaves a Repo Map with no rows, which the tools report plainly.
+- **Notes can be written from a transcript without thinkkit** (#17). The skill now says so: it is PKA's own step, offered and never automatic, and the notes carry a `**Source**:` line saying they were written from the transcript. Checking existing notes against a transcript still needs thinkkit.
+- **`## Attendees` has one position** (#20): appended at the end of the note, after thinkkit's sections. The reference said both "at the bottom" and "before Action Items".
+- **The tutorial's full tour is "about 30 minutes"** (#22), the sum of its eleven modules, not 7.
+
+#### Tests
+
+- `tests/tools/test_actions_forms.py`, `test_skill_descriptions.py`, `test_documented_behaviour.py`; additions to `test_upgrade_refresh.py` and `test_upgrade.sh`.
+
+### Fixed — the dashboard opens by double-click (#16)
+
+A dashboard built by `pka-interface` did not show an indexed workspace when opened the way the skill said to open it. Checked in headless Chromium and Firefox against a fixture workspace:
+
+- Opened from `file://`, the page's `fetch('.pka/knowledge.db')` is refused by both browsers, so it fell back to markdown-only mode without saying why: empty sections until a folder was chosen (Chromium), or a "use Chrome or Edge" warning and nothing else (Firefox).
+- Where the database could be fetched (served over HTTP), three of the documented sections failed with "no such table" (`personnel_index`, `leadership_index`, `projects_index`: tables nothing creates), and search failed with "no such module: fts5": the `sql.js` build the skill named cannot read the index's full-text table. Full-text search in the dashboard never worked.
+- The page requested `sql.js` from a public CDN every time it opened, in both storage modes.
+- Links were absolute `file:///` paths.
+
+What replaces it:
+
+- **`pka-tools dashboard data`** writes `dashboard-data.js` beside the page: a snapshot of what the views list (files with title, dates, tags, a one-line summary and headings; Repo Map folders; people and their timeline entries; projects and status; open action items; the recent session log). Not note bodies. It works in index mode (from the index) and markdown-only mode (from the files), is never written through a symbolic link, holds workspace-relative paths only, escapes `<`, `>`, `&` and the Unicode line separators so no title can break a page, and will not overwrite a file it did not write. 3,000 notes: 1.1 MB in about half a second. 20,000 notes: 6.0 MB in 3 to 6 seconds; the page then opens in under half a second.
+- **The page loads that file with a `<script>` tag and nothing else.** No `fetch`, no `sql.js`, no CDN, no folder picker, no network request. It works the same in both storage modes and in any current browser (checked in Chromium and Firefox; not checked in Safari).
+- **`skills/pka-interface/references/dashboard-template.html`** is a complete reference page: the loader, nine views (`people`, `timeline`, `topics`, `calendar`, `projects`, `files`, `actions`, `activity`, `search`) and example sections. The model still writes `dashboard.html`: it copies the template and writes one marked section per Repo Map folder. `SKILL.md`, `rendering-paths.md` and `ui-patterns.md` are rewritten around it, with the exact data shape and each view's source. Instructions that depended on tables and columns that do not exist are gone.
+- **Links are relative** to the page, so the workspace can be moved or synced and they still work.
+- **The page says when its data was written and how to refresh it.** The data is a snapshot: `dashboard data` is run when you ask, and once at the end of a session when `dashboard.html` and `dashboard-data.js` both exist (the orchestrator's session-end step, in the `CLAUDE.md` template and in its role file; an existing workspace gets it with the refresh of the "Session-start checks" role section). It is not part of `post-route`, which takes 0.2 s at 20,000 notes and would take fifteen times as long.
+- New section **Open actions** (unticked checkboxes in dated meeting and person notes).
+
+**What you lose:** nothing that worked. The documented in-page full-text search is replaced by a search of titles, paths, tags, headings and summaries, and the page says so; for the text inside notes, ask the assistant. The dashboard no longer updates by itself when the index changes: it shows the workspace as of its last refresh.
+
+**Existing workspaces:** your current `dashboard.html` is not touched and behaves exactly as it did, including the request to the CDN. To get the new one, run `bootstrap upgrade` (for the new `pka-tools`), then ask for the dashboard to be updated: the skill recognises the old page, keeps a copy as `dashboard.html.bak-<date>`, rebuilds it from the template with your sections and customizations, and writes the data. From then on "refresh the dashboard" rewrites only `dashboard-data.js`. Keep the two files together.
+
+### Tests
+
+- `tests/tools/test_dashboard.py` (33 tests): the data's shape in both modes and that the modes agree; same bytes for the same moment; no absolute path; refusal to write through a link, over a foreign file or outside the workspace; names with quotes, `#`, `%` and non-ASCII letters; titles, tags, filenames, action items and log entries containing `</script>`, `<!--` and U+2028. With `node` present (skipped otherwise), `tests/tools/dashboard_page.js` runs the reference page's own scripts against the data without a browser: the loader reads it, every view draws, search finds what it should, links are relative and encoded, hostile text comes out as text, and a page with the data pasted inline still parses.
+
+### Known limits
+
+- Not checked in Safari, or in a browser with a window: the browser checks were headless Chromium and Firefox on Linux.
+- In-page search does not cover note bodies.
+- In index mode the snapshot is as fresh as the last `pka-tools index`.
+- **Project status is not recorded.** The dashboard takes a project's status from the index's `project_lifecycle` table, and nothing writes that table: every project card reads Active, and a project that has been transitioned leaves the Projects section (its folder is no longer under `projects/`). "Archive X" asks for the transition; there is no "archiving" state. The skills, the tutorial and the site now say this instead of describing three states.
+
+### Docs, skills and evals reviewed against the release
+
+An independent review compared the site, the tutorial, the skill text and the evals with the tool and with each other. What changed as a result:
+
+- **The end-of-session dashboard refresh is real.** It was promised in five places and nothing triggered it. The `CLAUDE.md` template's Session End Protocol and the orchestrator seed ("At session end", inside "Session-start checks") now say: when `dashboard.html` and `dashboard-data.js` both exist, run `pka-tools dashboard data` once and say so in one line; otherwise skip silently.
+- **The greeting's health-check line is in the `CLAUDE.md` template** (a new step 3 of the Session Start Protocol: `lint latest --json`, one line when `mention` is true, never a lint). Until now only the orchestrator seed had it.
+- **"This week" for action items means the last 7 days**, the default of `pka-tools actions`. The meetings reference said "since Monday".
+- **"Archive X"** is the transition workflow; the `CLAUDE.md` template, the bootstrap skill, the curriculum and the docs no longer promise an `archiving` status that nothing wrote. The Repo Map's Status legend is `active | archived`.
+- **The calendar view is used only for a folder tagged `daily-home`**; `SKILL.md` and `ui-patterns.md` disagreed about an untagged journal.
+- **A wiki ingest writes a decision-log entry only when it resolved a contradiction** (and when a wiki is created or retired); the wiki skill said "on every ingest".
+- **thinkkit's end phrase** is "end notes" or "wrap up", as thinkkit's own skill says; the docs said "done".
+- **Leftovers a model would follow are gone**: the librarian seed's "per-folder tables", hand-written index rows in the OCR steps, a hand-written `MATCH` invited by `sqlite-modes.md`, the "v1.0 scope" of cross-reference maintenance (which also said lint reports body mentions; it does not), `(future)` on the wiki topic cards, a `PKA v1.7` stamp in every new `CLAUDE.md` (the marker now carries no number), and the sample upgrade summary in the bootstrap skill, which is now a capture of what the helper prints.
+- **The librarian tells the user once when its role file still has the removed commit section** (pre-flight step 7), which an eval already expected.
+- **Upgraders are told what to do**: the Upgrading screen, tutorial section 16 and the what's-new script name the two new role sections, the "Pinned models" list, "Update my dashboard", and that `CLAUDE.md` is not edited.
+- **Terminal figures on the site and in the tutorial were captured again** from one scratch copy of the example workspace with `pka-tools` 1.11.0: `actions` (owner and due date after each item), `post-route`, `search`, `index`, `status`, the backfill report, the person page, the lint runs and report, and the upgrade preview (24 files, not 23).
+- **Names**: examples in the skill references and evals use the fictional cast only. The large-meeting eval names its extra attendees by role.
+- **Evals**: 35 scenarios changed. Setups that did not produce the state the prompt assumed are fixed (two meeting notes with one attendee were 1-1s by the routing rules; a journal folder had no `daily-home` tag; a "returning user" had an empty session log), unsupported expectations are replaced with what the skills say, and loose ones are tightened. Still 94 scenarios; 128 subject calls with the added follow-ups.
+
+### Docs — tutorial, curriculum and walkthrough site brought up to v1.11.0
+
+No change to the skills' behaviour or to `pka-tools`.
+
+- **`docs/TUTORIAL.md` is rewritten** as the long-form written reference for v1.11.0, in twenty sections: requirements and install, setup, a session and its log, the Repo Map, roles, finding things, the inbox, meetings (capture, reconcile, earshot, filing, action items), people and timelines with the backfill, MOCs and the pointer layer with and without Obsidian, topic wikis, the dashboard, project lifecycle, health checks, `pka-tools` and the no-commit rule, upgrading, the guided tour, a working rhythm, a prompt reference and a table of where things live. The previous text predated `pka-tools`, timelines, the removal of git, the upgrade walkthrough and lint, said "four skills", and used names outside the fictional cast. Tool output in it was captured from `pka-tools` 1.11.0 on a scratch workspace.
+- **Tutorial curriculum: eleven modules.** Two are new: **Module 10, People and Timelines** (who goes on a timeline, name matching and aliases, the backfill, how far a timeline reaches) and **Module 11, The Pointer Layer and Obsidian** (what a pointer row is, opt-in without Obsidian, what changes in a vault, `bootstrap obsidian`). Both say when to teach them in full and what to say otherwise. Modules 1 to 9 keep their numbers. Module 1 now covers `pka-tools`, the no-commit rule and where upgrading is taught; Module 2 what search covers and when the index is current; Module 3 the librarian's rules and PDFs; Module 4 attribution, reconciliation, the filing pipeline as it is now, action items and earshot; Module 5 how the dashboard reads data. Upgrading stays in `upgrade-and-whats-new.md`: it is driven by the state of the workspace, not chosen from a menu. `example-prompts.md` gains sections for the two new modules. The tutorial skill body says eleven modules and lists the same ten topics in its menus.
+- **Walkthrough site (issue #15).** The health-check screen is rewritten around `pka-tools lint`: what each rule finds and which run in a quick lint, a real quick and full run, a report excerpt with a broken link in a pointer row, an identical pair and a near-copy with their suggested keepers, suppressing a finding, and the schedule entry the tool prints (it installs nothing). The what's-new table gains v1.10.0 and v1.11.0; the first screen is labelled v1.11.0; the `status` and upgrade-preview captures are from 1.11.0; the session-start list and greeting include the health-check line; setup and upgrade mention the schedule offer; the tutorial screen lists eleven modules; the `pka-tools` screen lists the lint commands.
+- The docs describe v1.11.0 as released: what they say about action items, notes from a transcript, the project transition, the empty-folder setup, the orchestrator's lookups, the owner profile and decision log, and the two-file dashboard is the behaviour of this release.
+- README: the skill table, quick start, build order, documentation links and repository structure are brought in line (six skills, the site, `scripts/`). The plugin and marketplace descriptions no longer say PKA replaces other tools: it works beside Obsidian or without it.
+
+### Added — an eval runner (`evals/run.py`)
+
+The behavioural evals have been prose since they were first written: nothing ran them. `evals/run.py` does. For each scenario it builds a scratch workspace in the state the scenario describes, runs Claude Code headlessly in it with a read-only copy of the checkout loaded as the plugin, records what the model said, every tool call and how the files changed, and hands that to a second model call that grades each expectation. Standard library only; `evals/README.md` has the details.
+
+- **Starting states are declared, not described.** A scenario's `setup` picks a fixture (`vault`, `lint`, `existing`, `empty`), says whether there is an Obsidian vault, a toolkit, current or v1.7.0 role files, an index (current or on an old schema) and which autonomy level, and lists ordered steps (write, append, replace, remove, copy, age, run a `pka-tools` command, date a lint report in the past, make a folder look like a git repository). The fixture workspace's `CLAUDE.md` and role files are rendered from the plugin's own template and seeds.
+- **A run is confined.** Permission mode `dontAsk` with an allow list (no git, no network tools), file tools limited to the workspace, a scratch home directory, no user settings or plugins, and Claude Code's OS sandbox required by default (`--sandbox off` to run on the allow list alone). The subject cannot read `evals/`.
+- **The judge sees evidence, not instructions.** Skill text is stripped from the transcript before grading. The judge must quote; the runner looks each quote up and throws out a "yes" it cannot find, and works the verdict out itself (pass: all met; fail: fewer than half).
+- **Caps and recovery.** Turns, dollars per call, dollars per run and seconds per call are capped; `--resume` continues a run, `--rejudge` grades stored transcripts again, `--dry-run` builds every workspace and prints every command without calling a model.
+- **Not run automatically.** An eval run costs money and is started by hand. No full run has been done yet.
+
+### Changed — the evals match the skills
+
+All 84 scenarios were read against the v1.10.0 skills and rewritten so that a transcript can settle them: each has a stable `id`, a real starting state instead of a parenthesised description, and expectations that name the command, file or wording to look for. There are now 94.
+
+- **Wrong since an earlier release, corrected:** action items "found with `search_fts`" (the skill uses `pka-tools actions`); person backlinks under `## Mentioned in` (replaced by timelines in v1.7.0); "no person backlinks without Obsidian" (timelines are not gated on Obsidian); re-indexing "by path and modified time" (it is `pka-tools index`, by content hash); broken links found by scanning (it is `lint`); the tour's "7 modules" (nine); "language noted in `file_index`" (there is no such column); a backfill plan calling a nickname "ambiguous" (the tool reports it as unmatched, and refuses an alias that is ambiguous); a nickname that must be asked about (the skill lists it without a link); a non-PKA `CLAUDE.md` "treated as a fresh setup" (the skill asks first); retiring a wiki without confirming.
+- **Split or merged:** conditional scenarios ("if a parent `.pka/` exists … else …") became one scenario per state; the Obsidian bootstrap's "existing files" and "malformed frontmatter" cases run as one; "take notes" and "take-notes is not installed" are one two-message scenario; the two identical "What can PKA do?" cases are one.
+- **Names:** the examples use the fixture cast only.
+- **`needs`:** eighteen scenarios describe behaviour from changes that are still in review (the skills clean-up and the new dashboard) and are marked with the pull request they wait for. A run leaves them out unless `--include-needs` is given.
+
+### Tests
+
+- New suite `eval-runner` (`tests/test_evals.sh`, 65 tests, no model, no network): see `tests/README.md`.
+
+### Review fixes — tool, eval runner and test harness
+
+Found by an independent review of this release before it shipped; none of it was in an earlier release.
+
+**`pka-tools actions`**
+
+- **`due` is set only when an item gives exactly one date.** `(due: 2026-12-01 or 2026-12-05)`, a range (`due 2026-12-01 to 2026-12-05`), two brackets, or a bracket that disagrees with the date after the dash returned the first date as if it were the due date. They now give `due: null` and `due_text` with everything written. A bracket that is not a date no longer hides a date after the dash: `(due: tomorrow) — @Sam — 2026-12-09` gives `due: 2026-12-09` and `due_text: "tomorrow"` (it gave no date).
+- **A bold label is not an owner.** `**Budget**:`, `**Orion**:`, `**Decision Needed**:` were returned as owners. A bold lead-in is now an owner only when it looks like a name and names someone known: a person folder, an attendee of the same note, or the owner in `.pka/owner-profile.md`. A thinkkit note names its attendees, so its items keep their owners; a bare `**Sam**: …` in a note with no attendee list, in a workspace where Sam has no person folder and is not the profile's owner, now has no owner. `@Sam` is always an owner.
+- Not read as a due date any more: `(due diligence)`, `[by Robin]`, `stand by 2026-12-01`, a date inside backticks. A month-name date without a year that fell in the two months before the note (`(due: Dec 24)` on 25 December) is left as written instead of being put a year ahead.
+- `@Sam.` at the end of a sentence is `Sam`, not `Sam.`; `@types/node` and `` `@dataclass` `` are not owners. Checkboxes inside a quote or an Obsidian callout (`> - [ ]`) are read; checkboxes in an HTML comment, a `$$` block, a `%%` comment or an indented code block are not.
+- `PKA_ACTIONS_TODAY=YYYY-MM-DD` pins "today" for the default seven-day window (for tests and rehearsals).
+
+**`pka-tools dashboard data` and the dashboard page**
+
+- **A timeline line that links outside the workspace** (`[[/etc/hostname]]`, `[[../../elsewhere/note]]`) made the command fail with a traceback, or put a path outside the workspace into the data. Such an entry now keeps its text and has no link, the target is never looked up, and the result counts them (`skipped_links`, and a line in the text output).
+- **Titles, summaries and headings kept losing `_` and `*`**: `snake_case_title` became `snakecasetitle`, `2*3*4` became `234`, and the page's search could not find them. Only real emphasis marks are removed now.
+- **A folder named `constructor`, `toString` or `__proto__`** made the page's topics view fail. The page's scripts no longer use plain objects for keys that come from the data. The template's blocks are now `pka-loader 2` and `pka-views 2`: "update my dashboard" replaces them in a page built from an earlier copy.
+- `--out` is refused for a hidden file or a path inside a hidden folder (`.pka/bin/…`, `knowledge/.obsidian/…`). An existing empty `dashboard-data.js`, or a file that only begins like one of ours, is no longer overwritten. An error names the file relative to the workspace, not by an absolute path.
+- Open actions in the page are plain words (`Robin: Draft the plan`, not `**Robin**: …`), carry `due_text`, and show a due date once. Search marks words with accents. Incomplete or cut-short data gives a message instead of "Loading…"; data dated in the future no longer shows "(-192 days ago)".
+
+**`pka-tools status`** has a new line, `Also indexed: meeting-notes (only the narrative.md of each earshot capture)`, when that folder exists (`index_captures` in `--json`). `index` already read those files and named the folder on its `Scope:` line while `status` did not mention it.
+
+**Eval runner (`evals/run.py`)**
+
+- **Untracked files no longer reach the model.** The plugin copy was made by copying folders, `docs/` among them, so an untracked file there (or under `skills/`) was handed to the subject. The copy now holds only files git tracks under `.claude-plugin/`, `skills/` and `bootstrap-assets/`, plus `CHANGELOG.md`; nothing from `docs/`, `evals/` or `tests/`.
+- **The CLI's environment is built from a list.** It was the parent's environment less a few names, so `GH_TOKEN`, cloud keys and `SSH_AUTH_SOCK` reached the subject and the judge, and `PWD` named the checkout. Now: `PATH`, `LANG`, `LC_*`, `TERM`, `TZ`, a scratch `HOME` and `TMPDIR`, `PWD` set to the workspace, and the CLI's login variables (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` with `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_OAUTH_TOKEN`; a token login used to be dropped). `--pass-env NAME` adds a variable by name. The subject's shell can still read whatever the CLI was given, the login variable included: `evals/README.md` says so.
+- **The plugin copy cannot be changed quietly.** Folders in it were writable, the copy was shared by every scenario, and the check that it was unchanged was recorded and never read. Each scenario now gets its own locked copy; it is hashed after every scenario, and a scenario that changed it is marked invalid and named in the summary.
+- A setup step that cannot be applied is one line, not a traceback, and no longer costs the run its summary. A stopped run (`SIGTERM`, Ctrl-C, a timeout) kills the model call with everything it started and removes its scratch folder. `--work-dir` inside the checkout or at `/` is refused.
+
+**Test harness**
+
+- `tests/lib.sh` removed directories by their name. It now keeps a record of the directories it creates and removes only those. A relative `TMPDIR` works, and a test script stops when its workspace cannot be created instead of carrying on with an empty path.
 
 ## v1.10.0 — 2026-11-20
 

@@ -25,17 +25,23 @@ Procedure for the `upgrade` bootstrap target. Invoked when a user with an alread
    - Headings inside fenced code blocks (``` or ~~~) are examples, not structure: they are neither counted as "already present" nor used as the insertion point.
    - Keeps each file's line endings (a CRLF file stays CRLF).
    - Never modifies the body of existing sections.
+   - The sections added by a plain run are listed in `upgrade-roles.py` (`ORCHESTRATOR_SECTIONS`, `LIBRARIAN_SECTIONS`, `LIBRARIAN_SECTIONS_V161`, `RESEARCHER_SECTIONS`). The most recent: "Owner profile and decision log" in all three role files (who reads `.pka/owner-profile.md` and when, who appends to `.pka/decision-log.md` and in what format) and "Answering and delegating" in the orchestrator (it answers lookups itself and delegates filing and synthesis). The upgrade does not create either `.pka/` file and does not edit `CLAUDE.md`: a workspace's own `CLAUDE.md` keeps its wording, and the role sections carry the behaviour. In v1.11.0 the orchestrator's "Session-start checks" section also gained "At session end" (refresh the dashboard data once, when `dashboard.html` and `dashboard-data.js` both exist). A workspace that already has that section receives the new text through the refresh below, not through a plain run.
 4. **Report sections seeded by an earlier version** (see "Refreshing seeded sections" below) **and obsolete ones** (see "Obsolete sections and files"). Nothing is replaced or removed unless `--refresh` is given.
 5. **Print a summary** listing:
    - Backup path
    - Shared references seeded vs. already present
    - Per-role: sections added vs. already present
+   - "Sections seeded by an earlier version": each one "can be refreshed" or "customised — left alone"
+   - "Obsolete": the sections and file of the removed commit/push protocol, each "can be removed" or "customised — left alone", with a warning while any remain
+   - "Pinned models": every role file whose frontmatter has a `model:` line
    - A note about manual merges that this script does NOT perform.
+
+   A block with nothing to list is left out. `SKILL.md` ("Output") has a full example.
 
 ## What it does NOT do
 
 - **Never modifies the body of existing H2 sections.** If the user has customized `## Working Style` or `## Output Conventions`, those bytes stay byte-identical. Changes to those sections (e.g., the "never commits, stages or pushes" bullet on orchestrator's Output Conventions) are NOT applied automatically — they're documented in `references/role-definitions.md` for the user to merge manually.
-- **Never modifies frontmatter** in role files. Existing `model:`, `tools:`, etc. are preserved.
+- **Never modifies frontmatter** in role files. Existing `model:`, `tools:`, etc. are preserved. That includes the `model: claude-opus-4-5` line releases up to v1.10.0 seeded: role files are now seeded without a model (see "Pinned models").
 - **Never deletes** content without `--refresh`. A plain run is additive. `--refresh` replaces unedited seeded sections and removes unedited obsolete ones, after the backup.
 - **Never commits.** The upgrade leaves changes in the working tree for human review.
 - **Never touches files outside `.pka/`.** Only the role files and shared references are modified.
@@ -90,6 +96,12 @@ The researcher's commit section also carried the instruction to run `post-route`
 The sections that remain but mentioned the layout (the orchestrator's "Session-start checks" and "Bootstrap dispatch", the librarian's "Obsidian coexistence" and "Rename / graduate propagation", the Pointer Layer invariants in `_obsidian.md`) are ordinary refreshable sections with new text.
 
 Not touched by any run: a workspace's `.meta`, its nested repositories, its root `.gitignore`, and the lines about pushing in the orchestrator's unseeded sections (see "Manual follow-up").
+
+## Pinned models
+
+Role seeds used to carry `model: claude-opus-4-5` in their frontmatter. They no longer pin a model: a role without a `model:` line runs on the session's model. The helper does not apply that change to an existing workspace, because it never edits frontmatter and cannot tell a line the user chose from one a seed wrote. Instead its summary lists every role file in `.pka/roles/` that has a `model:` line, with the value, under "Pinned models", and says the line can be removed by hand.
+
+Relay that list. Offer to remove the lines; remove one only on the user's yes for that file, and when you do, change that role's Model cell in `.pka/roles/roster.md` to `session`. A user who pinned a model on purpose keeps it. Nothing is listed when no role file has the line.
 
 ## Implementation
 
@@ -164,7 +176,14 @@ To undo: replace `.pka/knowledge.db` with the backup file named in the output. D
 After running `upgrade`, the user may want to:
 
 1. **Bring the unseeded sections up to date by hand.** The upgrade never touches `## Key Competencies`, `## Output Conventions` or `## Invocation`. Compare them against `references/role-definitions.md`. In a workspace bootstrapped on v1.6 or v1.7.0 the orchestrator's copies still mention the removed push protocol: "Session-end consolidated push for hybrid-monorepo workspaces" (Key Competencies), "Bootstrap dispatch (obsidian / git / all)…" (Key Competencies), "Never auto-commits root repo…" (Output Conventions) and "push coordination" (Invocation). A customised section that was kept may also still point at `.pka/roles/_git-protocol.md`, which a refresh removes. Offer to show the user those lines; they delete or reword them.
-2. **Update role frontmatter** if a new model is preferred. Upgrade preserves existing frontmatter; users decide whether to switch (`claude-opus-4-5` → `claude-opus-4-7` etc.).
+2. **Remove a pinned model** from role frontmatter. A `model:` line makes that role ask for one specific model whatever the session runs on; without the line the role uses the session's model. The upgrade lists the lines and leaves them (see "Pinned models"); the user deletes them, or keeps one they set on purpose.
 3. **Re-run `bootstrap obsidian`** if they want the mechanical retrofit on an existing vault.
+4. **Add two steps to `CLAUDE.md`.** The upgrade never edits a workspace's `CLAUDE.md`, so one written before v1.11.0 lacks them. Both are in `references/claude-md-template.md`:
+   - Session Start Protocol: run `.pka/bin/pka-tools lint latest --json` and, when `mention` is true, put one line about the last health check in the greeting (never run a lint at session start).
+   - Session End Protocol: after the session-log entry, run `.pka/bin/pka-tools dashboard data` once when `dashboard.html` and `dashboard-data.js` both exist, and say so in one line.
+
+   The orchestrator's role file carries both once its "Session-start checks" section has been refreshed, so the behaviour does not depend on this edit; it keeps `CLAUDE.md` and the role file saying the same thing. Offer to show the lines; add them only when the user says so.
+5. **Rebuild a dashboard made before v1.11.0.** The upgrade changes `.pka/` only and leaves `dashboard.html` alone. The old page never loaded its data when opened by double-click; it stays as it is until the user says "Update my dashboard", and `pka-interface` saves it as `dashboard.html.bak-<date>` before rebuilding.
+6. **Bring the librarian's Key Competencies line up to date.** A role file seeded before v1.11.0 says "SQLite index maintenance (file_index, search_fts, per-folder tables)". Nothing creates per-folder tables and index rows are never written by hand; the current line is "SQLite index maintenance through `pka-tools index`".
 
 The summary output should suggest these as next steps when relevant (e.g., when `_obsidian.md` was just seeded and the workspace has `knowledge/.obsidian/`).

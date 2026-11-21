@@ -62,12 +62,12 @@ The summary is the permanent record of the project. It's what surfaces when some
 ## Example
 
 ```markdown
-# Team Charter — Project Summary
+# Lyra — Project Summary
 **Period:** Sep 2025 – Jan 2026
 **Transitioned:** 2026-03-31
 
 ## What It Was
-Planning work for the Orion/Beacon team structure. Produced a suite of 
+Planning work for the team structure around Orion. Produced a suite of 
 six planning documents: charter, roles matrix, working agreement, 90-day rollout plan.
 
 ## Key Decisions

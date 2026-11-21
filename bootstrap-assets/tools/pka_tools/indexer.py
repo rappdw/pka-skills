@@ -61,6 +61,18 @@ def _in_scope(rel: str, scopes: List[Tuple[str, bool]]) -> bool:
     return False
 
 
+CAPTURE_ROOT = "meeting-notes"
+
+
+def capture_root(ws: Workspace) -> Optional[str]:
+    """`meeting-notes` when a full `index` reads it although it is not an
+    index root: the folder exists at the workspace root. Only the narrative
+    of each earshot capture directory is taken from it. None when there is
+    no such folder. `status` reports this beside the index roots, and
+    `index` lists it at the end of its Scope line."""
+    return CAPTURE_ROOT if (ws.root / CAPTURE_ROOT).is_dir() else None
+
+
 def _collect(
     ws: Workspace, targets: List[str]
 ) -> Tuple[List[Path], List[Tuple[str, bool]], List[str], List[str]]:
@@ -105,8 +117,8 @@ def _collect(
         scopes.append((ws.rel(root), True))
         for found in ws.walk(root):
             take(found)
-    captures = ws.root / "meeting-notes"
-    if captures.is_dir():
+    captures = ws.root / CAPTURE_ROOT
+    if capture_root(ws):
         loose.append(ws.rel(captures))
         for found in ws.walk(captures):
             if found.name in CAPTURE_INDEXED and (found.parent / CAPTURE_MARKER).is_file():

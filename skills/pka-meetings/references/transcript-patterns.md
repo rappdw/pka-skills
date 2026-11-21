@@ -137,6 +137,12 @@ Default: keep in team-inbox/. The user can always clean up later.
 
 When reconciling, `pka-meetings` needs to find the matching notes for a transcript.
 
+### When No Notes Match
+
+`pka-meetings` offers to write notes from the transcript. This is PKA's own step and does not depend on thinkkit, which has no skill that turns a transcript into notes: with or without thinkkit the offer is the same, and the notes are written only on the user's yes. They carry a `**Source**: written from transcript <file>, not checked against notes taken in the meeting` header line, use speaker labels exactly as the transcript gives them, and skip reconciliation (there is nothing independent to reconcile against). The procedure is "Notes from a transcript" in the pka-meetings skill.
+
+What does need thinkkit is checking existing notes against a transcript (`resolve-against-transcript`). Without it, existing notes are filed as they are and the user is told the check was skipped.
+
 ### Matching Strategy
 
 1. **Date match:** Extract date from transcript filename (e.g., `GMT20260331` → 2026-03-31). Find notes files created on that date.

@@ -12,6 +12,7 @@ and topics to their actual Repo Map.
 - "How is my knowledge base organized?"
 - "What autonomy level am I on?"
 - "Show me my owner profile"
+- "What did I leave open last time?"
 
 ## Finding Things
 
@@ -24,6 +25,7 @@ and topics to their actual Repo Map.
 - "Find everything I've written about `<topic>` across all my work"
 - "Search for `<keyword>` in my knowledge base"
 - "Where have I mentioned `<project-or-concept>`?"
+- "Re-index my knowledge base" (after adding or editing notes by hand)
 
 ### Project status
 - "What's the state of `<project>`?"
@@ -55,8 +57,9 @@ and topics to their actual Repo Map.
 - "Start a meeting note"
 
 ### Mid-meeting (inside take-notes)
-- Terse bullets: "priya on mcp work | q2 deadline needs decision | send architecture doc"
-- "done" / "end notes" to finish
+- Terse lines: "priya: taking the adapter spike", "vendor decision deferred to december"
+- Start a line with `name:` to attribute it
+- "end notes" / "wrap up" to finish
 
 ### Reconcile with transcript
 - "Reconcile my `<meeting>` notes against the transcript in team-inbox"
@@ -72,6 +75,18 @@ and topics to their actual Repo Map.
 - "What action items do I have this week?"
 - "Show me open action items from recent meetings"
 - "What did I commit to in last week's meetings?"
+- "What action items are still open from the last two weeks?"
+
+## People and Timelines
+
+- "File a 1-1 note for `<person>`" (then look at the Timeline in their `index.md`)
+- "What's on `<person>`'s timeline?"
+- "From now on, '`<nickname>`' means `<person>`"
+- "Backfill the timelines from my old notes"
+- "Show me the backfill plan"
+- "Undo the last timeline backfill"
+- "Add summaries to `<person>`'s timeline"
+- "Show me what's on `<person>`'s timeline from `<a project folder>`" (no Obsidian)
 
 ## Dashboard
 
@@ -87,9 +102,9 @@ and topics to their actual Repo Map.
 - "What projects are winding down?"
 - "What projects haven't had activity recently?"
 - "Transition `<project>` to knowledge"
-- "Archive `<project>`"
+- "Archive `<project>`" (the same transition)
 - "Restore `<project>` to active"
-- "Show me my project summary draft" (after transition Step 1)
+- "Show me my project summary draft" (after the summary step)
 
 ## Role System
 
@@ -125,6 +140,13 @@ and topics to their actual Repo Map.
 - "Add my opinion on `<topic>` to the wiki"
 - "My view has changed on `<topic>`"
 
+## The Pointer Layer and Obsidian
+
+- "Set up pointer tables for my knowledge folders" (no Obsidian; opt-in)
+- "Show me the pointer table for `<folder>`"
+- "bootstrap obsidian" (a vault at `knowledge/`; one-time retrofit)
+- "What would bootstrap obsidian change?" (a preview)
+
 ## Health Checks
 
 - "Run a health check"
@@ -137,7 +159,9 @@ and topics to their actual Repo Map.
 - "Find duplicate notes"
 - "That finding is fine, hide it"
 - "What have I hidden from lint?"
+- "Bring back the finding I hid"
 - "Show me the weekly lint schedule"
+- "Keep `<file>` and delete the other copy" (acting on one duplicate finding)
 
 ## Meta / Getting Help
 
@@ -154,10 +178,13 @@ and topics to their actual Repo Map.
 - "What will the upgrade change?"
 - "bootstrap upgrade"
 - "What's new in this release?"
-- "File a 1-1 note for `<person>`" (then look at the Timeline in their `index.md`)
-- "From now on, '`<nickname>`' means `<person>`"
-- "What action items are still open from the last two weeks?"
 - "Refresh the role sections I haven't edited"
+- "Refresh my role files and remove the obsolete sections"
+
+After an upgrade, the what's-new step uses the prompts under People and
+Timelines, The Pointer Layer and Obsidian, and Health Checks above, and, for
+v1.11.0, Dashboard ("Update my dashboard"), Meeting Capture (action items),
+Project Lifecycle and Finding Things (decision history).
 
 ---
 
@@ -171,7 +198,7 @@ topics**. Bad:
 Good (after reading their Repo Map and seeing a `personnel/` folder with real
 subfolders):
 
-> Try: "What do I know about Maria?" — that's a real person in your
+> Try: "What do I know about Robin?" — that's a real person in your
 > `personnel/` folder.
 
 Or if you don't know specifics:

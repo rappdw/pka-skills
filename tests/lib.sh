@@ -31,7 +31,8 @@ ASSETS_DIR="${PKA_REPO}/bootstrap-assets"
 # macOS's /var -> /private/var) so tests can compare paths with script output.
 #
 # SAFETY. Everything here that creates a directory goes through _pka_mktemp,
-# and everything that removes one checks the name first. An earlier version
+# which records it; everything that removes one removes only what is on that
+# record, and checks the name and the position as well. An earlier version
 # ran `dir=$(mktemp -d ...)` unchecked: with TMPDIR pointing at a folder that
 # did not exist, mktemp failed, `cd "" && pwd -P` returned the CURRENT
 # directory, and the exit trap removed it. Run from the repository root, that
@@ -41,9 +42,29 @@ if [ ! -d "$PKA_TEST_TMP" ] || [ ! -w "$PKA_TEST_TMP" ]; then
   echo "tests: the temp folder '$PKA_TEST_TMP' (TMPDIR) is not a writable directory. Create it, or unset TMPDIR." >&2
   exit 1
 fi
+# The physical, absolute path: a relative TMPDIR must mean the same folder
+# after a test has changed directory.
+PKA_TEST_TMP=$(cd "$PKA_TEST_TMP" 2>/dev/null && pwd -P) || PKA_TEST_TMP=""
+if [ -z "$PKA_TEST_TMP" ] || [ ! -d "$PKA_TEST_TMP" ]; then
+  echo "tests: the temp folder (TMPDIR) could not be resolved to a directory. Create it, or unset TMPDIR." >&2
+  exit 1
+fi
+
+# The record of what this harness created: one physical path per line.
+# _pka_mktemp runs inside $(...), a subshell, so the record is a file and not
+# a shell variable. Nothing is ever removed that is not on it.
+PKA_TEST_CREATED=$(mktemp "$PKA_TEST_TMP/pka-test-created.XXXXXX" 2>/dev/null) || PKA_TEST_CREATED=""
+case "${PKA_TEST_CREATED##*/}" in
+  pka-test-created.*) ;;
+  *) PKA_TEST_CREATED="" ;;
+esac
+if [ -z "$PKA_TEST_CREATED" ] || [ ! -f "$PKA_TEST_CREATED" ] || [ -L "$PKA_TEST_CREATED" ]; then
+  echo "tests: could not create the harness's record of its own directories under '$PKA_TEST_TMP'; stopping before any test runs" >&2
+  exit 1
+fi
 
 # _pka_mktemp PREFIX -> prints the physical path of a new, empty directory
-# named PREFIX.XXXXXX, or prints nothing and returns 1.
+# named PREFIX.XXXXXX and records it, or prints nothing and returns 1.
 _pka_mktemp() {
   local prefix="$1" dir
   dir=$(mktemp -d "$PKA_TEST_TMP/$prefix.XXXXXX" 2>/dev/null) || return 1
@@ -52,14 +73,32 @@ _pka_mktemp() {
     "$prefix".*) ;;
     *) return 1 ;;
   esac
-  (cd "$dir" 2>/dev/null && pwd -P) || return 1
+  dir=$(cd "$dir" 2>/dev/null && pwd -P) || return 1
+  [ -n "$dir" ] || return 1
+  printf '%s\n' "$dir" >> "$PKA_TEST_CREATED" || return 1
+  printf '%s\n' "$dir"
 }
 
-# True only for a directory this file created: never the current directory,
-# never an ancestor of it, and only the three names _pka_mktemp is asked for.
+# True only for a directory this file created, by its record: the path must be
+# a line of the record, word for word. A directory that merely has a name
+# like ours is not ours.
+_pka_created_here() {
+  [ -n "$1" ] && [ -f "$PKA_TEST_CREATED" ] || return 1
+  case "$1" in
+    *"
+"*) return 1 ;;                  # a path with a line break cannot be a line of the record
+  esac
+  grep -Fxq -- "$1" "$PKA_TEST_CREATED"
+}
+
+# True only for a directory that may be removed: one this file created (see
+# above) that still passes the older checks, which stay as a second line of
+# defence: one of the three names _pka_mktemp is asked for, never the current
+# directory, never an ancestor of it.
 _pka_is_test_dir() {
   local p="$1" here
-  [ -n "$p" ] && [ -d "$p" ] || return 1
+  [ -n "$p" ] && [ -d "$p" ] && [ ! -L "$p" ] || return 1
+  _pka_created_here "$p" || return 1
   case "${p##*/}" in
     pka-test.*|pka-scratch.*|pka-test-home.*) ;;
     *) return 1 ;;
@@ -101,6 +140,10 @@ _pka_test_cleanup() {
   for p in "${PKA_TEST_CLEANUP[@]:-}"; do
     _pka_is_test_dir "$p" && rm -rf "$p"
   done
+  # The record itself: a plain file this harness made, removed by its exact name.
+  case "${PKA_TEST_CREATED##*/}" in
+    pka-test-created.*) [ -f "$PKA_TEST_CREATED" ] && [ ! -L "$PKA_TEST_CREATED" ] && rm -f "$PKA_TEST_CREATED" ;;
+  esac
 }
 trap _pka_test_cleanup EXIT
 

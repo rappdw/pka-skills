@@ -1,22 +1,20 @@
 ---
 name: pka-bootstrap
 description: >
-  ALWAYS use this skill when the user mentions PKA, personal knowledge, repo map,
-  knowledge base setup, replacing Obsidian/Notion/Tana/Heptabase, organizing
-  notes and files into a unified system, adding roles to their AI team, project
-  lifecycle management, transitioning or archiving projects, restoring archived
-  projects, checking which projects are stale or winding down, bootstrapping
-  any kind of personal knowledge assistant, OR setting up Obsidian coexistence,
-  OR upgrading an existing workspace. Triggers also include: "bootstrap obsidian",
-  "bootstrap vault", "MOC stubs", "frontmatter retrofit", "bootstrap upgrade",
-  "bootstrap all", "bootstrap everything". This skill handles first-run setup (scanning folders, inferring
-  structure, writing CLAUDE.md, creating SQLite indexes, defining roles) AND
-  ongoing management (updating the repo map, adding team roles, transitioning
-  completed projects to a knowledge archive, checking project activity) AND
-  the additive Obsidian bootstrap and the upgrade (idempotent, user-triggered,
-  never auto-run). It never runs git: nothing is committed or pushed. Use it even if the user doesn't say "PKA" explicitly — if
-  they want to unify scattered notes, set up AI-powered file organization, or
-  manage workspace lifecycle, this is the right skill.
+  Use this skill to set up, upgrade or manage a PKA (Personal Knowledge
+  Assistance) workspace. It owns: first-run setup in a folder (Repo Map,
+  CLAUDE.md, roles, optional SQLite index); upgrading an existing workspace;
+  the Obsidian retrofit; updating the Repo Map; adding roles to the AI team;
+  and project lifecycle (transition, archive, restore). Triggers: "set up PKA", "set up my PKA",
+  "initialize PKA here", "bootstrap", "bootstrap upgrade", "upgrade my PKA",
+  "update my role files", "bootstrap obsidian", "bootstrap vault", "MOC stubs",
+  "frontmatter retrofit", "bootstrap all", "bootstrap everything", "update my
+  repo map", "add a role", "transition X to knowledge", "archive X", "restore X
+  to active", "what projects are winding down", or wanting to replace
+  Obsidian/Notion/Tana/Heptabase. Runs only on request, is idempotent, never
+  runs git. A newcomer's questions (how something works, what changed, whether
+  an upgrade is needed) belong to pka-tutorial, which hands back here to run
+  the setup or the upgrade.
 user-invocable: true
 argument-hint: "[command or context]"
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
@@ -33,7 +31,7 @@ Everything related to PKA setup and management:
 - Inferring and maintaining the Repo Map
 - Initializing and managing SQLite
 - Defining and extending the role team
-- Managing project lifecycle (active → archiving → archived → restored)
+- Managing project lifecycle (active → archived, and restored to active)
 
 ## Trigger Phrases
 
@@ -49,7 +47,9 @@ Everything related to PKA setup and management:
 - "What projects are winding down?"
 - "Bootstrap obsidian / the vault / the MOCs"
 - "Bootstrap all / bootstrap everything"
-- Any mention of "personal knowledge assistance", "PKA", "repo map", "CLAUDE.md orchestrator"
+- "Bootstrap upgrade / upgrade my PKA / update my role files"
+
+Not this skill: "I just installed PKA", "give me a tour", "how do I…", "what's new", "do I need to upgrade". Those are questions, and `pka-tutorial` owns them; it hands back here when the user wants the setup or the upgrade carried out. Mentioning PKA is not by itself a reason to bootstrap anything.
 
 ---
 
@@ -110,12 +110,41 @@ has_local_cmd  = os.path.exists('CLAUDE.md')
 
 | Signals | Situation | Action |
 |---------|-----------|--------|
+| No `.pka/`, no `CLAUDE.md`, and no content folders (an empty folder, or only noise) | Fresh setup in an empty folder | Full bootstrap; see "An empty folder" below |
 | No `.pka/`, no `CLAUDE.md` | Fresh setup | Full bootstrap |
 | Folders present, no `.pka/`, no `CLAUDE.md` | Existing structure | Adapt bootstrap — infer, add infrastructure, don't move content |
 | `.pka/` exists but no `CLAUDE.md` | Partial/interrupted bootstrap | Resume: write `CLAUDE.md`, skip already-created infrastructure |
 | `CLAUDE.md` exists but no `.pka/` | CLAUDE.md without PKA infrastructure | Ask: "I see a CLAUDE.md but no PKA infrastructure. Treat as an existing PKA and add `.pka/`, or is this an unrelated CLAUDE.md?" |
 | `.pka/` and `CLAUDE.md` both exist | Already bootstrapped | Update mode — refresh map, extend roles, or lifecycle command |
 | `pka_root` found and `pka_root != cwd` | Inside a project workspace | Refuse. Say: "You're inside a project workspace under `<pka_root>`. Run PKA bootstrap from `<pka_root>` to manage the full system." |
+
+#### An empty folder
+
+When the structural scan (Step 3) finds no folder to put in a Repo Map, nothing can be inferred, so the outcome is fixed here rather than left to judgement:
+
+**Created without asking**, exactly as in any bootstrap: `.pkaignore`, `.pka/` and its contents (step 3b), `CLAUDE.md`, `team-inbox/` and `owner-inbox/`.
+
+**Offered, never created unasked: one starter layout.** It takes the place of Q3, since there is no map to confirm. Ask once: *"This folder is empty, so there is nothing for me to map. I can create a small starting layout: `knowledge/` for notes, with `meetings/` and `personnel/` inside it, and `projects/` for active work. Completed projects would be archived to `knowledge/archive/`. Create these, use your own folder names, or start with none?"*
+
+| Answer | Folders created | Repo Map afterwards |
+|---|---|---|
+| Yes | the five in the table below | those five rows, Confidence High (the user chose them) |
+| Their own names | the folders they name | one row each; ask which holds meeting notes, which holds people, and where completed projects go |
+| None | none | the table header and no rows; `## Archive Destination` says `not set` |
+
+```
+| Folder | Contents | Organization | Priority | Status | Confidence | Tags |
+|--------|----------|-------------|----------|--------|------------|------|
+| `knowledge/` | Notes and reference material | by topic | Active | active | High | |
+| `knowledge/meetings/` | Meeting notes | by date | Active | active | High | meeting-home |
+| `knowledge/personnel/` | Notes per person | by person | Active | active | High | people-home |
+| `knowledge/archive/` | Completed projects | by project | Archive | archived | High | |
+| `projects/` | Project workspaces | by project | Active | active | High | |
+```
+
+In every case: storage mode is Markdown-only (there are no files to count), no index is created, the pointer-layer offer (3j) is skipped because there is nothing to point at, and no notes, MOCs or person folders are written. Nothing is created inside the starter folders.
+
+With no rows, `pka-tools status` shows no index roots, no meeting folders and no people folder, and commands that need one say so (`people list` exits 3 and names the fix). That is a working state: the first file dropped in `team-inbox/` gets a routing proposal that names a folder to create, and the Repo Map gains its first row when the user agrees. Say this in the orientation (3k), and, when the starter layout was created, that a health check lists the still-empty folders under rule 4 until each holds a file.
 
 ### Step 2 — Load or generate `.pkaignore`
 
@@ -182,6 +211,8 @@ Three questions only.
 
 Show draft map including the meeting-home, people-home and daily-home tags and the archive destination. For low-confidence entries, ask specifically. Confirm archive destination: "I've identified `<folder>` as where completed project archives should live — is that right?" If none inferred, ask.
 
+In an empty folder there is no draft map; Q3 is the starter-layout question from "An empty folder".
+
 ---
 
 ## Phase 3: Write Output Files
@@ -207,6 +238,7 @@ Written in Phase 1 if absent. See `references/pkaignore-defaults.md`.
 ├── owner-profile.md
 ├── session-log.md
 ├── decision-log.md
+├── schema.md             (index mode only; written in 3i)
 └── knowledge.db          (index mode only)
 ```
 
@@ -226,7 +258,7 @@ If `python3 --version` reports older than 3.9, stop and tell the user; do not fa
 
 ### 3c — Inboxes
 
-Create `owner-inbox/` and `team-inbox/` at PKA root. Never create content folders when adapting to an existing structure.
+Create `owner-inbox/` and `team-inbox/` at PKA root. Never create content folders when adapting to an existing structure. In an empty folder, content folders are created only when the user accepts the starter layout or names their own (see "An empty folder").
 
 ### 3d — `CLAUDE.md`
 
@@ -238,9 +270,11 @@ Generate using `references/claude-md-template.md`.
 
 Generate `.pka/owner-profile.md` from Q1 interview responses. See `references/owner-profile.md` for schema and generation rules.
 
+The file is used: the orchestrator reads it once at session start (the `CLAUDE.md` template's Session Start Protocol, and "Owner profile and decision log" in each role seed). It holds how to write for the owner, what they know and what they are working towards. It does not hold the autonomy level; that is set in `## Autonomy Level` of `CLAUDE.md` only.
+
 ### 3f — Role definition files and shared references
 
-Seed roles in `.pka/roles/`: orchestrator, researcher, librarian. See `references/role-definitions.md` for the standard schema and seed definitions.
+Seed roles in `.pka/roles/`: orchestrator, researcher, librarian. See `references/role-definitions.md` for the standard schema and seed definitions. The seeds have no `model:` line: a role runs on the session's model unless the user adds one.
 
 Also seed two shared-reference files in `.pka/roles/` (these are **not roles** — they have no `role:` frontmatter and aren't in the roster, but they sit alongside roles because the roles reference them):
 
@@ -262,6 +296,8 @@ Seeding it in the base bootstrap is benign — it only documents conventions tha
 
 Seed with bootstrap decisions (storage mode, autonomy level, archive destination). See `references/decision-log.md` for entry format and when-to-log rules.
 
+After bootstrap the roles keep it: the orchestrator appends an entry when a structural, lifecycle, role, autonomy or policy decision is made, the librarian when a routing policy is set, and both read it before recommending something an earlier decision may cover (the role seeds say exactly when).
+
 ### 3i — SQLite initialization (index mode)
 
 ```
@@ -269,7 +305,7 @@ Seed with bootstrap decisions (storage mode, autonomy level, archive destination
 .pka/bin/pka-tools index
 ```
 
-`db init` creates `.pka/knowledge.db` with the current schema; `index` fills it from the Repo Map's Active and Reference folders (markdown and text content, plus metadata and a content hash for every file). Do not write the schema or the inserts by hand. `index` lists documents that have no searchable text yet (PDFs without an OCR sidecar); hand that list to the librarian. Write `.pka/schema.md` from the output of `.pka/bin/pka-tools db schema`.
+`db init` creates `.pka/knowledge.db` with the current schema; `index` fills it from the Repo Map's Active and Reference folders (markdown and text content, plus metadata and a content hash for every file). A folder whose row says Archive is not read, unless a folder above it has an Active or Reference row; the archive destination is normally such a folder, and each project transitioned into it is indexed through a row of its own (see "Transition Workflow"). Do not write the schema or the inserts by hand. `index` lists documents that have no searchable text yet (PDFs without an OCR sidecar); hand that list to the librarian. Write `.pka/schema.md` from the output of `.pka/bin/pka-tools db schema`.
 
 See `references/sqlite-modes.md` for the schema and the commands.
 
@@ -294,7 +330,7 @@ Then offer the weekly health check: run `.pka/bin/pka-tools lint schedule` and s
 3. If alias requested, `CLAUDE.md` `## Roles` section updated
 4. `roster.md` updated
 5. Definition shown to user for confirmation before finalizing
-6. `session-log.md` entry appended
+6. `session-log.md` entry appended, and a `.pka/decision-log.md` entry saying why the role was added
 
 ---
 
@@ -303,12 +339,14 @@ Then offer the weekly health check: run `.pka/bin/pka-tools lint schedule` and s
 ### Proactive Detection (Session Start)
 
 Check all project workspace folders (contain `CLAUDE.md` at root, not in `.pka/`):
-- No file modifications in 60+ days → flag for archiving/transition suggestion
+- No file modifications in 60+ days → flag, and suggest a transition
 - Referenced consistently in past tense in session log → flag similarly
 
 ### Transition Workflow
 
-Triggered by: "transition `<folder>` to knowledge"
+Triggered by: "transition `<folder>` to knowledge", or "archive `<folder>`".
+
+Both phrasings ask for this workflow. "Archive X" is not a lighter step: there is no "archiving" state that is recorded anywhere, and nothing marks a project as winding down. A project is active (a folder under `projects/`) until this workflow moves it. If the user says "archive X" and does not want it moved yet, tell them so and leave it; do not write a status. What records the outcome is the Repo Map row of step 6 (Status `archived`), the session log and the decision log.
 
 1. Read archive destination from `## Archive Destination` in `CLAUDE.md`
 2. Read project `CLAUDE.md` + top-level markdown → generate `project-summary.md` draft using `references/project-summary-template.md` → save to `owner-inbox/<folder>-summary-draft.md`
@@ -321,20 +359,22 @@ Triggered by: "transition `<folder>` to knowledge"
      ```
      .pka/bin/pka-tools pointers rename <project path> <new path> --prefix --notes
      ```
-     Both paths are relative to the workspace root (`projects/orion`, `knowledge/archive/orion`). It prints how many links it rewrote and in which files; running it again changes nothing. It rewrites `[[wikilinks]]` only. Search for the old path afterwards (`grep -rn "<project path>" --include='*.md' .`) and show the user what is left: relative markdown links, and mentions in `CLAUDE.md` or other projects, are theirs to fix. Then run `.pka/bin/pka-tools index`.
+     Both paths are relative to the workspace root (`projects/orion`, `knowledge/archive/orion`). It prints how many links it rewrote and in which files; running it again changes nothing. It rewrites `[[wikilinks]]` only. Search for the old path afterwards (`grep -rn "<project path>" --include='*.md' .`) and show the user what is left: relative markdown links, and mentions in `CLAUDE.md` or other projects, are theirs to fix.
 
    Then copy the approved summary into the moved directory as `project-summary.md`. Nothing is committed: the move, the rewritten links and the summary are left in the working tree for the user.
-6. Update Repo Map: status → archived, Priority → Reference
-7. Librarian runs content index pass on moved directory
-8. Append to `session-log.md`
+6. **Give the project its own Repo Map row, before indexing.** Folder `<archive-destination>/<folder>/`, Priority **Reference**, Status **archived**. If the project already had a row of its own, change that row's folder, priority and status; if it was covered by the `projects/` row, add a row. The archive destination's own row is not changed.
+
+   This row is what makes the project searchable. `pka-tools index` reads the folders whose row says Active or Reference, and the archive destination's row says Archive, so without a row for the project the move takes it out of the index altogether: its old `projects/` rows are dropped and nothing replaces them. (The exception: when a folder above the destination, such as `knowledge/`, has an Active or Reference row of its own, everything beneath it is already indexed and the project's row only records its status.)
+7. Run `.pka/bin/pka-tools index`. The project's rows under `projects/` leave the index and every file of the moved folder enters it, at any depth: the `projects/*/*/*` rule in `.pkaignore`, which kept an active project to its top-level files, does not apply at the new path. Check with `.pka/bin/pka-tools status`: the project's folder is listed under index roots (or the folder above it that covers it). In markdown-only mode there is no index and this step is skipped.
+8. Append to `session-log.md`, and add an entry to `.pka/decision-log.md` (why the project was archived, who decided, `projects/<folder> → <archive-destination>/<folder>`).
 
 ### Reverse Transition
 
-1. Move back from archive destination to original location, then run `.pka/bin/pka-tools pointers rename <archive path> <original path> --prefix --notes` so wikilinks follow it, in the vault and inside the project's own notes, then `.pka/bin/pka-tools index`. If the project was graduated by an earlier release's `graduate.sh`, its original repository is still at `.pka/graduate-backups/<folder>-<timestamp>.git`: tell the user it is there and that restoring it (`mv <backup> projects/<folder>/.git`) is theirs to do. Never delete anything under `.pka/graduate-backups/`.
-2. Update Repo Map: status → active
-3. Remove from full-text index; add back to shallow index
+1. Move back from archive destination to original location, then run `.pka/bin/pka-tools pointers rename <archive path> <original path> --prefix --notes` so wikilinks follow it, in the vault and inside the project's own notes (the index is brought up to date in step 3, after the Repo Map). If the project was graduated by an earlier release's `graduate.sh`, its original repository is still at `.pka/graduate-backups/<folder>-<timestamp>.git`: tell the user it is there and that restoring it (`mv <backup> projects/<folder>/.git`) is theirs to do. Never delete anything under `.pka/graduate-backups/`.
+2. Update Repo Map: remove the project's Reference row (or, if it had its own row before the transition, set that row back to its original folder, Priority Active, Status active). The `projects/` row covers it again.
+3. Run `.pka/bin/pka-tools index --prune`. That is the whole of "remove from the full-text index, add back to the shallow one": at `projects/<folder>/` the `.pkaignore` rule limits the index to the project's top-level files again, and `--prune` drops the rows left at the archive path. It is needed here because that path stopped being an index root in step 2, and a plain `index` only clears out rows under the roots it reads; `--prune` removes rows whose file no longer exists, and nothing else.
 4. `project-summary.md` stays in project directory as context
-5. Append to session log
+5. Append to session log, and add a `.pka/decision-log.md` entry for the restore
 
 ---
 
@@ -424,10 +464,11 @@ Full step-by-step algorithm in `references/upgrade.md`. Summary:
 3. **Run the helper** with `python3 .pka/upgrade-roles.py --workspace <root>`. The helper:
    - Backs up `.pka/roles/` to `.pka/upgrade-backups/<timestamp>/`
    - Seeds `.pka/roles/_obsidian.md` if absent
-   - Structured-merges new H2 sections into orchestrator/librarian/researcher role files
+   - Structured-merges new H2 sections into orchestrator/librarian/researcher role files. A workspace from v1.10.0 or earlier gains "Owner profile and decision log" in all three and "Answering and delegating" in the orchestrator; a section with one of those headings that the user already wrote is left as it is
    - Never modifies the body of existing sections on this run
    - Lists **sections seeded by an earlier version**: "can be refreshed" (the text is exactly what an earlier version shipped, so the user never edited it) or "customised — left alone"
    - Lists **obsolete** sections and files, left by the removed commit/push protocol (`.pka/roles/_git-protocol.md`, the "Commit/push protocol" sections, the orchestrator's push sections): "can be removed" or "customised — left alone"
+   - Lists **pinned models**: role files whose frontmatter has a `model:` line. It never changes them
 4. **Print the helper's summary** to the user.
 5. **Offer the refresh, if the summary lists sections that can be refreshed or removed.** These carry superseded instructions (the pre-v1.7 pointer-row rule, for example). Ask once, naming both kinds; on a yes run `python3 .pka/upgrade-roles.py --workspace <root> --refresh`. It takes a new backup, replaces the refreshable sections, removes the obsolete ones that were never edited, and leaves customised ones alone. Until the obsolete sections are gone the role files still tell the roles to commit, to push and to run helper scripts the upgrade has just moved to the backup folder. Say this plainly if the user declines the refresh or a section is customised and stays: those instructions must not be followed, and they should remove or reword them.
    - For a **customised** section, show the difference with `--diff` and let the user decide. Replace one (or remove an obsolete one) only on an explicit yes for that section: `--refresh --refresh-section '<file>:## <Heading>'`. Never pass `--refresh-section` on your own judgement — it overwrites or removes the user's text (the backup keeps it). A customised `_git-protocol.md` is never removed by the helper; the user deletes it when they no longer want it.
@@ -436,6 +477,9 @@ Full step-by-step algorithm in `references/upgrade.md`. Summary:
    - If there is no Obsidian vault and no `_MOC.md` anywhere in `knowledge/`, mention that the pointer layer is opt-in (step 3j of base bootstrap).
    - If the workspace has a `.meta` file at root, tell the user what changed for it (see "Workspaces with nested repositories").
    - Mention the manual bullet-merges into `## Key Competencies` and `## Output Conventions` (the upgrade does not touch these — see `references/upgrade.md` for the rationale).
+   - Say that `CLAUDE.md` was not edited (the upgrade never edits it), and offer to show the two steps a workspace set up before v1.11.0 lacks there: the health-check step of the Session Start Protocol and the dashboard step of the Session End Protocol, as `references/claude-md-template.md` has them. The user adds them, or asks for them to be added; the refreshed "Session-start checks" section of the orchestrator's role file carries both in the meantime.
+   - If there is a `dashboard.html` at the workspace root without a `pka:loader:start` block, it was made by an earlier release and the upgrade did not touch it: tell the user to say "Update my dashboard" (`pka-interface` backs the old page up as `dashboard.html.bak-<date>` and rebuilds it).
+   - If the summary lists pinned models, say that roles no longer pin a model and that each listed `model:` line can be removed so the role follows the session's model. Offer to remove them; do it only on a yes, per file, and set that role's Model cell in `roster.md` to `session`.
    - Show the weekly health-check entry: run `.pka/bin/pka-tools lint schedule` and relay what it prints. Nothing is installed; installing it is the user's to do, and they can skip it. If they already installed it for this workspace, there is nothing to change.
 
 ### Hard rules
@@ -451,27 +495,73 @@ Re-running on an already-upgraded workspace produces no further role-file change
 
 ### Output
 
-The helper prints (and the orchestrator surfaces):
+The helper prints the summary below (and the orchestrator surfaces it). This is a real run, on a workspace whose role files were seeded by v1.7.0 and never edited; only the workspace path and the backup's timestamp are replaced. A block is left out when it has nothing to list.
 ```
 Role upgrade summary
 ------------------------
-Backup:  /workspace/.pka/upgrade-backups/<timestamp>/roles
+Backup:  /home/sam/pka/.pka/upgrade-backups/<timestamp>/roles
 
-Shared references seeded:           N (M already present)
-orchestrator: added K section(s):
-  + ## Session-start checks (cached for the session)
-  + ## File references in responses
-  ...
-librarian:    added K section(s):
-  + ## Obsidian coexistence (gated on `obsidian_present`)
-  + ## Pointer-row maintenance (…)
-researcher:   added K section(s):
-  ...
+Shared references seeded:        1
+  + _obsidian.md
+Shared references already present: 0
+_obsidian.md:
+  already had 2 section(s):
+    = ## Pointer Layer (added in v1.6.1)
+    = ## Person timeline (added in v1.7.0)
 
-NOTE: This upgrade only ADDS new H2 sections. It does NOT modify
-      existing sections (e.g., 'Key Competencies', 'Output Conventions',
-      or 'Invocation'). See references/role-definitions.md for any
-      bullet-level additions you may want to merge manually.
+orchestrator:
+  added 2 section(s):
+    + ## Answering and delegating
+    + ## Owner profile and decision log
+  already had 3 section(s):
+    = ## Session-start checks (cached for the session)
+    = ## File references in responses
+    = ## Bootstrap dispatch
+librarian:
+  added 1 section(s):
+    + ## Owner profile and decision log
+  already had 4 section(s):
+    = ## Obsidian coexistence (gated on `obsidian_present`)
+    = ## Pointer-row maintenance (gated only on routing into a domain — NOT on `obsidian_present`)
+    = ## Indexing pointer rows
+    = ## Rename / graduate propagation
+researcher:
+  added 2 section(s):
+    + ## Filing a brief
+    + ## Owner profile and decision log
+  already had 1 section(s):
+    = ## Obsidian coexistence (gated on `obsidian_present`)
+
+Sections seeded by an earlier version:
+  orchestrator.md: ## Session-start checks (cached for the session)  — can be refreshed (unchanged since it was seeded)
+  orchestrator.md: ## Bootstrap dispatch  — can be refreshed (unchanged since it was seeded)
+  librarian.md: ## Obsidian coexistence (gated on `obsidian_present`)  — can be refreshed (unchanged since it was seeded)
+  librarian.md: ## Rename / graduate propagation  — can be refreshed (unchanged since it was seeded)
+  Run again with --refresh to update the unchanged ones (a backup is taken first).
+
+Obsolete (pka-skills no longer commits, pushes or sets up nested repositories):
+  _git-protocol.md (whole file)  — can be removed (unchanged since it was seeded)
+  orchestrator.md: ## Session-end protocol (extended)  — can be removed (unchanged since it was seeded)
+  orchestrator.md: ## Mid-session push handling  — can be removed (unchanged since it was seeded)
+  librarian.md: ## Commit/push protocol (gated on `hybrid_monorepo_present`)  — can be removed (unchanged since it was seeded)
+  researcher.md: ## Commit/push protocol (gated on `hybrid_monorepo_present`)  — can be removed (unchanged since it was seeded)
+  Run again with --refresh to remove the unchanged ones (a backup is taken first).
+  WARNING: while any of these remain, the role files still tell the roles to commit,
+  push or run helper scripts that are no longer there. Nothing does that any more:
+  remove or reword them, and do not run git on a role file's instruction.
+
+Pinned models (frontmatter is never changed by the upgrade):
+  librarian.md: model: claude-opus-4-5  — left alone
+  orchestrator.md: model: claude-opus-4-5  — left alone
+  researcher.md: model: claude-opus-4-5  — left alone
+  Role files are now seeded without a `model:` line, so a role runs on the session's
+  model. A pinned model can now be removed by hand: delete the line from the file's
+  frontmatter. Keep it if you set it on purpose.
+
+NOTE: Sections outside the seeded set (e.g. 'Key Competencies', 'Output
+      Conventions', 'Invocation') are never modified. If you want later
+      bullet-level additions there, see references/role-definitions.md and
+      merge manually.
 ```
 
 ---

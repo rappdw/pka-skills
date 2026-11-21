@@ -92,7 +92,7 @@ If a project folder contains `Cargo.toml`, `package.json`, `go.mod`, or `pyproje
 `.vtt`, `.srt`, and transcript-pattern files must NOT appear in `.pkaignore`. They land in `team-inbox/` and are held for `pka-meetings` processing. Adding them to the ignore list would make them invisible to the transcript detection system.
 
 ### Email files: optional
-The default includes `*.eml` and `*.msg` as global ignores. Users who want email archives indexed can remove these lines.
+The default does not ignore `*.eml` or `*.msg`: saved emails are filed like any other document. Users who keep large email archives they do not want walked can add those two patterns.
 
 ---
 
@@ -101,7 +101,7 @@ The default includes `*.eml` and `*.msg` as global ignores. Users who want email
 Users should edit `.pkaignore` before running bootstrap if they have known noise patterns. Bootstrap loads the user's version if present; generates the default only if absent.
 
 Common customizations:
-- Remove `*.eml` / `*.msg` to index email archives
+- Add `*.eml` / `*.msg` to leave email archives out
 - Add `*.log` if log files accumulate in knowledge folders
 - Adjust the `projects/*/*/*` depth rule if specific projects need deeper indexing
 - Add project-specific exclusions under `# @pka-section: projects`
