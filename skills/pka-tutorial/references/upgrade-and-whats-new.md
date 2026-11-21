@@ -339,8 +339,10 @@ they ask, and once at the end of a session.
 when the user captures meetings with thinkkit.)*
 "What action items do I have this week?" now reads the form thinkkit writes
 (`- [ ] **Robin**: Draft the plan (due: 2026-12-01)`) as well as PKA's own
-(`— @Robin — by 2026-12-01`). A due phrase that is not a date ("Friday") is
-shown as written, never guessed. Filing a note does not rewrite its items.
+(`— @Robin — by 2026-12-01`). The bold name counts when it is someone PKA
+knows: a person with a folder, an attendee of the note, or the owner. A due
+phrase that is not a date ("Friday"), or an item with two dates, is shown as
+written, never guessed. Filing a note does not rewrite its items.
 
 > "What action items are still open from the last two weeks?"
 

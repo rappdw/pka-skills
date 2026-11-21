@@ -162,7 +162,7 @@ When `dashboard.html` already exists and has the loader block:
 - Change only marked sections; keep everything the user wrote outside the markers.
 - Add a marked section for each folder added to the Repo Map since the page was written, and a navigation link for it.
 - Remove the section of a folder that left the Repo Map only after the user agrees.
-- Replace the loader block (`pka:loader:start` … `pka:loader:end`) or the views block (`pka:views:start` … `pka:views:end`) whole when the template's copy has a higher number in its first comment (`pka-loader 1`, `pka-views 1`), never line by line.
+- Replace the loader block (`pka:loader:start` … `pka:loader:end`) or the views block (`pka:views:start` … `pka:views:end`) whole when the template's copy has a higher number in its first comment (`pka-loader 2`, `pka-views 2` in this release), never line by line.
 - Finish by refreshing the data.
 
 ---

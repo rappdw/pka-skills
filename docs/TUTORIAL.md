@@ -1202,6 +1202,7 @@ Obsidian:         not present
 Timelines reach:  .
 Storage:          index, schema version 1
 Index roots:      knowledge/leadership, knowledge/personnel, knowledge/research, knowledge/topics, projects/lyra, projects/orion
+Also indexed:     meeting-notes (only the narrative.md of each earshot capture)
 Meeting homes:    knowledge/leadership
 People home:      knowledge/personnel
 ```

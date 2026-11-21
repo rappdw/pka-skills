@@ -125,13 +125,16 @@ One session log entry per action item. These appear as open threads in future se
 | `- [ ] **Sam**: Book the rooms (due: Friday)` | Sam | none; `due_text` is `Friday` | thinkkit `take-notes` |
 | `- [ ] Circulate the notes` | none | none | anyone |
 
-**Owners.** Every `@name` in the item, and a bold name followed by a colon at the very start of it (`**Robin**:` or `**Robin:**`). Several names in the bold part are split on commas, `and`, `&` and `/`. The bold part counts only when each piece looks like a name: at most four words, each capitalised, no digits, and not a label such as `Note`, `TODO`, `Decision` or `Owner`. `**Robin** to draft the plan` (no colon) and `**Draft the plan**: …` give no owner.
+**Owners.** Every `@name` in the item, and a bold name followed by a colon at the very start of it (`**Robin**:` or `**Robin:**`). Several names in the bold part are split on commas, `and`, `&` and `/`. The bold part counts only when each piece looks like a name: at most four words, each capitalised, no digits, and not a label such as `Note`, `TODO`, `Decision` or `Owner`. It must also name someone known: a person with a folder under the people folder, an attendee of the same note, or the workspace owner named in `.pka/owner-profile.md`. So `**Budget**: …` is a label, not an owner, and a bold name the workspace has never heard of gives no owner; when unsure the tool reports none rather than guess. `**Robin** to draft the plan` (no colon) and `**Draft the plan**: …` give no owner.
 
 **Due date.** In this order:
 
 1. `by` or `due` followed by an ISO date, with or without a colon or brackets: `by 2026-05-01`, `(due: 2026-05-01)`.
 2. Bracketed `(due: …)` or `(by: …)` with other text. A month-name date (`Dec 1`, `1 December 2026`) becomes a date; without a year it is the first such day on or after the note's date. Anything else (`Friday`, `end of month`, `12/1`) is returned in `due_text` only: the tool does not guess weekdays, and cannot tell day from month in `12/1`.
+   A bracket without a colon counts only when it speaks of time, so `(due diligence)` is not a due date.
 3. An ISO date that **ends** the item after a dash: `— @Sam — 2026-05-01`. This is accepted because it is the form this skill told roles to write up to v1.10.0, so filed notes contain it.
+
+**One date or none.** `due` is set only when the item gives exactly one date. Two different dates (`(due: 2026-12-01 or 2026-12-05)`, a range, a bracket that disagrees with a trailing date) give no `due`, and `due_text` holds what was written, in full. A bracket that is not a date together with one trailing ISO date (`(due: Friday) — 2026-11-21`) gives that date, and keeps the bracket's words in `due_text`.
 
 An ISO date anywhere else is part of the sentence, not a due date: `Review the 2026-11-21 minutes` has none, and neither has `Send it — 2026-11-21 — @Sam`. When in doubt write `by`.
 

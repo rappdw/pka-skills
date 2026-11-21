@@ -276,7 +276,8 @@ Post-meeting overhead: ~30 seconds of confirmation.
 dated meeting and person notes of the last 7 days ("this week" means the last
 7 days, not since Monday), each with its source file, owner and due date. An owner is read
 from a bold name with a colon at the start of the item (`**Robin**:`, the form
-thinkkit writes) or from `@name`; a due date from `(due: …)` or
+thinkkit writes) when it names someone PKA knows (a person folder, an attendee
+of the note, or the owner), or from `@name`; a due date from `(due: …)` or
 `by YYYY-MM-DD`. A due phrase that is not a date ("Friday") is shown as
 written, not guessed. Tick the box in the note to close one.
 
