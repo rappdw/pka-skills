@@ -2,7 +2,9 @@
 
 At bootstrap, the system captures a lightweight owner profile that gives every role
 enough context to communicate in the owner's voice and understand their priorities.
-The profile is stored at `.pka/owner-profile.md` and referenced by all roles.
+The profile is stored at `.pka/owner-profile.md`. The orchestrator reads it once at
+session start; the role seeds (`role-definitions.md`, section "Owner profile and
+decision log" of each role) and the `CLAUDE.md` template say who uses it for what.
 
 ---
 
@@ -34,7 +36,7 @@ natural responses and only asks follow-ups for gaps.
 - Never ask more than 5 questions total across the entire bootstrap interview (3 original + up to 2 profile follow-ups).
 - If the user gives a terse answer, accept it — don't push for more detail.
 - If the user says "skip" or similar, write what you have and move on.
-- The profile is a living document — roles can update it as they learn more about the owner through normal interaction.
+- The profile is a living document — the orchestrator updates it when the owner says something lasting (see "Updating the Profile").
 
 ---
 
@@ -85,16 +87,24 @@ Preferred formats: {{preferred_formats}}
 
 ## How Roles Use the Profile
 
-- **@orchestrator** — adapts greeting verbosity and session summaries to communication style
+The rules live in the role seeds; this is the summary.
+
+- **@orchestrator** — reads the file once at session start and keeps it for the session. Adapts the greeting, summaries and deliveries to the communication style; leads the greeting with what the current goals make important; passes the expertise on when delegating. The only role that edits the profile.
 - **@researcher** — matches output depth and framing to domain expertise (don't over-explain what they already know)
-- **@librarian** — uses domain expertise to improve routing confidence (a document about "distributed consensus" is high-relevance for someone with distributed systems expertise)
-- **All roles** — reference the profile when generating any owner-facing content to maintain consistent voice and appropriate technical depth
+- **@librarian** — uses domain expertise to improve routing confidence (a document about "distributed consensus" is high-relevance for someone with distributed systems expertise). The profile never overrides the Repo Map or a routing rule.
+
+**The profile does not hold the autonomy level.** That is set in `## Autonomy Level` of `CLAUDE.md` and nowhere else, so there is one place to read it and one place to change it.
+
+Where the profile and `## Communication Style` in `CLAUDE.md` differ, the profile is followed: `CLAUDE.md` records what was said at setup and the profile is kept current.
+
+A workspace without the file (set up before profiles existed, or the file was deleted) works from `CLAUDE.md` alone. No role creates a profile unasked.
 
 ---
 
 ## Updating the Profile
 
-The profile updates organically:
-- Any role that learns something new about the owner (e.g., "I just switched teams" or "I prefer shorter summaries") appends to the relevant section
-- Updates logged in `session-log.md`: `## <date> | <role> | Updated owner profile: <what changed>`
+The profile changes when the owner says something lasting about themselves or about how they want to be written for ("I just switched teams", "I prefer shorter summaries"):
+- The orchestrator edits the section it belongs in. Another role that hears it passes it to the orchestrator
+- Only what the owner said is recorded, never an inference about them
+- The update is logged: `.pka/bin/pka-tools log add --role orchestrator --summary "Updated owner profile: <what changed>"`
 - The `last-updated` frontmatter field is refreshed on every edit

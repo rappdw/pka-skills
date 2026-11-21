@@ -130,6 +130,10 @@ Until the index is migrated, `index` and `search` refuse to run (exit 3) and say
 
 **Index roots** are the Repo Map folders with priority Active or Reference. Without a readable Repo Map the root is `knowledge/`. `.pkaignore` applies; dot-folders and symbolic links are skipped. Earshot capture directories contribute their `narrative.md` and nothing else.
 
+A row nested inside another root is folded into it, so a priority is not inherited downwards as an exclusion: with `knowledge/` Active and `knowledge/archive/` Archive, the archive folder is indexed, because it is inside a root. An Archive row keeps a folder out of the index only when no folder above it is a root.
+
+**The archive destination and transitioned projects.** The destination's row is Archive; a project transitioned into it gets its own row, Priority Reference, Status archived, and `index` reads that. `status` then lists `knowledge/archive/orion` (for example) among the index roots. Without that row a transitioned project is in no root: `index` removes its old `projects/` rows and adds nothing. Inside the archive the `.pkaignore` rule `projects/*/*/*` no longer matches, so the whole project is indexed, not just its top-level files.
+
 **What gets indexed**
 
 | File | `file_index` | `search_fts` |

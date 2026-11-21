@@ -11,7 +11,8 @@ description: >
   enhances "what do I know about X" queries when a wiki exists for X. Topic
   wikis are LLM-maintained synthesis pages that sit alongside authored notes —
   they cite moments, never replace them. Optional layer; users without wikis
-  see no change in PKA behavior.
+  see no change in PKA behavior. A newcomer asking what topic wikis are gets
+  pka-tutorial.
 user-invocable: true
 argument-hint: "[create|ingest|list|query|retire] [topic or path]"
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep

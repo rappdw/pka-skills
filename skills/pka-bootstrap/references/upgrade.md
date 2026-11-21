@@ -25,6 +25,7 @@ Procedure for the `upgrade` bootstrap target. Invoked when a user with an alread
    - Headings inside fenced code blocks (``` or ~~~) are examples, not structure: they are neither counted as "already present" nor used as the insertion point.
    - Keeps each file's line endings (a CRLF file stays CRLF).
    - Never modifies the body of existing sections.
+   - The sections added by a plain run are listed in `upgrade-roles.py` (`ORCHESTRATOR_SECTIONS`, `LIBRARIAN_SECTIONS`, `LIBRARIAN_SECTIONS_V161`, `RESEARCHER_SECTIONS`). The most recent: "Owner profile and decision log" in all three role files (who reads `.pka/owner-profile.md` and when, who appends to `.pka/decision-log.md` and in what format) and "Answering and delegating" in the orchestrator (it answers lookups itself and delegates filing and synthesis). The upgrade does not create either `.pka/` file and does not edit `CLAUDE.md`: a workspace's own `CLAUDE.md` keeps its wording, and the role sections carry the behaviour.
 4. **Report sections seeded by an earlier version** (see "Refreshing seeded sections" below) **and obsolete ones** (see "Obsolete sections and files"). Nothing is replaced or removed unless `--refresh` is given.
 5. **Print a summary** listing:
    - Backup path
@@ -35,7 +36,7 @@ Procedure for the `upgrade` bootstrap target. Invoked when a user with an alread
 ## What it does NOT do
 
 - **Never modifies the body of existing H2 sections.** If the user has customized `## Working Style` or `## Output Conventions`, those bytes stay byte-identical. Changes to those sections (e.g., the "never commits, stages or pushes" bullet on orchestrator's Output Conventions) are NOT applied automatically — they're documented in `references/role-definitions.md` for the user to merge manually.
-- **Never modifies frontmatter** in role files. Existing `model:`, `tools:`, etc. are preserved.
+- **Never modifies frontmatter** in role files. Existing `model:`, `tools:`, etc. are preserved. That includes the `model: claude-opus-4-5` line releases up to v1.10.0 seeded: role files are now seeded without a model (see "Pinned models").
 - **Never deletes** content without `--refresh`. A plain run is additive. `--refresh` replaces unedited seeded sections and removes unedited obsolete ones, after the backup.
 - **Never commits.** The upgrade leaves changes in the working tree for human review.
 - **Never touches files outside `.pka/`.** Only the role files and shared references are modified.
@@ -90,6 +91,12 @@ The researcher's commit section also carried the instruction to run `post-route`
 The sections that remain but mentioned the layout (the orchestrator's "Session-start checks" and "Bootstrap dispatch", the librarian's "Obsidian coexistence" and "Rename / graduate propagation", the Pointer Layer invariants in `_obsidian.md`) are ordinary refreshable sections with new text.
 
 Not touched by any run: a workspace's `.meta`, its nested repositories, its root `.gitignore`, and the lines about pushing in the orchestrator's unseeded sections (see "Manual follow-up").
+
+## Pinned models
+
+Role seeds used to carry `model: claude-opus-4-5` in their frontmatter. They no longer pin a model: a role without a `model:` line runs on the session's model. The helper does not apply that change to an existing workspace, because it never edits frontmatter and cannot tell a line the user chose from one a seed wrote. Instead its summary lists every role file in `.pka/roles/` that has a `model:` line, with the value, under "Pinned models", and says the line can be removed by hand.
+
+Relay that list. Offer to remove the lines; remove one only on the user's yes for that file, and when you do, change that role's Model cell in `.pka/roles/roster.md` to `session`. A user who pinned a model on purpose keeps it. Nothing is listed when no role file has the line.
 
 ## Implementation
 
@@ -164,7 +171,7 @@ To undo: replace `.pka/knowledge.db` with the backup file named in the output. D
 After running `upgrade`, the user may want to:
 
 1. **Bring the unseeded sections up to date by hand.** The upgrade never touches `## Key Competencies`, `## Output Conventions` or `## Invocation`. Compare them against `references/role-definitions.md`. In a workspace bootstrapped on v1.6 or v1.7.0 the orchestrator's copies still mention the removed push protocol: "Session-end consolidated push for hybrid-monorepo workspaces" (Key Competencies), "Bootstrap dispatch (obsidian / git / all)…" (Key Competencies), "Never auto-commits root repo…" (Output Conventions) and "push coordination" (Invocation). A customised section that was kept may also still point at `.pka/roles/_git-protocol.md`, which a refresh removes. Offer to show the user those lines; they delete or reword them.
-2. **Update role frontmatter** if a new model is preferred. Upgrade preserves existing frontmatter; users decide whether to switch (`claude-opus-4-5` → `claude-opus-4-7` etc.).
+2. **Remove a pinned model** from role frontmatter. A `model:` line makes that role ask for one specific model whatever the session runs on; without the line the role uses the session's model. The upgrade lists the lines and leaves them (see "Pinned models"); the user deletes them, or keeps one they set on purpose.
 3. **Re-run `bootstrap obsidian`** if they want the mechanical retrofit on an existing vault.
 
 The summary output should suggest these as next steps when relevant (e.g., when `_obsidian.md` was just seeded and the workspace has `knowledge/.obsidian/`).

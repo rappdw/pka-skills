@@ -26,7 +26,7 @@ The workspace is `--workspace`, else `$WORKSPACE_ROOT`, else the nearest folder 
 | `db schema` | Tables, columns and row counts | nothing |
 | `index [PATH…] [--rebuild] [--prune] [--dry-run]` | Index new and changed files, drop rows for removed ones | the database |
 | `search TERM… [--limit N] [--any]` | Full-text search with quoted terms and the pointer-row boost | nothing |
-| `actions [--since D] [--until D] [--all-dates] [--scope meetings\|all] [--under F]` | Open checkboxes in dated notes | nothing |
+| `actions [--since D] [--until D] [--all-dates] [--scope meetings\|all] [--under F]` | Open checkboxes in dated notes, with owners and due dates (see "`actions`") | nothing |
 | `post-route FILE [--topic S] [--section H] [--also P]… [--dry-run]` | Everything after filing a note: frontmatter and MOC link (Obsidian), pointer row, timeline, index | the note, `_MOC.md` files, person `index.md` files, the database |
 | `moc add-link FILE [--section H]` | Add a `- [[note]]` bullet to the nearest `_MOC.md` | one `_MOC.md` |
 | `pointers add FILE [--topic S] [--entities A,B] [--context T] [--moc M] [--dry-run]` | Record a routed file in its domain MOC's Pointers table | `_MOC.md` files |
@@ -87,6 +87,27 @@ Arguments are checked before anything is written: a bad `--section` or `--topic`
 
 A step that cannot do its work reports why and the later steps still run. Running it twice changes nothing. It refuses MOCs, files under `.pka/`, and anything inside an earshot capture directory. Nothing is committed: `touched` in the result lists the files it changed, for the caller to report.
 
+### Index roots
+
+`index` reads, and `search` therefore finds, what is under the index roots; `status` lists them. They are the Repo Map folders whose Priority is Active or Reference and that exist. With no such row: `knowledge/` if there is one, else every top-level folder except the inboxes, `projects/`, `meeting-notes/` and `.pkaignore` matches.
+
+- A row inside another root is folded into it. Priority is not an exclusion that reaches downwards: with `knowledge/` Active and `knowledge/archive/` Archive, the archive folder is indexed because it is inside a root. An Archive row keeps a folder out only when nothing above it is a root.
+- **Archived projects.** The archive destination's row is Archive, so the destination is not a root. A project moved into it is indexed when it has its own row with Priority Reference (the transition workflow in the pka-bootstrap skill adds it before running `index`); `status` then lists the project's folder as a root. Without that row, `index` drops the project's old `projects/…` rows and adds none, and `search` no longer finds it. Once it is a root, every file in it is indexed at any depth: the default `.pkaignore` rule `projects/*/*/*`, which limits an active project to its top-level files, does not match the new path.
+- **A folder that stops being a root** keeps its rows. A plain `index` removes rows for missing files only under the roots it reads; rows outside them whose file is gone are counted as `stale_elsewhere` and removed by `index --prune`. That is what a project restored from the archive needs: its row is taken out of the Repo Map, the folder is back under `projects/`, and `--prune` clears the rows left at the archive path. Rows for files that still exist in a folder that left the map are not removed by either.
+
+### `actions`
+
+Read-only: it never edits a note, and an item is read in the form it was written. Each open checkbox (`- [ ]`, `* [ ]`, `1. [ ]`, at any indentation, outside fenced code blocks) is returned with `path`, `line`, `date` (the note's), `text` (the item as written), `owners`, `due` and `due_text`. A ticked box counts under `closed` and is not returned.
+
+| Form | Example | Written by |
+|---|---|---|
+| `@owner`, `by <date>` | `- [ ] Send the comparison — @Sam — by 2026-05-01` | pka-meetings |
+| bold lead-in, `(due: …)` | `- [ ] **Robin**: Draft the hiring plan (due: 2026-12-01)` | thinkkit `take-notes` |
+
+- **`owners`**: every `@name`, and the names in a bold lead-in followed by a colon at the start of the item (`**Robin**:`, `**Robin:**`, `**Robin and Sam**:`; split on `,`, `and`, `&`, `/`). A lead-in is taken as owners only when every piece looks like a name: one to four words, each starting with a letter that is not lower case (particles such as `de` and `van` aside), no digits, not a label (`Note`, `TODO`, `Action`, `Decision`, `Owner`, `TBD` and the like). Bold without a colon, or not at the start, is not an owner. Each owner is listed once, in the order written.
+- **`due`** is `YYYY-MM-DD` or null; **`due_text`** is the due date as written, or null. Read in this order: (1) `by` or `due`, an optional colon, and an ISO date, anywhere in the item; (2) bracketed `(due: …)` / `(by: …)` holding other text, where a month-name date (`Dec 1`, `December 1st, 2026`, `1 Dec 2026`) is resolved, a missing year being the first such day on or after the note's date (unresolved in an undated note), and everything else (`Friday`, `end of month`, `12/1`) leaves `due` null with the words in `due_text`; (3) an ISO date that ends the item after a dash (`— @Sam — 2026-05-01`). An ISO date elsewhere in the item is not a due date, and a date after a dash that follows another date (`2026-11-01 — 2026-11-21`) is a period.
+- Nothing is guessed: no weekday arithmetic, no day/month order for numeric dates, no owner from prose ("Robin to draft…").
+
 ## Exit codes
 
 | Code | Meaning |
@@ -109,7 +130,7 @@ Every command that writes to a user's file follows these. The tests in `tests/to
 4. **Idempotent.** Running a command twice changes nothing the second time.
 5. **Atomic writes.** A file is written to a temporary name and renamed into place, so an interrupted run cannot leave half a note. The file keeps its permissions; extended attributes (Finder tags, for example) on an edited file are not carried over. A file that is a symbolic link is written through the link, not replaced by a regular file.
 6. **Fenced code blocks and HTML comments are not structure.** A `## Pointers` heading, a table, a `## Files` heading or a link inside a fenced block or a multi-line `<!-- … -->` comment is ignored. `pointers rename` and `moc add-link` also ignore links inside `inline code` and escaped `\[[...]]`. Setext headings (`Title` over `-----`) end a section like `## Title` does.
-7. **Bodies are not interpreted.** Pointer maintenance and the Obsidian retrofit use filenames, folders and frontmatter. (`index` reads bodies to index them; `actions` reads them for checkboxes.)
+7. **Bodies are not interpreted.** Pointer maintenance and the Obsidian retrofit use filenames, folders and frontmatter. (`index` reads bodies to index them; `actions` reads them for checkboxes and never writes.)
 
 ## People and timelines
 
