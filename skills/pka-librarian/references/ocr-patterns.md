@@ -108,7 +108,7 @@ When OCR tools are unavailable:
 
 For multilingual knowledge bases:
 - pdfplumber and tesseract both support language hints
-- If a file appears to be non-English, note the detected language in `file_index`
+- If a file appears to be non-English, say so in the routing report and pass the language hint to the extraction tool; the index has no language field
 - Tesseract language packs: `brew install tesseract-lang` (macOS) / `apt install tesseract-ocr-<lang>` (Linux)
 - Default to English if no language signal detected
 

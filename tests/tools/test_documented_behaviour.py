@@ -223,9 +223,9 @@ class TourLength(unittest.TestCase):
     def test_the_quoted_total_is_the_sum_of_the_modules(self):
         text = (SKILLS / "pka-tutorial" / "SKILL.md").read_text(encoding="utf-8")
         minutes = [int(n) for n in re.findall(r"^### Module \d+: .*\((\d+) min\)$", text, re.M)]
-        self.assertEqual(len(minutes), 9)
+        self.assertEqual(len(minutes), 11)
         self.assertTrue(all(2 <= n <= 4 for n in minutes), minutes)
-        quoted = re.search(r"full tour \(nine short modules, about (\d+) minutes", text)
+        quoted = re.search(r"full tour \(eleven short modules, about (\d+) minutes", text)
         self.assertIsNotNone(quoted, "the first-session greeting no longer quotes a time")
         self.assertLessEqual(abs(int(quoted.group(1)) - sum(minutes)), 3, (quoted.group(1), sum(minutes)))
         self.assertNotIn("about 7 minutes", text)

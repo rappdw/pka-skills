@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## v1.11.0 — not yet released
+
+Phase 7 of the v1.7 plan: the dashboard works, action items from thinkkit are read, the documentation and the walkthrough site describe the current release, the skills stop contradicting each other, and the evals can be run.
+
+**Existing workspaces:** run `bootstrap upgrade` to get the new `pka-tools`. It adds two sections to the role files ("Owner profile and decision log" in all three roles, "Answering and delegating" in the orchestrator) and lists any role file that still pins a model; nothing you edited is changed. Then say "update my dashboard": a dashboard made by an earlier release never loaded its data when opened by double-click, and stays as it is until you ask.
 
 ### Fixed — the test harness could delete the checkout
 

@@ -1,15 +1,14 @@
 [
   {
     "id": "interface-build-dashboard",
+    "tags": ["smoke"],
     "scenario": "First dashboard in a markdown-only workspace: the data file, then the page",
-    "needs": "PR #26",
     "prompt": "Build me a dashboard.",
     "expect": "reads the Repo Map and checks the storage mode before generating anything; runs `.pka/bin/pka-tools dashboard data` before it writes the page, and reports the command's summary; dashboard-data.js exists at the workspace root and was written by that command, not by a Write or Edit call; writes dashboard.html from the skill's template, with the loader block between the `pka:loader:start` and `pka:loader:end` markers; the page has one marked section for each Active or Reference folder of the Repo Map (AI, leadership, personnel, lab-notebook, reference, projects) and none for the Archive-priority knowledge/archived/; knowledge/leadership/ uses the timeline view, knowledge/personnel/ the people view and knowledge/lab-notebook/ the calendar view; the page has the fixed Search, Open actions and Activity sections; dashboard.html loads the data with a script tag and contains no fetch call, no sql-wasm or other library from another host, and no showDirectoryPicker; tells the user to open the page by double-click and how to refresh it, and states no browser requirement; runs no `pka-tools index` (there is no index) and creates no file besides the two"
   },
   {
     "id": "interface-build-dashboard-index-mode",
     "scenario": "First dashboard in index mode: the index is brought up to date first",
-    "needs": "PR #26",
     "setup": {
       "index": true,
       "steps": [
@@ -22,7 +21,6 @@
   {
     "id": "interface-refresh",
     "scenario": "A refresh re-runs the data command and leaves the page alone",
-    "needs": "PR #26",
     "setup": {
       "index": true
     },
@@ -35,7 +33,6 @@
   {
     "id": "interface-update-new-folder",
     "scenario": "Adding a section to a dashboard this release wrote",
-    "needs": "PR #26",
     "setup": {
       "steps": [
         {"write": "knowledge/clients/northwind/2026-10-02-kickoff.md", "text": ["# Northwind kickoff", "", "First meeting with the client team."]}
@@ -50,7 +47,6 @@
   {
     "id": "interface-kanban",
     "scenario": "Asked for a Kanban of projects",
-    "needs": "PR #26",
     "prompt": "Build me a dashboard.",
     "followups": [
       "Add a Kanban for my projects."
@@ -60,7 +56,6 @@
   {
     "id": "interface-dark-mode-default",
     "scenario": "A small change to the page",
-    "needs": "PR #26",
     "prompt": "Build me a dashboard.",
     "followups": [
       "Make the dashboard dark mode by default."
@@ -70,7 +65,6 @@
   {
     "id": "interface-old-dashboard-migration",
     "scenario": "A dashboard written by an earlier release: back up, then rebuild, and only when asked",
-    "needs": "PR #26",
     "setup": {
       "steps": [
         {"fixture_file": "dashboard.html", "to": "dashboard.html"},
@@ -87,7 +81,6 @@
   {
     "id": "interface-data-path-is-a-symlink",
     "scenario": "The data file's path is a symbolic link",
-    "needs": "PR #26",
     "setup": {
       "steps": [
         {"write": "knowledge/reference/elsewhere.js", "text": ["// a file Sam keeps; nothing may write through the link to it"]},
@@ -100,7 +93,6 @@
   {
     "id": "interface-search-not-finding",
     "scenario": "In-page search does not look inside notes",
-    "needs": "PR #26",
     "setup": {
       "index": true,
       "steps": [

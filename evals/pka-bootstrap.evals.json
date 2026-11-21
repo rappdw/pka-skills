@@ -15,7 +15,6 @@
   {
     "id": "bootstrap-empty-folder",
     "scenario": "Bootstrap in an empty folder: infrastructure always, one starter layout on offer",
-    "needs": "PR #24",
     "setup": {
       "fixture": "empty"
     },
@@ -64,7 +63,6 @@
   {
     "id": "bootstrap-transition-links-follow",
     "scenario": "R5 — After approval the project moves and the links that pointed at it follow",
-    "needs": "PR #24",
     "setup": {
       "index": true,
       "steps": [
@@ -205,7 +203,6 @@
   {
     "id": "bootstrap-upgrade-pinned-models",
     "scenario": "Upgrade of a workspace whose role files pin a model",
-    "needs": "PR #24",
     "setup": {
       "roles": "v1.7.0"
     },
@@ -250,7 +247,6 @@
   {
     "id": "bootstrap-orchestrator-answers-lookups",
     "scenario": "A lookup is answered by the orchestrator itself, not delegated",
-    "needs": "PR #24",
     "prompt": "What did the SLT decide about the vendor at the end of April?",
     "expect": "answers the question itself from the notes: the vendor decision was deferred, per knowledge/leadership/2026-04-29-slt-meeting.md; names that file as the source; does not hand the lookup to @researcher or @librarian, and writes no brief or report for it; changes no file"
   }

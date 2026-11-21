@@ -1,6 +1,6 @@
 # PKA Tutorial
 
-The long-form written reference for pka-skills v1.10.0: what each part does, what you say to use it, and what ends up on disk. It follows one fictional workspace from setup to a weekly health check.
+The long-form written reference for pka-skills v1.11.0: what each part does, what you say to use it, and what ends up on disk. It follows one fictional workspace from setup to a weekly health check.
 
 Two shorter routes cover the same ground:
 
@@ -1157,7 +1157,7 @@ The skills decide what a note is about and where it belongs. `pka-tools` makes t
 ```
 $ .pka/bin/pka-tools status
 Workspace:        ~/pka
-pka-tools:        1.10.0 (vendored: 1.10.0)
+pka-tools:        1.11.0 (vendored: 1.11.0)
 Vault:            knowledge
 Obsidian:         not present
 Timelines reach:  .
@@ -1229,7 +1229,7 @@ This is the preview for a workspace last set up before v1.7.0:
 
 ```
 $ python3 "<plugin root>/bootstrap-assets/tools/pka-tools" install --workspace ~/pka --dry-run
-pka-tools install (dry run) — plugin version 1.10.0
+pka-tools install (dry run) — plugin version 1.11.0
   installed: 23   updated: 1   current: 0   kept: 0   conflicts: 0
 Installed (23):
   - bin/pka-tools
@@ -1269,6 +1269,7 @@ Throughout: your notes are not touched (the upgrade changes `.pka/` only), nothi
 | v1.8.0 | Rely on PKA not committing or pushing. Clear the old commit and push instructions out of your role files. Move a finished project and keep its links working |
 | v1.9.0 | Put the notes you already had on people's timelines. Without Obsidian, have timelines reach notes anywhere in the workspace |
 | v1.10.0 | Find duplicate notes and duplicate people in a health check. Hide a finding that is fine as it is. Run a quick lint every week without a session. Have every form of link checked |
+| v1.11.0 | Open the dashboard by double-click, offline, in any browser. Have action items from thinkkit notes listed with their owner and due date. Keep a finished project searchable after it is archived. Have your owner profile and decision log used by the roles. |
 
 After the upgrade, the tutorial teaches the ones that apply to your workspace: *"What's new in this release?"*
 

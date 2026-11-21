@@ -72,6 +72,21 @@ class Case(unittest.TestCase):
 
 # ------------------------------------------------------------------ the eval files
 
+def waiting(*ids_or_skills, label="PR #99"):
+    """Mark scenarios as waiting on another change. No shipped scenario waits,
+    so the tests for that feature mark their own."""
+    from unittest import mock
+    real = run.load_scenarios
+
+    def fake(evals_dir=run.EVALS_DIR):
+        out = real(evals_dir)
+        for scenario in out:
+            if scenario["id"] in ids_or_skills or scenario["skill"] in ids_or_skills:
+                scenario["needs"] = label
+        return out
+    return mock.patch.object(run, "load_scenarios", fake)
+
+
 class EvalFiles(unittest.TestCase):
     def test_every_file_loads_and_ids_are_unique(self) -> None:
         scenarios = run.load_scenarios()
@@ -84,20 +99,23 @@ class EvalFiles(unittest.TestCase):
 
     def test_smoke_set_covers_every_skill(self) -> None:
         smoke = [s for s in run.load_scenarios() if "smoke" in s["tags"]]
-        self.assertTrue(10 <= len(smoke) <= 12, len(smoke))
+        self.assertTrue(10 <= len(smoke) <= 14, len(smoke))
         self.assertFalse([s["id"] for s in smoke if s["needs"]], "the smoke set runs against this checkout")
         runnable = {s["skill"] for s in run.load_scenarios() if not s["needs"]}
         self.assertEqual({s["skill"] for s in smoke}, runnable)
 
     def test_scenarios_that_wait_for_another_change_are_left_out_on_request(self) -> None:
-        scenarios = run.load_scenarios()
-        waiting = [s for s in scenarios if s["needs"]]
-        self.assertTrue(waiting)
-        self.assertTrue(all(s["needs"].startswith("PR #") for s in waiting))
+        self.assertFalse([s["id"] for s in run.load_scenarios() if s["needs"]],
+                         "a release ships no scenario that waits on another change")
+        with waiting("pka-interface"):
+            scenarios = run.load_scenarios()
+        waiting_now = [s for s in scenarios if s["needs"]]
+        self.assertTrue(waiting_now)
+        self.assertTrue(all(s["needs"].startswith("PR #") for s in waiting_now))
         self.assertEqual(len(run.select(scenarios, [], [], [], None)), len(scenarios))
         kept = run.select(scenarios, [], [], [], None, include_needs=False)
-        self.assertEqual(len(kept), len(scenarios) - len(waiting))
-        self.assertEqual(run.select(scenarios, [], [waiting[0]["id"]], [], None, include_needs=False), [])
+        self.assertEqual(len(kept), len(scenarios) - len(waiting_now))
+        self.assertEqual(run.select(scenarios, [], [waiting_now[0]["id"]], [], None, include_needs=False), [])
 
     def test_no_eval_expects_a_commit_or_a_push(self) -> None:
         # pka-skills stopped running git in v1.8.0; an expectation may only say that it does not.
@@ -775,10 +793,11 @@ class Runs(Case):
         self.assertFalse(self.results.exists())
 
     def test_dry_run_can_keep_the_workspaces(self) -> None:
-        code, out, _ = self.go("--dry-run", "--scenario", "interface-old-dashboard-migration", "--keep-workspaces")
+        with waiting("interface-old-dashboard-migration"):
+            code, out, _ = self.go("--dry-run", "--scenario", "interface-old-dashboard-migration", "--keep-workspaces")
         self.assertEqual(code, 0)
         self.assertIn("OS sandbox  OFF", out)
-        self.assertIn("needs PR #26", out, "a dry run prepares the waiting scenarios too, and says what they wait for")
+        self.assertIn("needs PR #99", out, "a dry run prepares the waiting scenarios too, and says what they wait for")
         kept = list(self.work.glob("pka-evals.*/interface-old-dashboard-migration"))
         self.assertEqual(len(kept), 1)
         self.assertTrue((kept[0] / "ws" / "dashboard.html").is_file())
@@ -919,18 +938,19 @@ class Runs(Case):
         self.assertEqual(len({c["cwd"] for c in self.calls() if not c["judge"]}), 8)
 
     def test_a_real_run_leaves_out_scenarios_that_wait_for_another_change(self) -> None:
-        code, out, err = self.go("--skill", "interface", "--results-dir", str(self.results))
-        self.assertEqual(code, 2)
-        self.assertIn("every selected scenario is marked `needs`", err)
-        self.assertEqual(self.calls(), [])
-        code, out, err = self.go("--scenario", "interface-refresh", "--scenario", "wiki-list", "--results-dir", str(self.results))
-        self.assertEqual(code, 0, err)
-        self.assertIn("Left out, waiting for another change (run them with --include-needs): interface-refresh (PR #26)", out)
-        self.assertEqual([r["id"] for r in run.read_results(self.results)], ["wiki-list"])
-        code, out, err = self.go("--scenario", "interface-refresh", "--include-needs", "--resume", str(self.results))
-        self.assertEqual(code, 0, err)
-        self.assertEqual(sorted(r["id"] for r in run.read_results(self.results)), ["interface-refresh", "wiki-list"])
-        self.assertEqual(json.loads((self.results / "pka-interface" / "interface-refresh.json").read_text(encoding="utf-8"))["needs"], "PR #26")
+        with waiting("pka-interface"):
+            code, out, err = self.go("--skill", "interface", "--results-dir", str(self.results))
+            self.assertEqual(code, 2)
+            self.assertIn("every selected scenario is marked `needs`", err)
+            self.assertEqual(self.calls(), [])
+            code, out, err = self.go("--scenario", "interface-refresh", "--scenario", "wiki-list", "--results-dir", str(self.results))
+            self.assertEqual(code, 0, err)
+            self.assertIn("Left out, waiting for another change (run them with --include-needs): interface-refresh (PR #99)", out)
+            self.assertEqual([r["id"] for r in run.read_results(self.results)], ["wiki-list"])
+            code, out, err = self.go("--scenario", "interface-refresh", "--include-needs", "--resume", str(self.results))
+            self.assertEqual(code, 0, err)
+            self.assertEqual(sorted(r["id"] for r in run.read_results(self.results)), ["interface-refresh", "wiki-list"])
+            self.assertEqual(json.loads((self.results / "pka-interface" / "interface-refresh.json").read_text(encoding="utf-8"))["needs"], "PR #99")
 
     def test_turn_cap_stops_a_runaway_subject(self) -> None:
         os.environ["FAKE_CLAUDE_MODE"] = "loop"
@@ -1042,7 +1062,7 @@ class Runs(Case):
         code, out, _ = self.go("--list", "--tag", "smoke")
         self.assertEqual(code, 0)
         self.assertIn("[smoke]", out)
-        self.assertRegex(out, r"1[0-2] scenario\(s\)")
+        self.assertRegex(out, r"1[0-4] scenario\(s\)")
         code, out, _ = self.go("--validate")
         self.assertEqual(code, 0)
         self.assertRegex(out, r"^\d+ scenarios in 6 files, \d+ expectations: no problems\.\n$")

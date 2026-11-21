@@ -290,6 +290,46 @@ the fix. *(That last part applies when the workspace has a people folder.)*
 
 > "Check for broken links in my notes"
 
+### v1.11.0
+
+**1. The dashboard opens by double-click.** *(Applies to all workspaces.)*
+A dashboard made by an earlier release showed empty sections when opened from
+the file manager, because a browser will not let a page read a database file
+from disk. The dashboard now reads a small data file written beside it
+(`dashboard-data.js`), so it opens in any current browser, offline, with no
+network request, and its links keep working if the folder moves. Search in the
+page covers titles, paths, tags, headings and summaries; full-text questions
+are still asked in the session. An existing dashboard is rebuilt only when the
+user asks, after a backup.
+
+> "Update my dashboard"
+
+**2. Action items from thinkkit notes have owners and due dates.** *(Applies
+when the user captures meetings with thinkkit.)*
+"What action items do I have this week?" now reads the form thinkkit writes
+(`- [ ] **Robin**: Draft the plan (due: 2026-12-01)`) as well as PKA's own
+(`— @Robin — by 2026-12-01`). A due phrase that is not a date ("Friday") is
+shown as written, never guessed. Filing a note does not rewrite its items.
+
+> "What action items are still open from the last two weeks?"
+
+**3. An archived project stays searchable.** *(Applies in index mode:
+`storage_mode` is `index`.)*
+Transitioning a project used to drop it from search. The workflow now gives the
+moved project its own row in the Repo Map before re-indexing, and the whole
+project is then found, not only its top level.
+
+> "Transition `<a finished project>` to knowledge"
+
+**4. The roles use your owner profile and decision log.** *(Applies when the
+upgrade added the "Owner profile and decision log" section.)*
+The orchestrator reads `.pka/owner-profile.md` once at the start of a session
+for how you like to be answered, and decisions are appended to
+`.pka/decision-log.md` when they are made, so "why did I archive that?" has an
+answer. Roles no longer pin a model; they use the session's.
+
+> "Why did I archive `<project>`?"
+
 ### After the last item
 
 > That's what's new in v`<tool_version>`. Want to try one of these, or go

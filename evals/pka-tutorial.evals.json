@@ -2,9 +2,8 @@
   {
     "id": "tutorial-just-installed",
     "scenario": "A new user in a current workspace",
-    "needs": "PR #24",
     "prompt": "I just installed PKA. How do I use this?",
-    "expect": "checks the workspace with tool calls before teaching: looks for .pka/ and CLAUDE.md and runs the plugin's `pka-tools status --workspace … --json` and `upgrade-roles.py --workspace … --dry-run`; treats the workspace as bootstrapped and current, suggesting no upgrade; offers the full tour, described as nine short modules taking about 25 minutes, or a jump to a specific topic; teaches by describing prompts the user can try, and moves, creates or edits no file apart from its own session-log entry"
+    "expect": "checks the workspace with tool calls before teaching: looks for .pka/ and CLAUDE.md and runs the plugin's `pka-tools status --workspace … --json` and `upgrade-roles.py --workspace … --dry-run`; treats the workspace as bootstrapped and current, suggesting no upgrade; offers the full tour, described as eleven short modules taking about 30 minutes, or a jump to a specific topic; teaches by describing prompts the user can try, and moves, creates or edits no file apart from its own session-log entry"
   },
   {
     "id": "tutorial-tour-first-modules",
@@ -13,7 +12,7 @@
     "followups": [
       "Next."
     ],
-    "expect": "starts with orientation: what PKA is, the Repo Map, roles, the session log; its examples use this workspace's own folder names from the Repo Map (for example knowledge/leadership/ or knowledge/personnel/); ends the module with concrete prompts to try; checks in with the user before the next module instead of delivering every module in one reply; the second reply covers finding things; where it describes the scope of the tour it includes topic wikis and health checks (nine modules, not seven); moves, creates or edits no file apart from its own session-log entry"
+    "expect": "starts with orientation: what PKA is, the Repo Map, roles, the session log; its examples use this workspace's own folder names from the Repo Map (for example knowledge/leadership/ or knowledge/personnel/); ends the module with concrete prompts to try; checks in with the user before the next module instead of delivering every module in one reply; the second reply covers finding things; where it describes the scope of the tour it includes topic wikis, health checks, people and timelines, and the pointer layer (eleven modules); moves, creates or edits no file apart from its own session-log entry"
   },
   {
     "id": "tutorial-meeting-capture",

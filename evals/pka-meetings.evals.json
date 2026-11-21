@@ -38,7 +38,6 @@
   {
     "id": "meetings-attendees-appended-at-end",
     "scenario": "Filing notes that thinkkit wrote: an append, nothing rewritten",
-    "needs": "PR #24",
     "setup": {
       "autonomy": "hands-off",
       "steps": [
@@ -51,7 +50,6 @@
   {
     "id": "meetings-notes-from-transcript",
     "scenario": "A transcript and no notes: PKA writes the notes itself, without thinkkit",
-    "needs": "PR #24",
     "setup": {
       "steps": [
         {"write": "team-inbox/GMT{{today}}-150000_Recording.transcript.vtt", "text": ["WEBVTT", "", "00:00:01.000 --> 00:00:05.000", "Sam: Welcome to the SLT weekly. First item, the vendor decision.", "", "00:00:06.000 --> 00:00:12.000", "Priya: I'd wait for the December numbers before deciding.", "", "00:00:13.000 --> 00:00:18.000", "Robin: Fine by me. I'll bring the hiring plan next week.", "", "00:00:19.000 --> 00:00:24.000", "Sam: Then we defer. Priya, can you send me the comparison by Friday?"]}
@@ -63,7 +61,6 @@
   {
     "id": "meetings-transcript-no-notes-offer",
     "scenario": "A transcript turns up with no notes: writing notes from it is offered, never automatic",
-    "needs": "PR #24",
     "setup": {
       "steps": [
         {"write": "team-inbox/GMT{{today}}-150000_Recording.transcript.vtt", "text": ["WEBVTT", "", "00:00:01.000 --> 00:00:05.000", "Sam: Welcome to the SLT weekly. First item, the vendor decision.", "", "00:00:06.000 --> 00:00:12.000", "Priya: I'd wait for the December numbers before deciding.", "", "00:00:13.000 --> 00:00:18.000", "Robin: Fine by me. I'll bring the hiring plan next week.", "", "00:00:19.000 --> 00:00:24.000", "Sam: Then we defer. Priya, can you send me the comparison by Friday?"]}
@@ -89,7 +86,6 @@
   {
     "id": "meetings-action-items-thinkkit-form",
     "scenario": "Action items written the way thinkkit's take-notes writes them",
-    "needs": "PR #24",
     "setup": {
       "steps": [
         {"write": "knowledge/leadership/{{monday}}-planning.md", "text": ["# Planning", "", "## Action Items", "- [ ] **Robin**: Draft the Q1 hiring plan (due: {{monday+11}})", "- [ ] **Priya**: Send the adapter comparison - {{monday+4}}", "- [ ] Book the offsite venue @Sam by {{monday+8}}", "- [x] **Sam**: Circulate the agenda (due: {{monday}})"]}
