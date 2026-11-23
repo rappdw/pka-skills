@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.11.0 — not yet released
+## v1.11.0 — 2026-11-23
 
 Phase 7 of the v1.7 plan: the dashboard works, action items from thinkkit are read, the documentation and the walkthrough site describe the current release, the skills stop contradicting each other, and the evals can be run.
 
