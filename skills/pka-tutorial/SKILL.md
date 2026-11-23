@@ -1,19 +1,19 @@
 ---
 name: pka-tutorial
 description: >
-  ALWAYS use this skill when the user is new to PKA, asks for a tour, walkthrough,
-  tutorial, onboarding, or says they don't know how to use their PKA system.
-  Triggers on: "I just installed PKA", "how do I use this", "what can I do with this",
-  "walk me through PKA", "teach me how this works", "give me a tour", "I'm new here",
-  "what are my options", "how do I find things", "show me the ropes", "help me get
-  started", or any confusion about where to begin. Also use when a user asks how to
-  do a specific PKA task for the first time (how to capture meetings, drop files,
-  use the dashboard, transition a project) — the skill teaches the workflow with
-  concrete examples rather than just executing. Also use for "what's new", "what
-  changed in this release", "I just updated the plugin", "do I need to upgrade".
-  Adapts to the user's current PKA state: points to pka-bootstrap if not set up;
-  walks through `bootstrap upgrade` and then what is new if the workspace has not
-  been upgraded on the installed release; otherwise offers the tour.
+  Use this skill for first contact and for questions about how PKA works: the
+  user is new, wants a tour, or asks how to do something rather than asking for
+  it to be done. Triggers: "I just installed PKA", "I'm new here", "how do I
+  use this", "what can this do", "what can I do with this", "give me a tour",
+  "walk me through PKA", "teach me how this works", "show me the ropes", "help
+  me get started", "what are my options", "how do I find things", and any "how
+  do I…" question about a PKA task (capturing meetings, dropping files, the
+  dashboard, transitioning a project): it teaches the workflow with examples
+  from the user's own workspace instead of executing it. Also "what's new",
+  "what changed in this release", "I just updated the plugin", "do I need to
+  upgrade": it previews the upgrade and explains it, changing nothing. It never
+  creates or upgrades a workspace: when PKA is not there yet, or the user says
+  to go ahead, it hands off to pka-bootstrap.
 user-invocable: true
 argument-hint: "[topic or 'tour']"
 allowed-tools: Read, Bash, Glob, Grep
@@ -53,7 +53,7 @@ hand-off.
 Before teaching anything, detect the user's state:
 
 1. **Is PKA bootstrapped?** Check for `.pka/` and `CLAUDE.md` at cwd or parent.
-2. **Which skills are available?** Check for `pka-bootstrap`, `pka-librarian`, `pka-interface`, `pka-meetings` in the environment.
+2. **Which skills are available?** All six (`pka-bootstrap`, `pka-librarian`, `pka-meetings`, `pka-wiki`, `pka-interface`, `pka-tutorial`) come with the one plugin; note any that the session's skill list does not show.
 3. **Is thinkkit installed?** Check for `take-notes` and `resolve-against-transcript`.
 4. **What's in the Repo Map?** If bootstrapped, read `CLAUDE.md` to ground examples in the user's actual folder names.
 5. **Storage mode?** Index or markdown-only — affects what the user can do.
@@ -77,8 +77,8 @@ Before teaching anything, detect the user's state:
 | Bootstrapped, workspace behind the installed release | Before any tour: "Your workspace was last set up on `<vendored_version or 'a release before v1.7.0'>`; the installed PKA is `<tool_version>`. Some of what I would show you does not work here until it is upgraded. Want me to walk you through the upgrade first? It takes a few minutes and nothing changes until you say so." When the versions are equal and only the role files are behind, say that instead: "The toolkit here is current, but the role files have not been upgraded to `<tool_version>`." Then follow **Upgrade Walkthrough and What's New** below. |
 | Bootstrapped, toolkit and roles current, index not migrated | "Your index was not migrated when this workspace was upgraded, so search and indexing are off. Say **bootstrap upgrade** and it will offer the migration again; it shows a plan and backs the database up first." No preview, no walkthrough. Then carry on as a returning user. |
 | Bootstrapped, plugin behind the workspace | "This workspace was upgraded on `<vendored_version>`, but the PKA plugin installed here is `<tool_version>`. Update the plugin (`/plugin`, then update `pka-skills`) so the skills match the workspace." Do not suggest `bootstrap upgrade`: it would replace the workspace's newer toolkit with this older one. Then carry on as a returning user. |
-| Bootstrapped, first session | "Welcome. I can give you the full tour (about 7 minutes of reading, with prompts you can try as we go), or jump to something specific — finding things, dropping files, meetings, the dashboard, project lifecycle, roles, topic wikis, or health checks. What sounds useful?" |
-| Bootstrapped, returning user | "What would you like to learn about? I can cover: finding things, the team-inbox, meeting capture, the dashboard, project lifecycle, the role system, topic wikis, or health checks." When the workspace has been upgraded at some point (`.pka/upgrade-backups/` exists) and `.pka/session-log.md` has no `pka-tutorial` entry with `What's new in v<tool_version>`, put "what's new in v<tool_version>" first in that list. A workspace first set up on this release is not offered it; the tour covers everything. |
+| Bootstrapped, first session (the session log holds only the bootstrap entry) | "Welcome. I can give you the full tour (eleven short modules, about 30 minutes if you read them all, with prompts you can try as we go; stop after any of them), or jump to something specific — finding things, dropping files, meetings, the dashboard, project lifecycle, roles, topic wikis, health checks, people and timelines, or the pointer layer. What sounds useful?" |
+| Bootstrapped, returning user (the session log has entries after the bootstrap one) | "What would you like to learn about? I can cover: finding things, the team-inbox, meeting capture, the dashboard, project lifecycle, the role system, topic wikis, health checks, people and timelines, or the pointer layer." When the workspace has been upgraded at some point (`.pka/upgrade-backups/` exists) and `.pka/session-log.md` has no `pka-tutorial` entry with `What's new in v<tool_version>`, put "what's new in v<tool_version>" first in that list. A workspace first set up on this release is not offered it; the tour covers everything. |
 
 The last two rows are for a current workspace. For one that is behind, the upgrade comes first, with two exceptions:
 
@@ -108,7 +108,10 @@ If the user upgraded without the tutorial, steps 5 and 6 are the "what's new" it
 
 ## The Curriculum
 
-Organized into 9 modules. Each is independently useful — users can skip around.
+Organized into 11 modules. Each is independently useful — users can skip around.
+The times in the headings add up to 29 minutes of reading, which is the "about
+30 minutes" the first-session greeting quotes for the full tour. Change them
+together.
 See `references/curriculum.md` for full module scripts with example prompts.
 
 ### Module 1: Orientation (2 min)
@@ -122,8 +125,9 @@ vendor-agnostic output. Uses the user's actual Repo Map as a concrete example.
 
 **Goal:** User can ask questions of their knowledge base in natural language.
 
-Covers: simple lookup, cross-repo search, project status, date-range queries.
-Shows 3-4 example prompts using folder names from the user's Repo Map. Offers:
+Covers: simple lookup, cross-repo search, project status, date-range queries,
+decision history (the decision log), and what search covers and when the index
+is current. Shows 3-4 example prompts using folder names from the user's Repo Map. Offers:
 "Want to try one now?"
 
 ### Module 3: The Inbox Pattern (2 min)
@@ -140,24 +144,32 @@ happens when a PDF is dropped.
 
 Covers the three modes (capture, reconcile, route-only), the take-notes flow
 with terse observations, post-meeting routing, attendee linking, action item
-extraction. If thinkkit isn't installed, explains route-only mode and points
-the user to thinkkit for full capture.
+extraction. If thinkkit isn't installed, says that live capture and
+reconciliation are unavailable, and that filing existing notes and writing
+notes from a transcript still work; points the user to thinkkit for the rest.
 
 ### Module 5: The Dashboard (2 min)
 
 **Goal:** User knows how to generate and update their dashboard.
 
-Covers: `dashboard.html` at root, view types (cards, timeline, topics,
-calendar), the update pattern, search. Shows how to ask for a new section.
+Covers: `dashboard.html` and its data file `dashboard-data.js`, the views chosen
+per folder (people, timeline, topics, calendar, projects, files) and the three
+fixed sections, that the page shows a snapshot and how it is refreshed, what
+its search covers, updating sections, and a dashboard from an earlier release.
+Shows how to ask for a new section.
 
 ### Module 6: Project Lifecycle (3 min)
 
 **Goal:** User understands how projects transition from active work to archived
 knowledge.
 
-Covers: active project workspaces, stale detection, transition workflow,
-summary generation, the reverse-transition case. Emphasizes the "payoff" —
-archived projects become searchable alongside knowledge.
+Covers: active project workspaces, stale detection, transition workflow
+("archive X" asks for the same workflow), summary generation, the
+reverse-transition case. Emphasizes the "payoff" —
+archived projects become searchable alongside knowledge. That payoff comes
+from the Repo Map row the transition gives the project (Priority Reference),
+which is added before the index is run; an active project is indexed one level
+deep, an archived one in full.
 
 ### Module 7: The Role System (2 min)
 
@@ -176,8 +188,9 @@ ingest workflow (source → synthesis diff → user review → merge),
 query-with-wiki behavior, `[[wikilinks]]`, `knowledge/topics/` convention.
 Emphasizes that wikis cite notes, never replace them.
 
-If `pka-wiki` isn't installed, flags it: "Topic wikis require `pka-wiki` —
-install it and come back for this module."
+`pka-wiki` comes with the plugin. If the session's skill list does not show it,
+say so and that the plugin may need updating; do not send the user to install
+a separate skill.
 
 ### Module 9: Health Checks (2 min)
 
@@ -189,6 +202,27 @@ candidates, uncited claims), quick and full, reading the report in
 `owner-inbox/`, hiding a finding that is fine, the optional weekly schedule,
 lint is never destructive. Points to `pka-librarian` for execution.
 
+### Module 10: People and Timelines (3 min)
+
+**Goal:** User knows what a person page is, how a timeline fills, and how to
+backfill one from notes they already have.
+
+Covers: the people folder (`people-home`), a person's `index.md` and its
+`## Timeline`, who goes on a timeline and who does not (structured evidence,
+not names in the body), aliases for nicknames, the backfill (plan first, apply
+on approval, one command to undo). Teach in full only when the workspace has a
+people folder; otherwise say what one is and how to get it.
+
+### Module 11: The Pointer Layer and Obsidian (3 min)
+
+**Goal:** User knows what a `_MOC.md` and its Pointers table are for, whether
+they need them, and what changes with an Obsidian vault.
+
+Covers: topic rows as an index a search lands on first, when it pays off
+(hundreds of notes), how rows are kept (extended, never rewritten), opting in
+without Obsidian, and what an Obsidian vault at `knowledge/` adds (frontmatter,
+MOC links, wikilinks). Teach only the part that applies.
+
 ---
 
 ## Teaching Style
@@ -197,7 +231,7 @@ lint is never destructive. Points to `pka-librarian` for execution.
 - **Keep it conversational.** No walls of text. Present one idea, give an example prompt, ask "want to try it?" before moving on.
 - **Hand off, don't execute.** When the user wants to actually do something, describe the prompt they should say next. Don't perform the action inside the tutorial.
 - **Respect abandonment.** If the user asks a real question mid-tutorial, stop teaching and answer it. The tour is optional.
-- **Short modules.** Each module should be completable in 2-4 minutes of reading.
+- **Short modules.** Each module should be completable in 2-4 minutes of reading; eleven of them make the full tour about 30 minutes.
 
 ## What This Skill Does NOT Do
 

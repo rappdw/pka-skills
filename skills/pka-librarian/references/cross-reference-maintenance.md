@@ -1,69 +1,30 @@
 # Cross-Reference Maintenance
 
-How librarian surfaces and (minimally) maintains back-references between
-authored notes, personnel folders, project workspaces, and topic wikis.
+What links a filed note back to the people, projects and topics it is about, and
+what does not.
+
+The rule throughout: a wrong link is worse than no link, so a back-reference is
+written only on structured evidence, by the tool. The librarian never adds one
+by reading a note's body.
 
 ---
 
-## Scope for v1.0
+## What is maintained, and what is not
 
-**In scope (MVP):**
-- Surfacing notes that are missing from a person's timeline via lint rule 5 (see `lint-rules.md`)
-- Recording entity mentions when files are filed (for future use)
+| A note is about | What is written | By |
+|---|---|---|
+| A person | One line on the `## Timeline` of their `index.md` | `pka-tools post-route` when the note is filed; `pka-tools timeline plan` / `apply` for older notes |
+| A project | Nothing | — |
+| A topic with a wiki | Nothing. A wiki gains a source only through an ingest the user approves | `pka-wiki` |
 
-**Deferred to future versions:**
-- Automatic back-reference insertion when files are filed
-- Bidirectional link maintenance on file moves/renames
-- Cross-wiki automatic linking
-
-The v1.0 model: **librarian surfaces, user decides**. Cross-reference automation
-is high-risk (wrong links are worse than no links) — defer until lint reports
-prove the patterns are reliable.
+A name that only appears in the body of a note ("Priya", "Orion", "MCP") creates
+no link and is not tracked anywhere. Nothing records "mentions" for later use.
 
 ---
 
-## What Gets Back-Referenced
+## People: the timeline
 
-When a new file is filed (by librarian or pka-meetings), the following entity
-mentions are worth tracking:
-
-| Entity type | Detection method | Back-reference target |
-|-------------|------------------|----------------------|
-| Person | Matches personnel folder name/slug | `personnel/<person>/` |
-| Project | Matches project folder slug | `projects/<project>/` |
-| Topic wiki | Matches `wiki-home/<topic>/` slug | `knowledge/topics/<topic>/wiki.md` |
-| Meeting series | Matches date-slug pattern of another file | `meeting-home/` folders |
-
----
-
-## Mention Detection Method
-
-Simple string matching against Repo Map entries. Not NER.
-
-Examples:
-- File mentions "Maria" or "maria" → candidate back-ref to `personnel/maria/`
-- File mentions "Orion" → candidate back-ref to `projects/orion/`
-- File contains `MCP` → candidate back-ref to `knowledge/topics/mcp/wiki.md`
-
-False positives are acceptable because lint *surfaces candidates*, doesn't act.
-
----
-
-## Integration with Meetings Attendee Linking
-
-`pka-meetings` already does targeted back-ref insertion for attendees in meeting
-notes. That's the template — narrow scope, confirmed matches, explicit placement.
-
-Librarian lint generalizes the *detection* of missing back-refs without
-expanding the *automatic insertion*. If you've been using meetings, you'll
-already have back-refs for people who attend meetings. Lint surfaces the gap
-for people mentioned but not attending.
-
----
-
-## Automatic back-references for people: the timeline (v1.7)
-
-For people, the back-reference is now automatic. When a note is filed, `.pka/bin/pka-tools post-route` adds one line to the `## Timeline` block in the `index.md` of each person the note belongs to:
+When a note is filed, `.pka/bin/pka-tools post-route` adds one line to the `## Timeline` block in the `index.md` of each person the note belongs to:
 
 ```markdown
 ## Timeline
@@ -72,19 +33,30 @@ For people, the back-reference is now automatic. When a note is filed, `.pka/bin
 <!-- /pka:timeline -->
 ```
 
-Only certain or high-confidence evidence counts: the note is in the person's folder, or its `person` / `attendees` frontmatter or `## Attendees` links resolve to them, or the person's slug is part of the filename. A mention in the body does not put a note on a timeline; lint rule 5 reports those as candidates. File renames are followed (`pointers rename` rewrites timeline links too).
+Only certain or high-confidence evidence counts: the note is in the person's folder, or its `person` / `attendees` frontmatter or `## Attendees` links resolve to them, or the person's slug is part of the filename. A mention in the body does not put a note on a timeline, and lint does not report it. File renames are followed (`pointers rename` rewrites timeline links too).
 
-The older `## Mentioned in`, `## Related meetings` and `## Inbound References` sections are no longer written. Existing ones are left as they are.
+`pka-meetings` writes the `## Attendees` links that this evidence comes from (see its `references/attendee-linking.md`); it does not write the timeline line itself.
 
-For entities other than people (projects, topics, wikis), back-references remain lint-only as described above.
+The older `## Mentioned in`, `## Related meetings` and `## Inbound References` sections are no longer written. Existing ones are left as they are; the backfill reads the links in them as evidence.
 
 ---
 
-## User Can Always Override
+## What lint says about cross-references
 
-If a user doesn't want a particular file cross-referenced:
+- **Rule 5** (the tool, full lint): one informational line counting the dated notes that belong on someone's timeline, by the evidence above, and are not on it. It is the number of lines a backfill would add. It never lists a note because a name appears in its body.
+- **Rule 6** (yours, full lint): a wiki not updated for 30 days with 3 or more newer notes on its topic that it does not cite. This is the one place a search for a topic's name is used, and it produces a suggestion to ingest, never a link.
+- **Rule 2** (the tool): links that exist and point at nothing.
 
-- Add a frontmatter flag: `no-backref: true`
-- Lint skips files with this flag
+See `lint-rules.md` for each.
 
-The timeline honours this flag: a note with `no-backref: true` goes on nobody's timeline. Lint skips it too.
+---
+
+## Keeping a note off every timeline
+
+Add a frontmatter flag to the note:
+
+```yaml
+no-backref: true
+```
+
+A note with this flag goes on nobody's timeline, at filing and in a backfill, and rule 5 does not count it.

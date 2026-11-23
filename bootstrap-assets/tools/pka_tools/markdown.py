@@ -124,6 +124,51 @@ def block_mask(lines: List[str]) -> List[bool]:
     return [a or b for a, b in zip(fence_mask(lines), comment_mask(lines))]
 
 
+_LIST_ITEM = re.compile(r"^\s*(?:[-*+]|\d{1,9}[.)])(\s|$)")
+
+
+def prose_mask(lines: List[str]) -> List[bool]:
+    """Lines that are not prose: fenced blocks and HTML comments, Obsidian
+    `%%` comment blocks, `$$` math blocks and indented code blocks. A link or
+    a checkbox there is an example or hidden text."""
+    mask = block_mask(lines)
+    inside: Optional[str] = None
+    previous_blank = True
+    previous_code = False
+    previous_text = ""
+    for idx, line in enumerate(lines):
+        if mask[idx]:
+            previous_blank, previous_code = False, False
+            continue
+        body = line_body(line)
+        stripped = body.strip()
+        if inside is not None:
+            mask[idx] = True
+            if stripped.endswith(inside) or stripped == inside:
+                inside = None
+            continue
+        for fence in ("%%", "$$"):
+            if stripped.startswith(fence) and stripped.count(fence) % 2 == 1:
+                inside = fence
+                mask[idx] = True
+                break
+        if mask[idx]:
+            continue
+        if not stripped:
+            previous_blank = True
+            continue
+        indented = body.startswith("    ") or body.startswith("\t")
+        if indented and (previous_code or (previous_blank and not _LIST_ITEM.match(previous_text)
+                                           and not previous_text.startswith((" ", "\t")))):
+            mask[idx] = True
+            previous_code = True
+        else:
+            previous_code = False
+            previous_text = body
+        previous_blank = False
+    return mask
+
+
 _SETEXT_RE = re.compile(r"^ {0,3}(=+|-+)[ \t]*$")
 _LIST_OR_QUOTE = re.compile(r"^\s*(?:[-*+>]|\d+[.)])(?:\s|$)")
 

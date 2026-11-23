@@ -58,7 +58,7 @@ File arrives in team-inbox/
 | `.docx` | Python-docx or pandoc | Check if transcript (Teams export format) |
 | `.html` | Strip tags, extract text | Rare in team-inbox |
 | `.png`, `.jpg`, `.jpeg` | Tesseract OCR if available | Likely scanned documents |
-| `.eml`, `.msg` | Skip by default (`.pkaignore`) | User must remove from ignore to process |
+| `.eml`, `.msg` | Filed like any other document | Not ignored by default; add `*.eml` / `*.msg` to `.pkaignore` to leave them out |
 | `.vtt`, `.srt` | Transcript format — hold for pka-meetings | Never route directly |
 
 ---

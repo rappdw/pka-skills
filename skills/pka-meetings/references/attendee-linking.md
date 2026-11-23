@@ -8,8 +8,9 @@ How to match attendee names from meeting notes to personnel folder entries and c
 
 Extract attendee names from:
 1. The `## Attendees` section if present in the notes
-2. The attendee list provided at meeting start (capture mode)
-3. Speaker attributions in the notes body (e.g., "Priya said...", "@Priya", "**Priya:**")
+2. A `**Attendees**:` header line (thinkkit's notes): comma-separated names, each optionally followed by a role in brackets, which is not part of the name
+3. The attendee list provided at meeting start (capture mode)
+4. Speaker attributions in the notes body (e.g., "Priya said...", "@Priya", "**Priya:**")
 
 ---
 
@@ -43,13 +44,13 @@ From then on "Rob" resolves with high confidence. The command refuses an alias t
 
 ## Link Format
 
-When a match is found, add a relative path reference under `## Attendees` at the bottom of the notes file:
+When a match is found, add a relative path reference under `## Attendees` (where that section goes is fixed in "Creating the Attendees Section" below):
 
 ```markdown
 ## Attendees
 - [Priya](../personnel/priya/) — matched
-- [Sarah Chen](../personnel/sarah-chen/) — matched
-- Marcus Johnson — no personnel folder found
+- [Robin Smith](../personnel/robin-smith/) — matched
+- Northwind's account manager — no personnel folder found
 ```
 
 ### Path Calculation
@@ -67,11 +68,16 @@ The link path is relative from the note's destination to the personnel folder:
 
 ## Creating the Attendees Section
 
-If the notes don't already have an `## Attendees` section:
-- Create one at the bottom of the file, after any existing content
-- Before `## Action Items` if that section exists (attendees before actions)
+**One position: the end of the note.** If the notes don't already have an `## Attendees` section, append one after everything else in the file, including an existing `## Action Items` or `## Open Questions`. Nothing is ever inserted between sections the note already has, and no existing section is moved to make room.
+
+That makes filing an append: thinkkit's `## Notes`, `## Action Items`, `## Open Questions` stay in the order thinkkit wrote them, with `## Attendees` after them. The position has no effect on the tools: `post-route` and `timeline who` read the links under `## Attendees` wherever the section is, and `actions` reads checkboxes wherever they are.
+
+When this filing creates both sections (the note had neither), `## Attendees` is written first and `## Action Items` after it, both at the end, because attendee linking (Step 2) runs before action-item extraction (Step 3).
+
+A `**Attendees**: Priya (PM), Robin, Sam` header line, as thinkkit writes, is a source of names and is left exactly as it is. The `## Attendees` section carries the links; the header line is not turned into links and is not removed.
 
 If the notes already have an `## Attendees` section:
+- Leave it where it is
 - Append linked entries that aren't already listed
 - Don't duplicate existing entries
 - Don't modify manually-written attendee entries

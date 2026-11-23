@@ -114,7 +114,7 @@ Surface suggestions, don't auto-update:
 > This source also mentions the `agents` and `llm-tooling` topics. Want me to
 > ingest into those wikis too, or note as related topics only?
 
-### Step 9 — Log to session-log and decision-log
+### Step 9 — Log to the session log (and the decision log, if a contradiction was resolved)
 
 ```
 .pka/bin/pka-tools log add --role pka-wiki --summary "Ingested <source> into mcp wiki: 3 new claims, 1 refinement" \
@@ -129,14 +129,15 @@ writes
 
 The fourth field is for what is still **open** (the session-start greeting reads it); counts belong in the summary.
 
-If a contradiction was resolved, also log to `decision-log.md`:
+If a contradiction was resolved, also add an entry to `.pka/decision-log.md`. An ingest that resolved none is routine work and gets no decision-log entry:
 
 ```markdown
 ## 2026-04-05 | Reconcile MCP transport claim
 
 **Context:** New source (`.../anthropic-mcp-spec.pdf`) contradicted wiki claim about transport.
 **Decision:** Updated wiki — MCP is JSON-RPC-specific. Superseded claim from Priya 1-1.
-**Decided by:** Dan
+**Alternatives considered:** Keep the earlier claim, or record both as an open question.
+**Decided by:** Sam
 **Relates to:** `knowledge/topics/mcp/wiki.md`
 ```
 

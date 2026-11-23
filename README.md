@@ -11,11 +11,11 @@ You can install one skill or all six. They compose but are independently useful.
 | Skill | Purpose | Standalone? | Optional Dependency |
 |-------|---------|-------------|---------------------|
 | `pka-bootstrap` | First-run setup, Repo Map, SQLite, roles, lifecycle | Yes — foundation | — |
-| `pka-librarian` | Document ingestion, OCR, routing, indexing, lint | Yes | — |
+| `pka-librarian` | Document ingestion, OCR, routing, indexing, timeline backfill, health checks (lint) | Yes | — |
 | `pka-interface` | Browser dashboard | Best with bootstrap | — |
 | `pka-meetings` | Meeting capture, reconciliation, routing, indexing | Yes (route-only without thinkkit) | [thinkkit](https://github.com/rappdw/thinkkit) (`take-notes`, `resolve-against-transcript`) |
 | `pka-wiki` | Topic wiki synthesis, ingest, query enhancement | Best with bootstrap + librarian | — |
-| `pka-tutorial` | Conversational onboarding and capability walkthrough | Best with bootstrap | — |
+| `pka-tutorial` | Guided tour in your own workspace (eleven modules), and the upgrade walkthrough | Best with bootstrap | — |
 
 ## Design Principles
 
@@ -65,6 +65,9 @@ Bootstrap will:
 3. Ask three questions (name, autonomy level, confirm the map)
 4. Write `CLAUDE.md`, `.pka/` infrastructure, and inboxes
 5. Initialize SQLite if your knowledge base is large enough
+6. Show a weekly health-check schedule entry you can install or ignore (it installs nothing)
+
+Then say *"Give me a tour"*, or read the [tutorial](docs/TUTORIAL.md).
 
 ## Build Order
 
@@ -74,6 +77,10 @@ If building from scratch, skills should be implemented in this order:
 2. **pka-librarian** — content indexing, OCR, transcript awareness
 3. **pka-interface** — visualization, meeting timeline views
 4. **pka-meetings** — meeting pipeline (depends on Repo Map, SQLite, thinkkit)
+5. **pka-wiki** — topic wikis (depends on the Repo Map and the librarian's indexing)
+6. **pka-tutorial** — the guided tour and upgrade walkthrough (describes all of the above)
+
+`pka-tools` (`bootstrap-assets/tools/`) underlies all six: it is installed into the workspace by bootstrap and run by every skill.
 
 ## Coexistence: Obsidian
 
@@ -86,6 +93,8 @@ A user with no Obsidian vault sees identical behavior to before. See [`docs/spec
 **PKA does not run git.** Filing a note changes files in your workspace; committing them is yours to do, in one ordinary repository or none. Earlier releases (v1.6.0 to v1.7.0) offered a "hybrid monorepo" (`bootstrap git`: a root repository coordinating separate repositories at `knowledge/` and each `projects/<name>/`, with a commit after every route and a push at session end). That was removed. A workspace that already has that layout keeps its repositories, its `.meta` and its history untouched; PKA just no longer commits or pushes there. See the changelog and "Workspaces with nested repositories" in `skills/pka-bootstrap/SKILL.md`.
 
 **v1.6.1 — Pointer layer for MOC files.** The librarian maintains a `## Pointers` section inside each `_MOC.md` (one row per concept cluster, three columns: Topic, Entities, Files). FTS5 indexes pointer-row content with a 3× rank boost over body matches, turning a 1,500-file haystack query into a 30-cluster summary followed by 3–5 targeted file reads. No vector store, no embeddings. In an Obsidian vault it is on by default; without Obsidian it is opt-in from v1.7 (`pka-tools pointers init`), so a plain-markdown workspace gets no `_MOC.md` files it did not ask for. See `skills/pka-librarian/references/pointer-layer.md`.
+
+**v1.11.0 — a dashboard that opens, and documentation that matches.** The dashboard reads a data file `pka-tools dashboard data` writes beside it, so it opens by double-click, offline, with no network request. `pka-tools actions` reads action items in thinkkit's form. A transitioned project stays searchable. The roles use the owner profile and decision log, and no longer pin a model. `docs/TUTORIAL.md`, the tutorial's eleven modules and the walkthrough site describe this release, and `evals/run.py` can run the behavioural evals.
 
 **v1.10.0 — lint finds duplicates, and runs without a session.** `pka-tools lint` does the mechanical health checks with no model: broken links in every link form, stale wiki sources, empty Repo Map folders, identical files, the same text saved twice, near-copies, one note inside another, and duplicate people. Each finding has an id you can suppress (`lint suppress <id>`); `lint schedule` prints a weekly cron or launchd entry for you to install. The librarian still adds the two wiki rules that need judgement.
 
@@ -101,7 +110,8 @@ A user with no Obsidian vault sees identical behavior to before. See [`docs/spec
 
 ## Documentation
 
-- [Tutorial](docs/TUTORIAL.md) — A practical walkthrough of the system after setup
+- [Walkthrough site](https://rappdw.github.io/pka-skills/) — one concept per screen, with examples (source: `docs/index.html`)
+- [Tutorial](docs/TUTORIAL.md) — the long-form written reference for the current release: setup, daily use, people and timelines, the pointer layer, health checks, upgrading
 - Individual skill documentation in `skills/<name>/SKILL.md`
 - Addendum spec: [`specification-addendum.md`](docs/specification-addendum.md) — Obsidian coexistence
 - Toolkit: [`bootstrap-assets/tools/README.md`](bootstrap-assets/tools/README.md) — the `pka-tools` commands, exit codes and editing rules
@@ -153,7 +163,10 @@ pka-skills/
 │   ├── pka-wiki.evals.json
 │   └── pka-tutorial.evals.json
 ├── docs/
-│   └── TUTORIAL.md
+│   ├── TUTORIAL.md             # the written reference
+│   ├── index.html              # the walkthrough site (GitHub Pages), with site.css and site.js
+│   └── specification-addendum.md
+├── scripts/                    # seeds.py: keeps the role seeds embedded in upgrade-roles.py in step
 ├── README.md
 ├── CHANGELOG.md
 └── LICENSE

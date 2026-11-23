@@ -361,5 +361,40 @@ class Search(DbCase):
         self.assertEqual(self.json("search", "the", "--any", "--limit", "2")["count"], 2)
 
 
+
+class StatusAndIndexAgree(support.ToolsCase):
+    """What `index` reads is what `status` says it reads."""
+
+    def scope(self) -> list:
+        return self.json("index", "--dry-run")["scope"]
+
+    def test_capture_summaries_are_named_by_both(self):
+        self.ok("db", "init")
+        status = self.json("status")
+        self.assertNotIn("meeting-notes", status["index_roots"], "it is not an index root: only capture summaries are read")
+        self.assertEqual(status["index_captures"], "meeting-notes")
+        self.assertEqual(self.scope(), status["index_roots"] + [status["index_captures"]])
+        text = self.ok("status")
+        self.assertIn("Also indexed:     meeting-notes (only the narrative.md of each earshot capture)\n", text)
+        self.assertIn("Scope: %s, meeting-notes\n" % ", ".join(status["index_roots"]), self.ok("index"))
+        # And that is what happens: the narrative is indexed, a loose note beside the captures is not.
+        self.write("meeting-notes/loose-note.md", "# Loose quokka note\n")
+        self.ok("index")
+        self.assertEqual([hit["path"] for hit in self.json("search", "lighthouse")["results"]
+                          if hit["path"].startswith("meeting-notes/")],
+                         ["meeting-notes/2026-11-10_140000_slt-sync/narrative.md"])
+        self.assertEqual(self.json("search", "quokka")["results"], [])
+
+    def test_without_the_folder_neither_names_it(self):
+        import shutil
+        shutil.rmtree(str(self.path("meeting-notes")))
+        self.ok("db", "init")
+        status = self.json("status")
+        self.assertIsNone(status["index_captures"])
+        self.assertEqual(self.scope(), status["index_roots"])
+        self.assertNotIn("Also indexed", self.ok("status"))
+        self.assertNotIn("meeting-notes", self.ok("index"))
+
+
 if __name__ == "__main__":
     unittest.main()

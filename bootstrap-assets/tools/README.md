@@ -26,7 +26,7 @@ The workspace is `--workspace`, else `$WORKSPACE_ROOT`, else the nearest folder 
 | `db schema` | Tables, columns and row counts | nothing |
 | `index [PATH…] [--rebuild] [--prune] [--dry-run]` | Index new and changed files, drop rows for removed ones | the database |
 | `search TERM… [--limit N] [--any]` | Full-text search with quoted terms and the pointer-row boost | nothing |
-| `actions [--since D] [--until D] [--all-dates] [--scope meetings\|all] [--under F]` | Open checkboxes in dated notes | nothing |
+| `actions [--since D] [--until D] [--all-dates] [--include-undated] [--scope meetings\|all] [--under F]…` | Open checkboxes in dated notes, with owners and due dates (see "`actions`") | nothing |
 | `post-route FILE [--topic S] [--section H] [--also P]… [--dry-run]` | Everything after filing a note: frontmatter and MOC link (Obsidian), pointer row, timeline, index | the note, `_MOC.md` files, person `index.md` files, the database |
 | `moc add-link FILE [--section H]` | Add a `- [[note]]` bullet to the nearest `_MOC.md` | one `_MOC.md` |
 | `pointers add FILE [--topic S] [--entities A,B] [--context T] [--moc M] [--dry-run]` | Record a routed file in its domain MOC's Pointers table | `_MOC.md` files |
@@ -44,12 +44,13 @@ The workspace is `--workspace`, else `$WORKSPACE_ROOT`, else the nearest folder 
 | `timeline rename OLD NEW [--prefix]` | Follow a moved note in every timeline (`pointers rename` does this too) | person `index.md` files |
 | `timeline check [--strict]` | Unreadable blocks, links to missing notes, lines out of order | nothing |
 | `timeline strip [--person S]` | Remove timeline blocks (rollback) | person `index.md` files |
-| `timeline plan [--since D] [--person S] [--include-large] [--no-write]` | Backfill: the timeline lines existing notes would get, as a review report and a plan file | `owner-inbox/timeline-backfill-plan-<date>.md`, `.pka/backfill/plan-<id>.json` |
+| `timeline plan [--since D] [--person S] [--include-large] [--no-write]` | Backfill: the timeline lines existing notes would get, as a review report and a plan file | `owner-inbox/timeline-backfill-plan-<id>.md`, `.pka/backfill/plan-<id>.json` (the same `<id>` in both) |
 | `timeline apply PLAN [--dry-run]` | Backfill: write a plan's lines, back up and verify | person `index.md` files, `.pka/backups/<id>/` |
 | `timeline restore ID [--force] [--dry-run]` | Put the person pages back as they were before an apply | person `index.md` files |
 | `log add --role R --summary S [--open T] [--next N]` | Append one well-formed session-log entry | `.pka/session-log.md` |
 | `log open [--last N]` | Open threads of recent entries, newest first | nothing |
 | `log check [--strict]` | Entries that do not follow the grammar | nothing |
+| `dashboard data [--out PATH]` | Write the snapshot `dashboard.html` shows (see "Dashboard data") | `dashboard-data.js` |
 | `lint [--quick] [--strict] [--no-report]` | Health checks (see "Lint"). `--strict` exits 1 when there are unsuppressed findings | `owner-inbox/librarian-lint-<date>.md` |
 | `lint suppress ID [--reason T]`, `lint unsuppress ID` | Hide a finding from later reports, or bring it back | `.pka/lint-suppressions.json` |
 | `lint suppressions` | What is suppressed, and why | nothing |
@@ -87,6 +88,40 @@ Arguments are checked before anything is written: a bad `--section` or `--topic`
 
 A step that cannot do its work reports why and the later steps still run. Running it twice changes nothing. It refuses MOCs, files under `.pka/`, and anything inside an earshot capture directory. Nothing is committed: `touched` in the result lists the files it changed, for the caller to report.
 
+### Index roots
+
+`index` reads, and `search` therefore finds, what is under the index roots; `status` lists them. One folder is read without being a root: from `meeting-notes/` at the workspace root a full `index` takes the `narrative.md` of each earshot capture directory and nothing else. `index` names it last on its `Scope:` line, and `status` says so on an `Also indexed:` line (`index_captures` in `--json`; absent, or null, when there is no such folder). The roots are the Repo Map folders whose Priority is Active or Reference and that exist. With no such row: `knowledge/` if there is one, else every top-level folder except the inboxes, `projects/`, `meeting-notes/` and `.pkaignore` matches.
+
+- A row inside another root is folded into it. Priority is not an exclusion that reaches downwards: with `knowledge/` Active and `knowledge/archive/` Archive, the archive folder is indexed because it is inside a root. An Archive row keeps a folder out only when nothing above it is a root.
+- **Archived projects.** The archive destination's row is Archive, so the destination is not a root. A project moved into it is indexed when it has its own row with Priority Reference (the transition workflow in the pka-bootstrap skill adds it before running `index`); `status` then lists the project's folder as a root. Without that row, `index` drops the project's old `projects/…` rows and adds none, and `search` no longer finds it. Once it is a root, every file in it is indexed at any depth: the default `.pkaignore` rule `projects/*/*/*`, which limits an active project to its top-level files, does not match the new path.
+- **A folder that stops being a root** keeps its rows. A plain `index` removes rows for missing files only under the roots it reads; rows outside them whose file is gone are counted as `stale_elsewhere` and removed by `index --prune`. That is what a project restored from the archive needs: its row is taken out of the Repo Map, the folder is back under `projects/`, and `--prune` clears the rows left at the archive path. Rows for files that still exist in a folder that left the map are not removed by either.
+
+### `actions`
+
+Read-only: it never edits a note, and an item is read in the form it was written. Each open checkbox (`- [ ]`, `* [ ]`, `1. [ ]`, at any indentation, also inside a quote or an Obsidian callout: `> - [ ]`) is returned with `path`, `line`, `date` (the note's), `text` (the item as written), `owners`, `due` and `due_text`. A ticked box counts under `closed` and is not returned. A checkbox in a fenced or indented code block, an HTML comment, an Obsidian `%%` comment or a `$$` block is an example or hidden text, and is not an item.
+
+Options: `--since D` and `--until D` bound the note's date (default: the last seven days, no upper bound); `--all-dates` drops the window; `--include-undated` also reads notes that have no date; `--scope meetings` (the default) reads the meeting-home and people folders, `--scope all` every index root; `--under FOLDER` (repeatable) reads that folder instead.
+
+| Form | Example | Written by |
+|---|---|---|
+| `@owner`, `by <date>` | `- [ ] Send the comparison — @Sam — by 2026-05-01` | pka-meetings |
+| bold lead-in, `(due: …)` | `- [ ] **Robin**: Draft the hiring plan (due: 2026-12-01)` | thinkkit `take-notes` |
+
+- **`owners`**: every `@name`, and the names in a bold lead-in followed by a colon at the start of the item (`**Robin**:`, `**Robin:**`, `**Robin and Sam**:`; split on `,`, `and`, `&`, `/`). Each owner is listed once, in the order written.
+  - A mention is a letter followed by letters, digits, `.` or `-`; punctuation that ends it is not part of the name (`ask @Sam.` gives `Sam`). `@types/node`, an e-mail address and anything inside backticks are not mentions.
+  - A bold lead-in is taken as owners only when every piece (1) looks like a name: one to four words, each starting with a letter that is not lower case (particles such as `de` and `van` aside), no digits, not a label (`Note`, `TODO`, `Action`, `Decision`, `Owner`, `TBD` and the like); and (2) names someone known: a person folder (its name, an alias or its slug), an attendee of the same note (frontmatter `attendees`, a `**Attendees**: …` header line, the items of an `## Attendees` section), or the owner in `.pka/owner-profile.md` (frontmatter `name`, or a `Name:` line). A first name or a surname alone is enough (`Robin`, `Dr. Smith` for Robin Smith). `**Budget**:`, `**Orion**:` and `**Decision Needed**:` look like names and are nobody known, so they are not owners. If one piece fails, the lead-in gives no owner at all. When unsure, no owner: write `@name` to be certain.
+  - Bold without a colon, or not at the start, is not an owner.
+- **`due`** is `YYYY-MM-DD` or null; **`due_text`** is the due date as written, or null. A due date is read in three places: (1) a bracket, `(due: …)` / `(by: …)` / `[due …]`; (2) `by` or `due`, an optional colon, and an ISO date, anywhere else in the item; (3) an ISO date that ends the item after a dash (`— @Sam — 2026-05-01`).
+  - **`due` is set only when those places give exactly one date.** Two different dates give `due: null` and `due_text` with everything that was written, in the order written, joined with `; `: a bracket with two dates (`(due: 2026-12-01 or 2026-12-05)`), a range (`due 2026-12-01 to 2026-12-05`), two brackets, a bracket that disagrees with the date after the dash. The same date said twice is one date.
+  - A bracket is resolved only when it is exactly one date: ISO, or a month-name date (`Dec 1`, `December 1st, 2026`, `1 Dec 2026`). `(due: next Friday, 2026-12-04)` is not, and stays as written. Everything else (`Friday`, `end of month`, `12/1`) leaves `due` null with the words in `due_text`.
+  - A bracket that is not a date beside one ISO date gives that date, and `due_text` keeps the bracket's words: `(due: tomorrow) — @Sam — 2026-12-09` gives `due: 2026-12-09`, `due_text: "tomorrow"`.
+  - A month-name date without a year is the first such day on or after the note's date, when that is at most 300 days ahead. A day that fell in the two months before the note (`(due: Dec 24)` in a note dated 25 December) could mean "overdue" as well as "next year" and is not resolved; nor is any yearless date in an undated note.
+  - A bracket without a colon counts only when it speaks of time (a digit, a month or weekday name, or a word such as `tomorrow`, `next`, `end`): `(due Friday)` and `(by end of month)` do, `(due diligence)` and `[by Robin]` do not. With a colon, whatever the bracket holds is the due text.
+  - `by` followed by a date is not a deadline after a verb that owns the `by` (`stand by 2026-12-01`, `went by …`, `drop by …`). An ISO date elsewhere in the item is not a due date, a date after a dash that follows another date (`2026-11-01 — 2026-11-21`) is a period, and nothing inside backticks is read.
+- Nothing is guessed: no weekday arithmetic, no day/month order for numeric dates, no owner from prose ("Robin to draft…").
+- The text output prints `due: <date>` when there is one, and `due: <words> (as written)` when there is not.
+- **`PKA_ACTIONS_TODAY=YYYY-MM-DD`** makes `actions` take that as today for the default window (for tests and rehearsals). It is not read when `--since` or `--all-dates` is given.
+
 ## Exit codes
 
 | Code | Meaning |
@@ -109,7 +144,7 @@ Every command that writes to a user's file follows these. The tests in `tests/to
 4. **Idempotent.** Running a command twice changes nothing the second time.
 5. **Atomic writes.** A file is written to a temporary name and renamed into place, so an interrupted run cannot leave half a note. The file keeps its permissions; extended attributes (Finder tags, for example) on an edited file are not carried over. A file that is a symbolic link is written through the link, not replaced by a regular file.
 6. **Fenced code blocks and HTML comments are not structure.** A `## Pointers` heading, a table, a `## Files` heading or a link inside a fenced block or a multi-line `<!-- … -->` comment is ignored. `pointers rename` and `moc add-link` also ignore links inside `inline code` and escaped `\[[...]]`. Setext headings (`Title` over `-----`) end a section like `## Title` does.
-7. **Bodies are not interpreted.** Pointer maintenance and the Obsidian retrofit use filenames, folders and frontmatter. (`index` reads bodies to index them; `actions` reads them for checkboxes.)
+7. **Bodies are not interpreted.** Pointer maintenance and the Obsidian retrofit use filenames, folders and frontmatter. (`index` reads bodies to index them; `actions` reads them for checkboxes and never writes.)
 
 ## People and timelines
 
@@ -119,7 +154,7 @@ Every command that writes to a user's file follows these. The tests in `tests/to
 - Evidence: the note is in the person's folder (T1); or its `person` / `attendees` frontmatter, an `## Attendees` link, or a filename containing the slug names them with high confidence (T2). Body mentions do not count. More than 8 resolved attendees: none are added unless `--include-large`. `no-backref: true` opts a note out.
 - Summaries are at most 140 characters (cut without splitting a character); the role writes them from the note.
 - Without Obsidian the links are relative markdown links; `%` and `#` in a filename are percent-encoded.
-- **Reach** (`Workspace.link_root`). With Obsidian a timeline links only to notes in the vault, and keys are vault-relative. Without it a timeline links to any note in the workspace (`projects/`, a root meeting folder) except `owner-inbox/`, `team-inbox/` and hidden folders, and keys are workspace-relative; a wikilink typed by hand is still read relative to the vault, as Obsidian would. `timeline rename` and `pointers rename` take workspace paths (a vault-relative one still works). When a filed note and the person pages it touches are in different repositories, `post-route` commits each repository separately. `graduate.sh` prints the `timeline rename` to run when person pages link into the graduated project.
+- **Reach** (`Workspace.link_root`). With Obsidian a timeline links only to notes in the vault, and keys are vault-relative. Without it a timeline links to any note in the workspace (`projects/`, a root meeting folder) except `owner-inbox/`, `team-inbox/` and hidden folders, and keys are workspace-relative; a wikilink typed by hand is still read relative to the vault, as Obsidian would. `timeline rename` and `pointers rename` take workspace paths (a vault-relative one still works). A project moved with `pointers rename … --prefix` takes its timeline links with it.
 - **Backfill** (`timeline plan`, `apply`, `restore`). Planning walks what a timeline can link to (not MOCs, person pages, wiki folders, capture directories or `.pkaignore` matches; markdown and office documents), decides who each note belongs to exactly as for a newly filed note, and also counts a link in the old back-link sections of a person's own page (`## Mentioned in`, `## Related meetings`, `## Inbound References`, `## References`) as T2 evidence. A note with no date (filename prefix or frontmatter `date`) is reported, never dated from its modification time; so is a note whose name a link cannot carry (an upper-case `.MD`, angle brackets without Obsidian). Lines get no summary. Plan and backup ids are unique even within one second. The plan records a hash of every page it will write and every note it cites. `apply` first checks the plan file (every target must be the page of a person folder and every line a timeline line linking to its note; anything else is a usage error, exit 64), then refuses if a page or note changed or a planned stub appeared (plan again), or if the plan was made with Obsidian in a workspace without it (or the reverse). It backs the pages up, records each page's new hash before writing it, adds only lines whose note is not already on the timeline, then checks that every planned line is there, every link resolves, and nothing else in that scope changed (dot-folders such as `.obsidian`, and the inboxes, excepted). A failed check, an exception or an interrupt puts every page back. Nothing is committed. `restore` checks that every file in the record is still the page of its person folder (all or nothing), removes stubs the apply created, and refuses a page edited after the apply, or one whose state after the apply was not recorded, unless `--force`; a backup that was rolled back has nothing to restore.
 - `timeline strip` removes the blocks, the `## Timeline` heading when nothing else is under it, and an `index.md` that was only the stub the tool created. Text the user typed inside a block goes with it. Whitespace next to the block may differ by a line from before the first `add`.
 
@@ -148,6 +183,19 @@ Every command that writes to a user's file follows these. The tests in `tests/to
 ### Generated files are never written through a link
 
 A user's note is written through a symbolic link, as an editor would write it. A file the tools generate is not: the lint report, `.pka/lint-suppressions.json`, the backfill's plan (`.pka/backfill/`), its report in `owner-inbox/` and its backups (`.pka/backups/`). If the file's path is a link or not a regular file, or a folder on the way to it is a link or not a folder, the command exits 1 with a one-line message naming the workspace-relative path, and writes nothing. (`.pka/session-log.md` is a file the user owns and keeps the write-through rule.)
+
+## Dashboard data
+
+`dashboard.html` is opened by double-click, and a page opened from `file://` cannot `fetch` a local file, so it cannot read the index or a note. It can load a script beside it. `dashboard data` writes that script: `dashboard-data.js`, which assigns one object to `window.PKA_DATA`. The page (written by the `pka-interface` skill) draws from it and loads nothing else. The exact shape is in `skills/pka-interface/references/rendering-paths.md`.
+
+- **What is in it.** One row per file (folder, name, title, the note's own date, the day it last changed, size, tags, a summary of at most 160 characters, up to six headings); the Repo Map rows with file counts; people with their newest 50 timeline entries; projects with their status and lifecycle events; the newest 200 open action items (as `actions --all-dates` finds them, their text as plain words, with `owners`, `due` and `due_text`) and their total; the last 20 session-log entries; counts. Note bodies are not in it, nor are `_MOC.md` files or anything `.pkaignore` hides. Titles, summaries, headings and action items are plain words: a link is its label, and `**bold**`, `_emphasis_`, `~~struck~~` and backticks lose their marks. A mark that is not markup stays (`snake_case_title`, `2*3`, `__init__.py`), so the page's search finds it. A Repo Map row for a hidden folder (`.pka/`) is not a section.
+- **Where it reads.** In index mode the file list, tags and the head of each text (6,000 characters) come from `file_index` and `search_fts`, so it is as fresh as the last `index`; a row whose file has gone is left out and counted (`missing`), and a row whose path is not workspace-relative is left out and counted (`skipped`). Without an index the index roots are walked and read, with the same result (a file left out for its path is counted in `skipped` there too, and a tag written with a comma in it is two tags in both modes, as the index stores it). People, timelines, projects, action items and the log are read from the files in both modes. It never creates or changes the index.
+- **A generated file.** Written atomically and never through a symbolic link (see "Generated files are never written through a link"); every path in it is workspace-relative; `root` is the way from the file's folder back to the workspace root (`""` at the root). `--out` must name a `.js` file inside the workspace that is not hidden and not inside a hidden folder (`.pka/`, `.obsidian/`): exit 64 otherwise. A file already there that this command did not write is not overwritten: exit 1. "Did not write" is anything whose first line is not, in full, the `/* pka-dashboard-data v<N> — written by … */` line this command writes; an empty file counts as someone else's. A folder named `dashboard-data.js` is refused too. Nothing else in the workspace changes, and an error names the file by its workspace-relative path.
+- **Timeline links that leave the workspace.** A person's timeline line may link anywhere (`[[/etc/hostname]]`, `[[../../elsewhere/note]]`). The link is resolved as written, before anything is looked up; if it is not inside the workspace, or leads into a hidden folder, the entry is kept with its date, kind and summary and an empty `path`, the target is never tested for existence, and the entry is counted in `skipped_links` (in `--json`, and as a line of the text output when it is not 0). No link text makes the command fail.
+- **Safe to inline.** `<`, `>`, `&`, U+2028 and U+2029 are written as `\uXXXX` escapes, so a note title containing `</script>` cannot end a script element, whether the file is loaded with `src` or pasted into a page.
+- **Deterministic.** The same workspace gives the same bytes, apart from `generated_at`. `PKA_DASHBOARD_NOW=YYYY-MM-DDTHH:MM:SSZ` pins that too (for tests and rehearsals).
+- **Search in the page** runs over these fields, not over note text. `pka-tools search` remains the full-text search.
+- **Size and time** (index mode / markdown-only): 3,000 notes 1.1 MB, 0.5 s / 0.9 s; 20,000 notes 6.0 MB, 3 s / 5 s (up to 6 s on a busy machine). The page then loads in under half a second. `post-route` takes 0.2 s at 20,000 notes and does not run this: refresh the data when the user asks, and once at the end of a session when both `dashboard.html` and `dashboard-data.js` exist at the workspace root (a workspace with no dashboard is not given one).
 
 ## Git rules
 
@@ -185,6 +233,7 @@ tools/
     ├── obsidian.py        obsidian bootstrap
     ├── backfill.py        timeline plan / apply / restore
     ├── lint.py            lint, its suppressions, latest and schedule
+    ├── dashboard.py       dashboard data
     └── install.py         install and the manifest
 ```
 

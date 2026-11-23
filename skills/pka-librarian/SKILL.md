@@ -1,23 +1,19 @@
 ---
 name: pka-librarian
 description: >
-  ALWAYS use this skill when the user wants to process, route, OCR, index, or
-  organize documents in their knowledge system. Triggers on: processing an inbox
-  or team-inbox, routing dropped files to the right folders, OCR on PDFs or
-  scanned documents, re-indexing a knowledge base, setting up a scanner (ScanSnap,
-  iPhone), organizing files into a folder structure, inventorying what's in an
-  inbox, extracting text from PDFs, or any document ingestion task within a PKA
-  or personal knowledge system. Use this skill even when the user just says
+  Use this skill when the user wants to process, route, OCR, index or
+  health-check documents in a PKA workspace. Triggers on: processing the
+  team-inbox, routing dropped files to the right folders, OCR on PDFs or scans,
+  extracting text from PDFs, re-indexing, connecting a scanner (ScanSnap,
+  iPhone), and lint / health checks (orphan files, broken links, stale wiki
+  sources, duplicate notes and people, contradiction candidates). Use it for
   "process my inbox", "what's in the inbox", "route these docs", "re-index",
-  "OCR these", "set up my scanner", or drops files and asks what to do with
-  them. Handles transcript detection (holds .vtt/.srt files for meeting
-  processing instead of routing them). Also runs lint / health checks on the
-  knowledge base (orphan files, broken links, stale wiki sources, duplicate
-  notes and people, contradiction candidates) — triggered by "run a health
-  check", "lint my knowledge base", "find duplicates", "what needs attention",
-  or "check for broken links". Backfills person
-  timelines from existing notes ("backfill timelines"). Works standalone or
-  with pka-bootstrap.
+  "OCR these", "set up my scanner", "run a health check", "lint my knowledge
+  base", "find duplicates", "what needs attention", "check for broken links",
+  "backfill timelines", or when the user drops files and asks what to do with
+  them. Holds transcripts (.vtt/.srt) for pka-meetings instead of routing them.
+  Needs an existing workspace: creating or upgrading one is pka-bootstrap's
+  job, and questions about how the inbox works go to pka-tutorial.
 user-invocable: true
 argument-hint: "[file or command]"
 allowed-tools: Read, Write, Edit, Bash, Glob, Grep
@@ -37,6 +33,7 @@ Ingest, OCR, categorize, and index documents for a Personal Knowledge Assistance
    - `obsidian_present := directory_exists("./knowledge/.obsidian")`
    It is evaluated once per session and gates the additive behaviors at the end of routing. `.pka/bin/pka-tools status` prints it, with the index roots and the schema version.
 6. **Check the toolkit.** The mechanical steps below run through `.pka/bin/pka-tools` (Python 3.9+, no network). If it is missing, install it from the plugin (`python3 "<plugin root>/bootstrap-assets/tools/pka-tools" install --workspace .`, where the plugin root is two directories above this skill's folder) or ask the user to run `bootstrap upgrade`. If it is there but older than the plugin (`.pka/bin/pka-tools version` against `python3 "<plugin root>/bootstrap-assets/tools/pka-tools" version`), say so and ask the user to run `bootstrap upgrade` before filing anything: an older copy behaves as its own release did (one from before v1.8.0 still commits into nested repositories). If `status` says the index needs `db migrate`, tell the user and offer `bootstrap upgrade`; do not migrate from here without asking.
+7. **Check the role file for the removed commit protocol.** `grep -n 'Commit/push protocol' .pka/roles/librarian.md`. If the section is there (a workspace whose role files were seeded by v1.6.0 to v1.7.0), do not follow it, and tell the user once per session that the role file still carries an obsolete commit section and that `bootstrap upgrade` with the refresh removes it.
 
 ## Transcript Awareness
 
@@ -74,7 +71,7 @@ See `references/ocr-patterns.md` for full detection and fallback strategy.
 
 1. **Inventory** — file type, text layer detection, language, date hints
 2. **Infer routing** — Repo Map first; flag project slugs in filenames; present proposals before moving. See `references/file-routing-rules.md`.
-3. **OCR** — extract text; sidecar `.txt` + SQLite `ocr_text` + `search_fts`; originals never modified
+3. **OCR** — extract the text into a sidecar `.txt` beside the original (`report.pdf.txt`); the index picks the sidecar up in step 5. Never write index rows by hand; originals never modified
 4. **Move** — confirm first (except hands-off). Apply filename hygiene (`references/obsidian-routing.md` step 1).
 5. **Post-route** — once the file is in place, one command does the rest:
    ```
@@ -110,7 +107,7 @@ The same command. It is incremental: unchanged files are skipped, changed files 
 
 New notes reach timelines through `post-route`. Notes filed before v1.7.0 need a one-time backfill, which is plan-then-apply and never modifies a note:
 
-1. `.pka/bin/pka-tools timeline plan` (optionally `--since YYYY-MM-DD`, `--person <slug>`). It writes `owner-inbox/timeline-backfill-plan-<date>.md` and `.pka/backfill/plan-<id>.json` and changes nothing else. Show the user the report's counts and its lists: ambiguous names, frequent names with no person folder, undated notes, skipped large meetings, people whose page cannot be written, stubs to be created.
+1. `.pka/bin/pka-tools timeline plan` (optionally `--since YYYY-MM-DD`, `--person <slug>`). It writes `owner-inbox/timeline-backfill-plan-<id>.md` and `.pka/backfill/plan-<id>.json` (the id is a date, a time and six hex digits) and changes nothing else. Show the user the report's counts and its lists: ambiguous names, frequent names with no person folder, undated notes, skipped large meetings, people whose page cannot be written, stubs to be created.
 2. Help the user act on the lists: `people alias` for a name they confirm, a person folder only when they ask for one, a date for an undated note only if they give it. Then plan again. Planning is cheap; never guess on their behalf.
 3. Only when the user approves the plan: `.pka/bin/pka-tools timeline apply <plan file>`. It refuses if a person page changed since the plan, backs up every page it touches to `.pka/backups/<id>/`, writes the lines, verifies them (every link resolves, nothing else in the workspace changed; a failed check puts the pages back). It commits nothing: the changed person pages are left for the user to review and commit.
 4. Report the line and page counts, that the pages are uncommitted, and the undo command it prints: `.pka/bin/pka-tools timeline restore <id>` (it refuses pages edited after the backfill unless `--force`).
